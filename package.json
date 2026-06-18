@@ -1,0 +1,21 @@
+{
+  "name": "vevor-crawler-reusable",
+  "version": "1.0.0",
+  "description": "Reusable VEVOR SKU crawler module for sub-project invocation",
+  "main": "src/crawler.js",
+  "bin": {
+    "vevor-crawler": "bin/run.js",
+    "vevor-crawler-test": "bin/run-test.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/service.integration.test.js",
+    "cli:test": "node bin/run-test.js",
+    "service": "CRAWLER_MODE=service node bin/run.js",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "playwright": "^1.60.0"
+  }
+}
