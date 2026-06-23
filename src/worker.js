@@ -14,6 +14,10 @@ class Worker {
     this.channels.push(channel);
   }
 
+  resetChannels() {
+    this.channels = [];
+  }
+
   pushTasks(tasks) {
     const available = this.maxQueueSize - this.taskQueue.length;
     if (available <= 0) {

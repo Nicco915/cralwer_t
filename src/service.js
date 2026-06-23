@@ -120,6 +120,7 @@ class CrawlerService {
 
     this.log(`[SERVICE] Running with nodeCode=${this.config.nodeCode}, channels=${this.config.channels}`);
 
+    this.startHealthCheck();
     this.registerSignalHandlers();
   }
 
@@ -128,6 +129,7 @@ class CrawlerService {
     this.shuttingDown = true;
     this.log('[SERVICE] Shutting down gracefully...');
 
+    this.stopHealthCheck();
     this.poller.stop();
     await this.worker.drain();
 
@@ -141,6 +143,77 @@ class CrawlerService {
     this.log('[SERVICE] Shutdown complete');
     if (this.shutdownResolve) {
       this.shutdownResolve();
+    }
+  }
+
+  startHealthCheck() {
+    const interval = this.config.browserHealthCheckInterval || 30000;
+    this.healthCheckTimer = setInterval(() => {
+      this.runHealthCheck().catch((err) => {
+        this.log('[SERVICE] Health check error:', err.message);
+      });
+    }, interval);
+  }
+
+  stopHealthCheck() {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+  }
+
+  async runHealthCheck() {
+    if (this.restartingBrowser) {
+      return;
+    }
+
+    const browserHealthy = this.browser && this.browser.isConnected();
+    if (!browserHealthy) {
+      this.log('[SERVICE] Browser disconnected detected');
+      await this.restartBrowser();
+      return;
+    }
+
+    for (const channel of this.channels) {
+      const healthy = await channel.isHealthy();
+      if (!healthy) {
+        this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
+        await this.restartBrowser();
+        return;
+      }
+    }
+  }
+
+  async restartBrowser() {
+    if (this.restartingBrowser) {
+      return;
+    }
+    this.restartingBrowser = true;
+    this.log('[SERVICE] Browser unhealthy, restarting...');
+
+    try {
+      this.worker.stop();
+
+      for (const channel of this.channels) {
+        await channel.close();
+      }
+      this.channels = [];
+      this.worker.resetChannels();
+
+      if (this.browser && this.browser.isConnected()) {
+        await this.browser.close();
+      }
+      this.browser = null;
+
+      await this.initBrowser();
+      await this.initChannels();
+
+      this.worker.start();
+      this.log('[SERVICE] Browser restarted');
+    } catch (err) {
+      this.log('[SERVICE] Browser restart failed:', err.message);
+    } finally {
+      this.restartingBrowser = false;
     }
   }
 

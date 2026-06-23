@@ -80,9 +80,29 @@ class Channel {
     }
   }
 
+  async isHealthy() {
+    if (!this.page || !this.browserContext) {
+      return false;
+    }
+    try {
+      return this.browserContext.browser().isConnected() && !this.page.isClosed();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async reinit(browser) {
+    await this.close();
+    await this.init(browser);
+  }
+
   async close() {
     if (this.browserContext) {
-      await this.browserContext.close();
+      try {
+        await this.browserContext.close();
+      } catch (e) {
+        // Ignore errors when context is already closed or browser is dead
+      }
       this.browserContext = null;
       this.page = null;
     }
