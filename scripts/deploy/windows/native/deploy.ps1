@@ -482,27 +482,38 @@ function Invoke-Status {
     Write-Host "=== 进程状态 ===" -ForegroundColor Cyan
     Write-Host ""
 
-    $processes = Get-MatchingProcesses
-    if ($processes.Count -eq 0) {
-        Write-Host "  未找到匹配 '${NodePrefix}-*' 的爬虫进程。" -ForegroundColor DarkGray
-        Write-Host ""
-        return
+    $runningProcs = Get-MatchingProcesses
+    $foundAny = $false
+
+    for ($i = 1; $i -le $NodeCount; $i++) {
+        $nodeCode = Get-NodeCode -Index $i
+        $proc = $runningProcs | Where-Object { $_.NodeCode -eq $nodeCode } | Select-Object -First 1
+        if ($proc) {
+            try {
+                $p = Get-Process -Id $proc.PID -ErrorAction SilentlyContinue
+                if ($p) {
+                    Write-Host "  ${nodeCode}: " -NoNewline
+                    Write-Host "运行中 (PID=$($proc.PID))" -ForegroundColor Green
+                    $foundAny = $true
+                } else {
+                    Write-Host "  ${nodeCode}: " -NoNewline
+                    Write-Host "已停止" -ForegroundColor Red
+                    $foundAny = $true
+                }
+            } catch {
+                Write-Host "  ${nodeCode}: " -NoNewline
+                Write-Host "已停止" -ForegroundColor Red
+                $foundAny = $true
+            }
+        } else {
+            Write-Host "  ${nodeCode}: " -NoNewline
+            Write-Host "已停止" -ForegroundColor Red
+            $foundAny = $true
+        }
     }
 
-    foreach ($proc in $processes) {
-        try {
-            $p = Get-Process -Id $proc.PID -ErrorAction SilentlyContinue
-            if ($p) {
-                Write-Host "  $($proc.NodeCode): " -NoNewline
-                Write-Host "运行中 (PID=$($proc.PID))" -ForegroundColor Green
-            } else {
-                Write-Host "  $($proc.NodeCode): " -NoNewline
-                Write-Host "已退出 (PID=$($proc.PID))" -ForegroundColor Red
-            }
-        } catch {
-            Write-Host "  $($proc.NodeCode): " -NoNewline
-            Write-Host "已退出 (PID=$($proc.PID))" -ForegroundColor Red
-        }
+    if (-not $foundAny) {
+        Write-Host "  未找到匹配 '${NodePrefix}-*' 的爬虫进程。" -ForegroundColor DarkGray
     }
 
     Write-Host ""
