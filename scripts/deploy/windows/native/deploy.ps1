@@ -314,105 +314,118 @@ function Invoke-Start {
     }
 
     $started = @()
-    for ($i = 1; $i -le $NodeCount; $i++) {
-        $nodeCode = Get-NodeCode -Index $i
+    $processHandles = @()
+    try {
+        for ($i = 1; $i -le $NodeCount; $i++) {
+            $nodeCode = Get-NodeCode -Index $i
 
-        # 节点代码白名单验证，防止命令注入
-        if ($nodeCode -notmatch '^[A-Za-z0-9_-]+$') {
-            Write-Host " 错误: 节点代码只能包含字母、数字、连字符和下划线: ${nodeCode}" -ForegroundColor Red
-            continue
-        }
-
-        $logFileOut = Join-Path $logDir "${nodeCode}.log"
-        $logFileErr = Join-Path $logDir "${nodeCode}.err.log"
-
-        # 日志路径 cmd 特殊字符验证
-        if ($logFileOut -match '[&|<>^%"]' -or $logFileErr -match '[&|<>^%"]') {
-            Write-Host " 错误: 日志路径包含 cmd 特殊字符: ${logFileOut}" -ForegroundColor Red
-            continue
-        }
-
-        Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
-
-        # 使用 cmd.exe /c 在子进程内设置环境变量，避免污染父进程环境
-        # 同时强制 CRAWLER_CHANNELS=1，确保每个节点只使用单通道
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "cmd.exe"
-        $safeOut = $logFileOut -replace '"', '\"'
-        $safeErr = $logFileErr -replace '"', '\"'
-        $psi.Arguments = '/c "set CRAWLER_NODE_CODE=' + $nodeCode + ' && set CRAWLER_CHANNELS=1 && node bin/run.js --mode service > "' + $safeOut + '" 2>"' + $safeErr + '"'
-        $psi.WorkingDirectory = $ProjectDir
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-
-        $process = New-Object System.Diagnostics.Process
-        $process.StartInfo = $psi
-        $startedOk = $process.Start()
-
-        # 存活检查
-        $alive = $false
-        for ($j = 0; $j -lt 10; $j++) {
-            Start-Sleep -Milliseconds 300
-            $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-            if (-not $p) { break }
-            $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue
-            if (-not $procInfo) { continue }
-            $cmdLine = $procInfo.CommandLine
-            if ([string]::IsNullOrWhiteSpace($cmdLine)) { continue }
-            if ($cmdLine -match 'bin/run\.js\s+--mode\s+service') {
-                $alive = $true
-                break
+            # 节点代码白名单验证，防止命令注入
+            if ($nodeCode -notmatch '^[A-Za-z0-9_-]+$') {
+                Write-Host " 错误: 节点代码只能包含字母、数字、连字符和下划线: ${nodeCode}" -ForegroundColor Red
+                continue
             }
-        }
 
-        if (-not $alive) {
-            Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
-            $process.Dispose()
-            if (Test-Path $logFileErr) {
-                Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
-                Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            $logFileOut = Join-Path $logDir "${nodeCode}.log"
+            $logFileErr = Join-Path $logDir "${nodeCode}.err.log"
+
+            # 日志路径 cmd 特殊字符验证
+            if ($logFileOut -match '[&|<>^%"]' -or $logFileErr -match '[&|<>^%"]') {
+                Write-Host " 错误: 日志路径包含 cmd 特殊字符: ${logFileOut}" -ForegroundColor Red
+                continue
             }
-            continue
-        }
 
-        Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
+            Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
 
-        # 记录 PID 到文件，用于可靠进程跟踪
-        $pidFile = Join-Path $logDir ".pids.json"
-        $pidsData = @{}
-        if (Test-Path $pidFile) {
+            # 使用 cmd.exe /c 在子进程内设置环境变量，避免污染父进程环境
+            # 同时强制 CRAWLER_CHANNELS=1，确保每个节点只使用单通道
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "cmd.exe"
+            $safeOut = $logFileOut -replace '"', '\"'
+            $safeErr = $logFileErr -replace '"', '\"'
+            $psi.Arguments = '/c "set CRAWLER_NODE_CODE=' + $nodeCode + ' && set CRAWLER_CHANNELS=1 && node bin/run.js --mode service > "' + $safeOut + '" 2>"' + $safeErr + '"'
+            $psi.WorkingDirectory = $ProjectDir
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $psi
+            $startedOk = $process.Start()
+            if (-not $startedOk) {
+                Write-Host " 失败 (无法启动进程)" -ForegroundColor Red
+                $process.Dispose()
+                continue
+            }
+
+            # 存活检查
+            $alive = $false
+            for ($j = 0; $j -lt 10; $j++) {
+                Start-Sleep -Milliseconds 300
+                $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+                if (-not $p) { break }
+                $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+                if (-not $procInfo) { continue }
+                $cmdLine = $procInfo.CommandLine
+                if ([string]::IsNullOrWhiteSpace($cmdLine)) { continue }
+                if ($cmdLine -match 'bin/run\.js\s+--mode\s+service') {
+                    $alive = $true
+                    break
+                }
+            }
+
+            if (-not $alive) {
+                Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
+                $process.Dispose()
+                if (Test-Path $logFileErr) {
+                    Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
+                    Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                }
+                continue
+            }
+
+            Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
+            $processHandles += $process
+
+            # 记录 PID 到文件，用于可靠进程跟踪
+            $pidFile = Join-Path $logDir ".pids.json"
+            $pidsData = @{}
+            if (Test-Path $pidFile) {
+                try {
+                    $json = Get-Content $pidFile -Raw
+                    $data = $json | ConvertFrom-Json
+                    $data.PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+                } catch {
+                    Write-Host "  警告: PID 文件解析失败，将重新创建: $_" -ForegroundColor DarkYellow
+                    $pidsData = @{}
+                }
+            }
+            $pidsData[$nodeCode] = $process.Id
             try {
-                $json = Get-Content $pidFile -Raw
-                $data = $json | ConvertFrom-Json
-                $data.PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+                $pidsData | ConvertTo-Json | Set-Content -Path $pidFile -Force
             } catch {
-                Write-Host "  警告: PID 文件解析失败，将重新创建: $_" -ForegroundColor DarkYellow
-                $pidsData = @{}
+                Write-Host "  警告: 无法写入 PID 文件 ${pidFile}: $_" -ForegroundColor DarkYellow
+            }
+
+            $started += [PSCustomObject]@{
+                PID = $process.Id
+                NodeCode = $nodeCode
+                LogFile = $logFileOut
+                ErrLogFile = $logFileErr
             }
         }
-        $pidsData[$nodeCode] = $process.Id
-        try {
-            $pidsData | ConvertTo-Json | Set-Content -Path $pidFile -Force
-        } catch {
-            Write-Host "  警告: 无法写入 PID 文件 ${pidFile}: $_" -ForegroundColor DarkYellow
-        }
 
-        $started += [PSCustomObject]@{
-            PID = $process.Id
-            NodeCode = $nodeCode
-            LogFile = $logFileOut
-            ErrLogFile = $logFileErr
+        Write-Host ""
+        Write-Host "启动完成: 共 $($started.Count) 个节点" -ForegroundColor Green
+        foreach ($s in $started) {
+            Write-Host "  PID=$($s.PID), NodeCode=$($s.NodeCode), Log=$($s.LogFile), ErrLog=$($s.ErrLogFile)"
+        }
+        Write-Host ""
+        Write-Host "提示: 可用 .\deploy.ps1 status 查看状态，.\deploy.ps1 logs 查看日志。" -ForegroundColor DarkGray
+        Write-Host ""
+    } finally {
+        foreach ($h in $processHandles) {
+            if ($h) { $h.Dispose() }
         }
     }
-
-    Write-Host ""
-    Write-Host "启动完成: 共 $($started.Count) 个节点" -ForegroundColor Green
-    foreach ($s in $started) {
-        Write-Host "  PID=$($s.PID), NodeCode=$($s.NodeCode), Log=$($s.LogFile), ErrLog=$($s.ErrLogFile)"
-    }
-    Write-Host ""
-    Write-Host "提示: 可用 .\deploy.ps1 status 查看状态，.\deploy.ps1 logs 查看日志。" -ForegroundColor DarkGray
-    Write-Host ""
 }
 
 # ── stop ───────────────────────────────────────────────────────────
