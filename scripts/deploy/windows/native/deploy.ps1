@@ -330,7 +330,13 @@ function Invoke-Start {
         for ($j = 0; $j -lt 10; $j++) {
             Start-Sleep -Milliseconds 300
             $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-            if ($p) { $alive = $true; break }
+            if ($p) {
+                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue).CommandLine
+                if ($cmdLine -match 'bin/run\.js\s+--mode\s+service') {
+                    $alive = $true
+                    break
+                }
+            }
         }
 
         if (-not $alive) {
@@ -353,7 +359,11 @@ function Invoke-Start {
             ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
         }
         $pidsData[$nodeCode] = $process.Id
-        $pidsData | ConvertTo-Json | Set-Content $pidFile
+        try {
+            $pidsData | ConvertTo-Json | Set-Content -Path $pidFile -Force
+        } catch {
+            Write-Host "  警告: 无法写入 PID 文件 ${pidFile}: $_" -ForegroundColor DarkYellow
+        }
 
         $started += [PSCustomObject]@{
             PID = $process.Id
@@ -457,7 +467,11 @@ function Invoke-Stop {
         if ($pidsData.Count -eq 0) {
             Remove-Item $pidFile
         } else {
-            $pidsData | ConvertTo-Json | Set-Content $pidFile
+            try {
+                $pidsData | ConvertTo-Json | Set-Content -Path $pidFile -Force
+            } catch {
+                Write-Host "  警告: 无法更新 PID 文件 ${pidFile}: $_" -ForegroundColor DarkYellow
+            }
         }
     }
 }
