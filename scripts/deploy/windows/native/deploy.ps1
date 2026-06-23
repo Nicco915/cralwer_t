@@ -311,8 +311,7 @@ function Invoke-Start {
         # 注意：cmd.exe 中 " 表示字面量引号，用于处理含空格的路径
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "cmd.exe"
-        $cmdInner = 'node bin/run.js --mode service > ""' + $logFile + '"" 2>&1'
-        $psi.Arguments = '/c "' + $cmdInner + '"'
+        $psi.Arguments = '/c "node bin/run.js --mode service > "' + $logFile + '" 2>&1"'
         $psi.WorkingDirectory = $ProjectDir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -416,15 +415,18 @@ function Invoke-Stop {
             Write-Host " 已停止" -ForegroundColor Green
             $stopped += $proc
         } else {
-            # 强制终止前验证 PID 未被复用
+            # 强制终止前验证 PID 未被复用且命令行仍匹配目标
             $target = Get-Process -Id $pid -ErrorAction SilentlyContinue
-            if ($target -and $target.ProcessName -eq "node") {
-                try {
-                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine
+            if ($target -and $target.ProcessName -eq "node" -and $cmdLine -match 'bin/run\.js\s+--mode\s+service') {
+                # 强制终止整个进程树
+                $forceResult = taskkill /PID ([int]$pid) /T /F 2>&1
+                $forceExit = $LASTEXITCODE
+                if ($forceExit -eq 0 -or $forceExit -eq 128) {
                     Write-Host " 已强制终止" -ForegroundColor DarkYellow
                     $stopped += $proc
-                } catch {
-                    Write-Host " 强制终止失败" -ForegroundColor Red
+                } else {
+                    Write-Host " 强制终止失败 (exit=${forceExit})" -ForegroundColor Red
                 }
             } else {
                 Write-Host " 进程已不存在或 PID 已被复用" -ForegroundColor DarkYellow
