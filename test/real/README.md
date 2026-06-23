@@ -110,10 +110,88 @@ RESULT: PASS
 - The log file is preserved after the test for debugging.
 - Use a dedicated `CRAWLER_NODE_CODE` (e.g., `smoke-test-node`) to avoid interfering with production nodes.
 
+## Fault Tolerance Test
+
+The fault tolerance test runs the crawler service against the **real upstream API** and injects client-side failures to verify self-recovery.
+
+It covers four scenarios:
+
+1. **Block task API** — temporarily black-holes the upstream task endpoint and verifies the service resumes polling when connectivity returns.
+2. **Kill Chromium** — finds and `kill -9`s the browser child process and verifies the service detects the crash, restarts the browser/channels, and continues processing tasks.
+3. **Block callback API** — starts a local stub that returns HTTP 500 for callbacks, verifies the service handles callback failures, then restores the real callback URL.
+4. **Graceful service restart** — sends `SIGTERM` to the running service, verifies the old process exits cleanly, and starts a new instance.
+
+### Setup
+
+Use the same `.env` file created for the smoke test. Optionally tune fault-tolerance settings:
+
+```bash
+# test/real/.env
+FAULT_TIMEOUT_SECONDS=600
+FAULT_MIN_SUCCESS=5
+FAULT_BLOCK_DURATION=30
+FAULT_CALLBACK_STUB_PORT=19000
+```
+
+### Run
+
+```bash
+./test/real/fault-tolerance-test.sh
+```
+
+The script needs `sudo` to modify system routes during scenario 1.
+
+### Expected Output
+
+```
+========================================
+  Real API Fault Tolerance Test
+========================================
+  Timeout:     600s
+  Min success: 5
+  Log file:    /Users/nz/Downloads/hs_sku/crawler/test/real/fault-tolerance-test.log
+
+[INFO] Starting crawler service (callback: http://117.72.52.0/renren-api/classify/open/crawler/callback)...
+[INFO] Service started with PID 12345.
+
+[INFO] [SCENE 1] Block task API for 30s
+  PASS
+[INFO] [SCENE 2] Kill Chromium process
+  PASS
+[INFO] [SCENE 3] Block callback API for 30s
+  PASS
+[INFO] [SCENE 4] Graceful service restart
+  PASS
+
+  Elapsed: 120s | Started: 10 | Completed: 10 (success= 6 error= 0 not_found= 4)
+[INFO] All started tasks have completed.
+
+========================================
+  Fault Tolerance Test Summary
+========================================
+  Service currently alive: yes
+  Tasks started:   10
+  Tasks completed: 10
+    - success:    6
+    - error:      0
+    - not_found:  4
+
+RESULT: PASS
+```
+
+### Notes
+
+- The script preserves the log file at `test/real/fault-tolerance-test.log` for debugging.
+- It uses a fresh log file on each run.
+- Duplicate successful task IDs in the log are treated as a failure because the service should not callback the same task as successful more than once.
+- The callback-blocking stub (`test/real/fault-callback-stub.js`) can also be run standalone for ad-hoc testing.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `No tasks were started` | Upstream API has no tasks | Check upstream task queue or use a different node code |
 | `Service startup timed out` | Dependencies missing or port conflict | Run `npm ci` and `npx playwright install chromium` |
-| `Success count < minimum` | VEVOR site blocking or SKU not found | Check logs, increase `SMOKE_TIMEOUT_SECONDS`, verify proxy settings |
+| `Success count < minimum` | VEVOR site blocking or SKU not found | Check logs, increase `FAULT_TIMEOUT_SECONDS` or `SMOKE_TIMEOUT_SECONDS`, verify proxy settings |
+| `sudo: route: command not found` | Running on Linux without route/ip tools | The script auto-detects `ip` on Linux; ensure `iproute2` is installed |
+| `Could not find any Chromium child process` | Browser process already exited or uses unexpected name | Check the service log and use `ps` to identify the actual browser process name |
