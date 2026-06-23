@@ -150,7 +150,7 @@ function Invoke-Check {
     Write-Host ""
     Write-Host "--- 可选环境变量 ---" -ForegroundColor Yellow
 
-    $optional = @("CRAWLER_NODE_CODE", "CRAWLER_PROXY", "CRAWLER_BROWSER_PATH")
+    $optional = @("CRAWLER_PROXY", "CRAWLER_BROWSER_PATH")
     foreach ($var in $optional) {
         $val = [Environment]::GetEnvironmentVariable($var)
         if ($val) {
@@ -163,7 +163,7 @@ function Invoke-Check {
     # 特别警告 CRAWLER_NODE_CODE
     if (-not $env:CRAWLER_NODE_CODE) {
         Write-Host ""
-        Write-Host "  提示: CRAWLER_NODE_CODE 未设置，将默认使用主机名或容器名。" -ForegroundColor DarkYellow
+        Write-Host "  提示: CRAWLER_NODE_CODE 未设置，将默认使用 `${NodePrefix}-${序号}` 作为节点代码。" -ForegroundColor DarkYellow
     }
 
     Write-Host ""
@@ -318,7 +318,7 @@ function Invoke-Logs {
     foreach ($name in $containers) {
         $logFile = Join-Path $logDir "${name}.log"
         Write-Host "  收集 ${name} ..." -NoNewline
-        docker logs $name > $logFile 2>&1
+        docker logs --no-color $name > $logFile 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host " 已保存" -ForegroundColor Green
         } else {

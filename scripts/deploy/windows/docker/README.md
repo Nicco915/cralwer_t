@@ -57,7 +57,7 @@ notepad .env
 
 ### 启动 2 个节点
 
-默认 `.env` 中 `CRAWLER_NODE_COUNT=2`，直接执行：
+默认 `.env` 中 `CRAWLER_NODE_COUNT=1`，启动 1 个节点。若要启动 2 个节点，请修改 `.env` 中的 `CRAWLER_NODE_COUNT`：
 
 ```powershell
 .\deploy.ps1 start
