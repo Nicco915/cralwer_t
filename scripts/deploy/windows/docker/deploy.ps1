@@ -111,7 +111,7 @@ function Get-NodeCode {
 }
 
 function Get-MatchingContainers {
-    $containers = docker ps -a --format "{{.Names}}" --filter "name=${NodePrefix}-*" 2>$null
+    $containers = docker ps -a --format "{{.Names}}" --filter "name=${NodePrefix}-" 2>$null
     if ($LASTEXITCODE -ne 0) { $containers = @() }
     if ($containers -is [string]) { $containers = @($containers) }
     return $containers | Where-Object { $_ -match "^${NodePrefix}-\d+$" }
@@ -181,6 +181,7 @@ function Invoke-Check {
         Write-Host "所有检查通过，可以执行 start。" -ForegroundColor Green
     } else {
         Write-Host "存在未通过项，请先修复后再执行 start。" -ForegroundColor Red
+        exit 1
     }
     Write-Host ""
 }
@@ -318,7 +319,7 @@ function Invoke-Logs {
     foreach ($name in $containers) {
         $logFile = Join-Path $logDir "${name}.log"
         Write-Host "  收集 ${name} ..." -NoNewline
-        docker logs --no-color $name > $logFile 2>&1
+        docker logs $name > $logFile 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host " 已保存" -ForegroundColor Green
         } else {
@@ -345,7 +346,7 @@ function Invoke-Status {
     }
 
     # 获取所有容器的状态信息
-    $allInfo = docker ps -a --format "{{.Names}}|{{.Status}}|{{.State}}" --filter "name=${NodePrefix}-*" 2>$null
+    $allInfo = docker ps -a --format "{{.Names}}|{{.Status}}|{{.State}}" --filter "name=${NodePrefix}-" 2>$null
     if ($LASTEXITCODE -ne 0) { $allInfo = @() }
     if ($allInfo -is [string]) { $allInfo = @($allInfo) }
 
