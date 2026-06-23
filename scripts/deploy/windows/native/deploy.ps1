@@ -44,7 +44,15 @@ if (Test-Path $EnvFile) {
 }
 
 # ── 默认值 ─────────────────────────────────────────────────────────
-$NodeCount     = if ($env:CRAWLER_NODE_COUNT) { [int]$env:CRAWLER_NODE_COUNT } else { 1 }
+$NodeCount = 1
+if ($env:CRAWLER_NODE_COUNT) {
+    $parsed = 0
+    if ([int]::TryParse($env:CRAWLER_NODE_COUNT, [ref]$parsed) -and $parsed -gt 0) {
+        $NodeCount = $parsed
+    } else {
+        Write-Host "警告: CRAWLER_NODE_COUNT 无效，使用默认值 1。" -ForegroundColor DarkYellow
+    }
+}
 $NodePrefix    = if ($env:CRAWLER_NODE_PREFIX) { $env:CRAWLER_NODE_PREFIX } else { "win-native-crawler" }
 $PollInterval  = if ($env:CRAWLER_POLL_INTERVAL) { $env:CRAWLER_POLL_INTERVAL } else { "5000" }
 $PollLimit     = if ($env:CRAWLER_POLL_LIMIT) { $env:CRAWLER_POLL_LIMIT } else { "5" }
@@ -129,13 +137,8 @@ function Get-MatchingProcesses {
                 }
             }
         }
-        # 备选：从命令行参数推断（如果环境变量不可读）
-        if (-not $nodeCode) {
-            # 如果进程命令行包含前缀，则视为匹配
-            if ($proc.CommandLine -match [regex]::Escape($NodePrefix)) {
-                $nodeCode = "${NodePrefix}-?"
-            }
-        }
+        # 备选：如果环境变量不可读，则跳过该进程
+        if (-not $nodeCode) { continue }
         # 过滤：只保留匹配 ${NodePrefix}-* 的
         if ($nodeCode -and $nodeCode -match "^${NodePrefix}-") {
             $matched += [PSCustomObject]@{
@@ -291,52 +294,26 @@ function Invoke-Start {
 
         Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
 
-        # 构建环境变量哈希表
-        $envVars = @{
-            CRAWLER_MODE = "service"
-            CRAWLER_NODE_CODE = $nodeCode
-            CRAWLER_NODE_TOKEN = $env:CRAWLER_NODE_TOKEN
-            CRAWLER_TASK_URL = $env:CRAWLER_TASK_URL
-            CRAWLER_CALLBACK_URL = $env:CRAWLER_CALLBACK_URL
-            CRAWLER_CHANNELS = "1"
-            CRAWLER_POLL_INTERVAL = $PollInterval
-            CRAWLER_POLL_LIMIT = $PollLimit
-            CRAWLER_BASE_URL = $BaseUrl
-            CRAWLER_HEADLESS = $Headless
-        }
-        if ($env:CRAWLER_PROXY) { $envVars['CRAWLER_PROXY'] = $env:CRAWLER_PROXY }
-        if ($env:CRAWLER_BROWSER_PATH) { $envVars['CRAWLER_BROWSER_PATH'] = $env:CRAWLER_BROWSER_PATH }
+        # 设置当前进程环境变量，下一个 Start-Process 会继承
+        [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $nodeCode, "Process")
 
-        # 使用 cmd.exe /c 启动后台进程，将 stdout/stderr 合并重定向到日志文件
-        # 注意：cmd.exe 中 " 表示字面量引号，用于处理含空格的路径
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "cmd.exe"
-        $psi.Arguments = '/c "node bin/run.js --mode service > "' + $logFile + '" 2>&1"'
-        $psi.WorkingDirectory = $ProjectDir
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
+        try {
+            $process = Start-Process -FilePath "node" `
+                -ArgumentList "bin/run.js", "--mode", "service" `
+                -WorkingDirectory $ProjectDir `
+                -RedirectStandardOutput $logFile `
+                -RedirectStandardError $logFile `
+                -WindowStyle Hidden `
+                -PassThru
 
-        # 设置环境变量（继承当前进程并覆盖），使用 ContainsKey/Add 模式保证健壮性
-        foreach ($key in $envVars.Keys) {
-            if ($psi.EnvironmentVariables.ContainsKey($key)) {
-                $psi.EnvironmentVariables[$key] = $envVars[$key]
-            } else {
-                $psi.EnvironmentVariables.Add($key, $envVars[$key])
-            }
-        }
-
-        $process = New-Object System.Diagnostics.Process
-        $process.StartInfo = $psi
-
-        # 启动进程并检查存活状态
-        $startedOk = $process.Start()
-        if ($startedOk) {
+            # 存活检查
             $alive = $false
-            for ($j = 0; $j -lt 5; $j++) {
+            for ($j = 0; $j -lt 10; $j++) {
                 Start-Sleep -Milliseconds 300
                 $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
                 if ($p) { $alive = $true; break }
             }
+
             if (-not $alive) {
                 Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
                 if (Test-Path $logFile) {
@@ -345,14 +322,16 @@ function Invoke-Start {
                 }
                 continue
             }
+
             Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
             $started += [PSCustomObject]@{
                 PID = $process.Id
                 NodeCode = $nodeCode
                 LogFile = $logFile
             }
-        } else {
-            Write-Host " 失败" -ForegroundColor Red
+        } finally {
+            # 恢复环境变量，避免污染后续循环或会话
+            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $null, "Process")
         }
     }
 
@@ -385,6 +364,7 @@ function Invoke-Stop {
         Write-Host "  停止 PID=${pid} ($($proc.NodeCode)) ..." -NoNewline
 
         # 尝试优雅关闭：taskkill /PID /T 发送终止信号到进程树
+        # 128 = 进程已不存在（ERROR_WAIT_NO_CHILDREN），可忽略
         $taskkillResult = taskkill /PID ([int]$pid) /T 2>&1
         $taskkillExit = $LASTEXITCODE
         if ($taskkillExit -ne 0 -and $taskkillExit -ne 128) {
@@ -415,10 +395,9 @@ function Invoke-Stop {
             Write-Host " 已停止" -ForegroundColor Green
             $stopped += $proc
         } else {
-            # 强制终止前验证 PID 未被复用且命令行仍匹配目标
-            $target = Get-Process -Id $pid -ErrorAction SilentlyContinue
-            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine
-            if ($target -and $target.ProcessName -eq "node" -and $cmdLine -match 'bin/run\.js\s+--mode\s+service') {
+            # 强制终止前用单一 CIM 查询验证 PID 未被复用且命令行仍匹配目标
+            $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue
+            if ($procInfo -and $procInfo.Name -eq 'node.exe' -and $procInfo.CommandLine -match 'bin/run\.js\s+--mode\s+service') {
                 # 强制终止整个进程树
                 $forceResult = taskkill /PID ([int]$pid) /T /F 2>&1
                 $forceExit = $LASTEXITCODE
@@ -426,7 +405,7 @@ function Invoke-Stop {
                     Write-Host " 已强制终止" -ForegroundColor DarkYellow
                     $stopped += $proc
                 } else {
-                    Write-Host " 强制终止失败 (exit=${forceExit})" -ForegroundColor Red
+                    Write-Host " 强制终止失败 (exit=${forceExit}): $forceResult" -ForegroundColor Red
                 }
             } else {
                 Write-Host " 进程已不存在或 PID 已被复用" -ForegroundColor DarkYellow
