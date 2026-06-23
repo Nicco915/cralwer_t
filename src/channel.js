@@ -85,7 +85,12 @@ class Channel {
       return false;
     }
     try {
-      return this.browserContext.browser().isConnected() && !this.page.isClosed();
+      if (!this.browserContext.browser().isConnected() || this.page.isClosed()) {
+        return false;
+      }
+      // Verify the page context is actually usable by executing a trivial script
+      await this.page.evaluate(() => document.title);
+      return true;
     } catch (e) {
       return false;
     }

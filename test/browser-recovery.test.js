@@ -82,7 +82,10 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
       // Reset callback
       callbackReceived = null;
 
-      // Simulate browser crash by closing it abruptly
+      // Simulate browser crash by abruptly closing the browser connection.
+      // Playwright 1.60 does not expose browser.process() for Chromium, so
+      // we cannot send SIGKILL directly; close() still makes isConnected()
+      // false and exercises the same restart code path.
       assert.ok(service.browser, 'browser should exist');
       assert.ok(service.browser.isConnected(), 'browser should be connected');
       await service.browser.close();
