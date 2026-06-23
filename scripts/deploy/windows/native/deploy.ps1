@@ -332,13 +332,17 @@ function Invoke-Start {
         # 启动进程并检查存活状态
         $startedOk = $process.Start()
         if ($startedOk) {
-            Start-Sleep -Milliseconds 500
-            $alive = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+            $alive = $false
+            for ($j = 0; $j -lt 5; $j++) {
+                Start-Sleep -Milliseconds 300
+                $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+                if ($p) { $alive = $true; break }
+            }
             if (-not $alive) {
                 Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
                 if (Test-Path $logFile) {
-                    Write-Host "    日志尾部:" -ForegroundColor DarkGray
-                    Get-Content $logFile -Tail 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+                    Write-Host "  日志最后 10 行:" -ForegroundColor DarkGray
+                    Get-Content $logFile -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
                 }
                 continue
             }
