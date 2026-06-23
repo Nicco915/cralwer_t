@@ -308,24 +308,40 @@ function Invoke-Start {
         if ($env:CRAWLER_BROWSER_PATH) { $envVars['CRAWLER_BROWSER_PATH'] = $env:CRAWLER_BROWSER_PATH }
 
         # 使用 cmd.exe /c 启动后台进程，将 stdout/stderr 合并重定向到日志文件
+        # 注意：cmd.exe 中 " 表示字面量引号，用于处理含空格的路径
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "cmd.exe"
-        $psi.Arguments = "/c `"node bin/run.js --mode service > `"$logFile`" 2>&1`""
+        $cmdInner = 'node bin/run.js --mode service > ""' + $logFile + '"" 2>&1'
+        $psi.Arguments = '/c "' + $cmdInner + '"'
         $psi.WorkingDirectory = $ProjectDir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
 
-        # 设置环境变量（继承当前进程并覆盖）
+        # 设置环境变量（继承当前进程并覆盖），使用 ContainsKey/Add 模式保证健壮性
         foreach ($key in $envVars.Keys) {
-            $psi.EnvironmentVariables[$key] = $envVars[$key]
+            if ($psi.EnvironmentVariables.ContainsKey($key)) {
+                $psi.EnvironmentVariables[$key] = $envVars[$key]
+            } else {
+                $psi.EnvironmentVariables.Add($key, $envVars[$key])
+            }
         }
 
         $process = New-Object System.Diagnostics.Process
         $process.StartInfo = $psi
 
-        # 启动进程
+        # 启动进程并检查存活状态
         $startedOk = $process.Start()
         if ($startedOk) {
+            Start-Sleep -Milliseconds 500
+            $alive = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+            if (-not $alive) {
+                Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
+                if (Test-Path $logFile) {
+                    Write-Host "    日志尾部:" -ForegroundColor DarkGray
+                    Get-Content $logFile -Tail 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+                }
+                continue
+            }
             Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
             $started += [PSCustomObject]@{
                 PID = $process.Id
@@ -366,7 +382,7 @@ function Invoke-Stop {
         Write-Host "  停止 PID=${pid} ($($proc.NodeCode)) ..." -NoNewline
 
         # 尝试优雅关闭：taskkill /PID /T 发送终止信号到进程树
-        $taskkillResult = taskkill /PID $pid /T 2>&1
+        $taskkillResult = taskkill /PID ([int]$pid) /T 2>&1
         $taskkillExit = $LASTEXITCODE
         if ($taskkillExit -ne 0 -and $taskkillExit -ne 128) {
             Write-Host " 警告: taskkill 返回退出码 ${taskkillExit}" -ForegroundColor DarkYellow
