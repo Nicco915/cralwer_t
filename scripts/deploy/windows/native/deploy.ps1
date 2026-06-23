@@ -307,14 +307,12 @@ function Invoke-Start {
         if ($env:CRAWLER_PROXY) { $envVars['CRAWLER_PROXY'] = $env:CRAWLER_PROXY }
         if ($env:CRAWLER_BROWSER_PATH) { $envVars['CRAWLER_BROWSER_PATH'] = $env:CRAWLER_BROWSER_PATH }
 
-        # 使用 Start-Process 启动后台进程，重定向 stdout/stderr 到日志文件
+        # 使用 cmd.exe /c 启动后台进程，将 stdout/stderr 合并重定向到日志文件
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "node"
-        $psi.Arguments = "bin/run.js --mode service"
+        $psi.FileName = "cmd.exe"
+        $psi.Arguments = "/c `"node bin/run.js --mode service > `"$logFile`" 2>&1`""
         $psi.WorkingDirectory = $ProjectDir
         $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
 
         # 设置环境变量（继承当前进程并覆盖）
@@ -325,32 +323,9 @@ function Invoke-Start {
         $process = New-Object System.Diagnostics.Process
         $process.StartInfo = $psi
 
-        # 启动并设置输出重定向
+        # 启动进程
         $startedOk = $process.Start()
         if ($startedOk) {
-            # 使用事件订阅异步读取 stdout/stderr 并写入日志
-            $logWriter = [System.IO.StreamWriter]::new($logFile, $false, [System.Text.Encoding]::UTF8)
-
-            # 注册输出数据接收事件
-            $outAction = {
-                if ($EventArgs.Data -ne $null) {
-                    $Event.MessageData.WriteLine("[STDOUT] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $($EventArgs.Data)")
-                }
-            }
-            $errAction = {
-                if ($EventArgs.Data -ne $null) {
-                    $Event.MessageData.WriteLine("[STDERR] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $($EventArgs.Data)")
-                }
-            }
-            $null = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action $outAction -MessageData $logWriter
-            $null = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action $errAction -MessageData $logWriter
-
-            $process.BeginOutputReadLine()
-            $process.BeginErrorReadLine()
-
-            # 存储 writer 引用以便后续清理（可选，进程退出时自动关闭）
-            $process | Add-Member -NotePropertyName '_LogWriter' -NotePropertyValue $logWriter -Force
-
             Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
             $started += [PSCustomObject]@{
                 PID = $process.Id
@@ -393,6 +368,9 @@ function Invoke-Stop {
         # 尝试优雅关闭：taskkill /PID /T 发送终止信号到进程树
         $taskkillResult = taskkill /PID $pid /T 2>&1
         $taskkillExit = $LASTEXITCODE
+        if ($taskkillExit -ne 0 -and $taskkillExit -ne 128) {
+            Write-Host " 警告: taskkill 返回退出码 ${taskkillExit}" -ForegroundColor DarkYellow
+        }
 
         # 等待最多 5 秒
         $waited = 0
@@ -418,13 +396,18 @@ function Invoke-Stop {
             Write-Host " 已停止" -ForegroundColor Green
             $stopped += $proc
         } else {
-            # 强制终止
-            try {
-                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-                Write-Host " 已强制终止" -ForegroundColor DarkYellow
-                $stopped += $proc
-            } catch {
-                Write-Host " 失败" -ForegroundColor Red
+            # 强制终止前验证 PID 未被复用
+            $target = Get-Process -Id $pid -ErrorAction SilentlyContinue
+            if ($target -and $target.ProcessName -eq "node") {
+                try {
+                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                    Write-Host " 已强制终止" -ForegroundColor DarkYellow
+                    $stopped += $proc
+                } catch {
+                    Write-Host " 强制终止失败" -ForegroundColor Red
+                }
+            } else {
+                Write-Host " 进程已不存在或 PID 已被复用" -ForegroundColor DarkYellow
             }
         }
     }
