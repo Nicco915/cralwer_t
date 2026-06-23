@@ -58,10 +58,10 @@ fi
 echo "Starting crawler service mode (logging to ${SMOKE_LOG_FILE})..."
 echo ""
 
-# Start service in background, tee to log file
+# Start service in background, redirect output to log file
 (
   cd "${PROJECT_DIR}"
-  node bin/run.js --mode service 2>&1
+  node bin/run.js --mode service > "${SMOKE_LOG_FILE}" 2>&1
 ) &
 SERVICE_PID=$!
 

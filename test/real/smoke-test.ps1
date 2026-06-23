@@ -110,7 +110,7 @@ $Cleanup = {
     if ($ServiceProcess -and -not $ServiceProcess.HasExited) {
         Write-Host ""
         Write-Host "Sending SIGTERM to crawler service (PID $($ServiceProcess.Id))..."
-        Stop-Process -Id $ServiceProcess.Id -Force -ErrorAction SilentlyContinue
+        Stop-Process -Id $ServiceProcess.Id -ErrorAction SilentlyContinue
     }
 }
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $Cleanup | Out-Null

@@ -46,7 +46,7 @@ npx playwright install chromium
 1. Loads environment variables from `.env`
 2. Validates required settings (`CRAWLER_NODE_CODE`, `CRAWLER_NODE_TOKEN`)
 3. Starts the crawler in service mode (`node bin/run.js --mode service`)
-4. Waits for service startup by monitoring logs for `[SERVICE] Starting crawler service...`
+4. Waits for service startup by monitoring logs for `Starting crawler service`
 5. Polls the log file every 2 seconds, counting:
    - `start task` → tasks started
    - `done task .* status success` → successful crawls
