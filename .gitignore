@@ -4,5 +4,6 @@ output/
 *.log
 .DS_Store
 .claude/
+.worktrees/
 *.xlsx
 !test/*.xlsx
