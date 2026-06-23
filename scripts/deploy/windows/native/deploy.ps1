@@ -295,46 +295,42 @@ function Invoke-Start {
 
         Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
 
-        # 保存原始值，避免污染当前进程环境变量
-        $oldNodeCode = [Environment]::GetEnvironmentVariable("CRAWLER_NODE_CODE")
-        try {
-            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $nodeCode, "Process")
+        # 使用 cmd.exe /c 在子进程内设置环境变量，避免污染父进程环境
+        # 同时强制 CRAWLER_CHANNELS=1，确保每个节点只使用单通道
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "cmd.exe"
+        $psi.Arguments = '/c "set CRAWLER_NODE_CODE=' + $nodeCode + ' && set CRAWLER_CHANNELS=1 && node bin/run.js --mode service > "' + $logFileOut + '" 2>"' + $logFileErr + '"'
+        $psi.WorkingDirectory = $ProjectDir
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
 
-            $process = Start-Process -FilePath "node" `
-                -ArgumentList "bin/run.js", "--mode", "service" `
-                -WorkingDirectory $ProjectDir `
-                -RedirectStandardOutput $logFileOut `
-                -RedirectStandardError $logFileErr `
-                -WindowStyle Hidden `
-                -PassThru
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $psi
+        $startedOk = $process.Start()
 
-            # 存活检查
-            $alive = $false
-            for ($j = 0; $j -lt 10; $j++) {
-                Start-Sleep -Milliseconds 300
-                $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-                if ($p) { $alive = $true; break }
+        # 存活检查
+        $alive = $false
+        for ($j = 0; $j -lt 10; $j++) {
+            Start-Sleep -Milliseconds 300
+            $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+            if ($p) { $alive = $true; break }
+        }
+
+        if (-not $alive) {
+            Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
+            if (Test-Path $logFileErr) {
+                Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
+                Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
             }
+            continue
+        }
 
-            if (-not $alive) {
-                Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
-                if (Test-Path $logFileErr) {
-                    Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
-                    Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-                }
-                continue
-            }
-
-            Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
-            $started += [PSCustomObject]@{
-                PID = $process.Id
-                NodeCode = $nodeCode
-                LogFile = $logFileOut
-                ErrLogFile = $logFileErr
-            }
-        } finally {
-            # 恢复环境变量，避免污染后续循环或会话
-            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $oldNodeCode, "Process")
+        Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
+        $started += [PSCustomObject]@{
+            PID = $process.Id
+            NodeCode = $nodeCode
+            LogFile = $logFileOut
+            ErrLogFile = $logFileErr
         }
     }
 
