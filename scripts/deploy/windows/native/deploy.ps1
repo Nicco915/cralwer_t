@@ -151,6 +151,9 @@ function Get-MatchingProcesses {
                 $envVars = $proc.EnvironmentVariables
                 if ($envVars -is [System.Collections.IDictionary]) {
                     $nodeCode = $envVars['CRAWLER_NODE_CODE']
+                } elseif ($envVars -is [array]) {
+                    $match = $envVars | Where-Object { $_ -match '^CRAWLER_NODE_CODE=(.*)$' } | Select-Object -First 1
+                    if ($match) { $nodeCode = $matches[1] }
                 } elseif ($envVars -is [string] -and $envVars -match 'CRAWLER_NODE_CODE=([^\s;]*)') {
                     $nodeCode = $matches[1]
                 }
@@ -258,7 +261,7 @@ function Invoke-Check {
     # 特别警告 CRAWLER_NODE_CODE
     if (-not $env:CRAWLER_NODE_CODE) {
         Write-Host ""
-        Write-Host "  提示: CRAWLER_NODE_CODE 未设置，将默认使用 `${NodePrefix}-${序号}` 作为节点代码。" -ForegroundColor DarkYellow
+        Write-Host "  提示: CRAWLER_NODE_CODE 未设置，将默认使用 ${NodePrefix}-${序号} 作为节点代码。" -ForegroundColor DarkYellow
     }
 
     Write-Host ""
@@ -316,7 +319,9 @@ function Invoke-Start {
         # 同时强制 CRAWLER_CHANNELS=1，确保每个节点只使用单通道
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "cmd.exe"
-        $psi.Arguments = '/c "set CRAWLER_NODE_CODE=' + $nodeCode + ' && set CRAWLER_CHANNELS=1 && node bin/run.js --mode service > "' + $logFileOut + '" 2>"' + $logFileErr + '"'
+        $safeOut = $logFileOut -replace '"', '\"'
+        $safeErr = $logFileErr -replace '"', '\"'
+        $psi.Arguments = '/c "set CRAWLER_NODE_CODE=' + $nodeCode + ' && set CRAWLER_CHANNELS=1 && node bin/run.js --mode service > "' + $safeOut + '" 2>"' + $safeErr + '"'
         $psi.WorkingDirectory = $ProjectDir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -330,12 +335,14 @@ function Invoke-Start {
         for ($j = 0; $j -lt 10; $j++) {
             Start-Sleep -Milliseconds 300
             $p = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-            if ($p) {
-                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue).CommandLine
-                if ($cmdLine -match 'bin/run\.js\s+--mode\s+service') {
-                    $alive = $true
-                    break
-                }
+            if (-not $p) { break }
+            $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+            if (-not $procInfo) { continue }
+            $cmdLine = $procInfo.CommandLine
+            if ([string]::IsNullOrWhiteSpace($cmdLine)) { continue }
+            if ($cmdLine -match 'bin/run\.js\s+--mode\s+service') {
+                $alive = $true
+                break
             }
         }
 
