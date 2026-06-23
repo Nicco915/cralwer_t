@@ -290,19 +290,21 @@ function Invoke-Start {
     $started = @()
     for ($i = 1; $i -le $NodeCount; $i++) {
         $nodeCode = Get-NodeCode -Index $i
-        $logFile = Join-Path $logDir "${nodeCode}.log"
+        $logFileOut = Join-Path $logDir "${nodeCode}.log"
+        $logFileErr = Join-Path $logDir "${nodeCode}.err.log"
 
         Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
 
-        # 设置当前进程环境变量，下一个 Start-Process 会继承
-        [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $nodeCode, "Process")
-
+        # 保存原始值，避免污染当前进程环境变量
+        $oldNodeCode = [Environment]::GetEnvironmentVariable("CRAWLER_NODE_CODE")
         try {
+            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $nodeCode, "Process")
+
             $process = Start-Process -FilePath "node" `
                 -ArgumentList "bin/run.js", "--mode", "service" `
                 -WorkingDirectory $ProjectDir `
-                -RedirectStandardOutput $logFile `
-                -RedirectStandardError $logFile `
+                -RedirectStandardOutput $logFileOut `
+                -RedirectStandardError $logFileErr `
                 -WindowStyle Hidden `
                 -PassThru
 
@@ -316,9 +318,9 @@ function Invoke-Start {
 
             if (-not $alive) {
                 Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
-                if (Test-Path $logFile) {
-                    Write-Host "  日志最后 10 行:" -ForegroundColor DarkGray
-                    Get-Content $logFile -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                if (Test-Path $logFileErr) {
+                    Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
+                    Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
                 }
                 continue
             }
@@ -327,18 +329,19 @@ function Invoke-Start {
             $started += [PSCustomObject]@{
                 PID = $process.Id
                 NodeCode = $nodeCode
-                LogFile = $logFile
+                LogFile = $logFileOut
+                ErrLogFile = $logFileErr
             }
         } finally {
             # 恢复环境变量，避免污染后续循环或会话
-            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $null, "Process")
+            [Environment]::SetEnvironmentVariable("CRAWLER_NODE_CODE", $oldNodeCode, "Process")
         }
     }
 
     Write-Host ""
     Write-Host "启动完成: 共 $($started.Count) 个节点" -ForegroundColor Green
     foreach ($s in $started) {
-        Write-Host "  PID=$($s.PID), NodeCode=$($s.NodeCode), Log=$($s.LogFile)"
+        Write-Host "  PID=$($s.PID), NodeCode=$($s.NodeCode), Log=$($s.LogFile), ErrLog=$($s.ErrLogFile)"
     }
     Write-Host ""
     Write-Host "提示: 可用 .\deploy.ps1 status 查看状态，.\deploy.ps1 logs 查看日志。" -ForegroundColor DarkGray
@@ -431,22 +434,25 @@ function Invoke-Logs {
         return
     }
 
-    # 查找匹配前缀的日志文件
+    # 查找匹配前缀的日志文件（stdout + stderr）
     $logFiles = Get-ChildItem -Path $logDir -Filter "${NodePrefix}-*.log" -ErrorAction SilentlyContinue
-    if ($logFiles.Count -eq 0) {
-        Write-Host "  未找到匹配 '${NodePrefix}-*.log' 的日志文件。" -ForegroundColor DarkGray
+    $errLogFiles = Get-ChildItem -Path $logDir -Filter "${NodePrefix}-*.err.log" -ErrorAction SilentlyContinue
+    $allLogFiles = @($logFiles) + @($errLogFiles) | Sort-Object Name
+
+    if ($allLogFiles.Count -eq 0) {
+        Write-Host "  未找到匹配 '${NodePrefix}-*.log' 或 '${NodePrefix}-*.err.log' 的日志文件。" -ForegroundColor DarkGray
         Write-Host ""
         return
     }
 
     Write-Host "日志文件路径:" -ForegroundColor Yellow
-    foreach ($file in $logFiles) {
+    foreach ($file in $allLogFiles) {
         Write-Host "  $($file.FullName) ($($file.Length) bytes)"
     }
 
     Write-Host ""
     Write-Host "最近 50 行日志摘要:" -ForegroundColor Yellow
-    foreach ($file in $logFiles) {
+    foreach ($file in $allLogFiles) {
         Write-Host ""
         Write-Host "--- $($file.Name) ---" -ForegroundColor Cyan
         $lines = Get-Content $file.FullName -Tail 50

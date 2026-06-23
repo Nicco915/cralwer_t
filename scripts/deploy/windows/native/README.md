@@ -8,7 +8,7 @@
 
 - **无需 Docker Desktop**：直接以 `node` 进程运行，资源占用更低。
 - **依赖本机 Node.js 环境**：需要提前安装 Node.js 和项目依赖。
-- **日志写入本地文件**：每个节点的 stdout/stderr 重定向到 `output/windows-native-logs/` 下的独立日志文件。
+- **日志写入本地文件**：每个节点的 stdout 重定向到 `output/windows-native-logs/` 下的 `${nodeCode}.log`，stderr 重定向到 `${nodeCode}.err.log`。两者分离，避免日志交错。
 
 ## 环境要求
 
