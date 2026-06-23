@@ -18,6 +18,8 @@ class CrawlerService {
     this.shuttingDown = false;
     this.shutdownResolve = null;
     this.shutdownPromise = null;
+    this.healthCheckTimer = null;
+    this.restartPromise = null;
   }
 
   log(...args) {
@@ -163,10 +165,6 @@ class CrawlerService {
   }
 
   async runHealthCheck() {
-    if (this.restartingBrowser) {
-      return;
-    }
-
     const browserHealthy = this.browser && this.browser.isConnected();
     if (!browserHealthy) {
       this.log('[SERVICE] Browser disconnected detected');
@@ -185,35 +183,42 @@ class CrawlerService {
   }
 
   async restartBrowser() {
-    if (this.restartingBrowser) {
-      return;
+    if (this.restartPromise) {
+      return this.restartPromise;
     }
-    this.restartingBrowser = true;
-    this.log('[SERVICE] Browser unhealthy, restarting...');
+
+    this.restartPromise = (async () => {
+      this.log('[SERVICE] Browser unhealthy, restarting...');
+
+      try {
+        this.worker.stop();
+
+        for (const channel of this.channels) {
+          await channel.close();
+        }
+        this.channels = [];
+        this.worker.resetChannels();
+
+        if (this.browser && this.browser.isConnected()) {
+          await this.browser.close();
+        }
+        this.browser = null;
+
+        await this.initBrowser();
+        await this.initChannels();
+
+        this.worker.start();
+        this.log('[SERVICE] Browser restarted');
+      } catch (err) {
+        this.log('[SERVICE] Browser restart failed:', err.message);
+        throw err;
+      }
+    })();
 
     try {
-      this.worker.stop();
-
-      for (const channel of this.channels) {
-        await channel.close();
-      }
-      this.channels = [];
-      this.worker.resetChannels();
-
-      if (this.browser && this.browser.isConnected()) {
-        await this.browser.close();
-      }
-      this.browser = null;
-
-      await this.initBrowser();
-      await this.initChannels();
-
-      this.worker.start();
-      this.log('[SERVICE] Browser restarted');
-    } catch (err) {
-      this.log('[SERVICE] Browser restart failed:', err.message);
+      await this.restartPromise;
     } finally {
-      this.restartingBrowser = false;
+      this.restartPromise = null;
     }
   }
 
