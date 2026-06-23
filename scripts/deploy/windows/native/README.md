@@ -101,4 +101,5 @@ CRAWLER_NODE_PREFIX=win-native-crawler
 - **每个节点是独立进程**：`CRAWLER_CHANNELS=1`，每个节点只运行单通道，便于横向扩展。
 - **日志目录**：`output/windows-native-logs/` 会在首次 `start` 时自动创建。
 - **节点代码覆盖**：可通过环境变量 `CRAWLER_NODE_CODE` 全局覆盖，或通过 `CRAWLER_NODE_CODE_1`、`CRAWLER_NODE_CODE_2` 等单独为每个节点设置。
-- **进程识别**：`stop` 和 `status` 通过查找命令行包含 `bin/run.js --mode service` 的 `node.exe` 进程，并匹配 `CRAWLER_NODE_CODE` 前缀来定位目标进程。
+- **进程识别**：`stop` 和 `status` 优先读取 PID 文件 `.pids.json` 定位进程，若文件不存在或失效，则回退到扫描命令行包含 `bin/run.js --mode service` 的 `node.exe` 进程，并匹配 `CRAWLER_NODE_CODE` 前缀来定位目标进程。
+- **停止副作用**：`stop` 命令使用 `taskkill /T`，会终止整个进程树，包括爬虫节点启动的浏览器子进程（如 Chromium）。

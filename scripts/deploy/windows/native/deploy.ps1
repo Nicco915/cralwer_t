@@ -1,3 +1,5 @@
+#Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Windows 原生部署脚本 —— VEVOR SKU 爬虫节点管理（无 Docker）
@@ -33,8 +35,8 @@ if (Test-Path $EnvFile) {
         if ($line -match '^(\w+)\s*=\s*(.*)$') {
             $key = $matches[1]
             $val = $matches[2].Trim()
-            # 去除可能的引号
-            $val = $val -replace '^["\']|["\']$'
+            # 去除可能的引号（只去除首尾成对的单引号或双引号）
+            if ($val -match '^["\''](.*)["\'']$') { $val = $matches[1] }
             if (-not [Environment]::GetEnvironmentVariable($key)) {
                 [Environment]::SetEnvironmentVariable($key, $val, "Process")
             }
@@ -118,36 +120,51 @@ function Get-NodeCode {
 }
 
 function Get-MatchingProcesses {
-    # 查找命令行包含 bin/run.js --mode service 且 CRAWLER_NODE_CODE 匹配前缀的 node 进程
-    $processes = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {
-        $_.CommandLine -match 'bin/run\.js\s+--mode\s+service'
-    }
     $matched = @()
-    foreach ($proc in $processes) {
-        # 尝试从环境变量块提取 CRAWLER_NODE_CODE
-        $nodeCode = $null
-        if ($proc.EnvironmentVariables) {
-            $envVars = $proc.EnvironmentVariables
-            if ($envVars -is [System.Collections.IDictionary]) {
-                $nodeCode = $envVars['CRAWLER_NODE_CODE']
-            } elseif ($envVars -is [string]) {
-                # 某些系统返回字符串形式，尝试正则提取
-                if ($envVars -match 'CRAWLER_NODE_CODE=([^\s;]*)') {
+    $pidFile = Join-Path $ProjectDir "output" "windows-native-logs" ".pids.json"
+    $recorded = @{}
+    if (Test-Path $pidFile) {
+        $json = Get-Content $pidFile -Raw
+        ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $recorded[$_.Name] = $_.Value }
+    }
+
+    foreach ($nodeCode in $recorded.Keys) {
+        $pid = $recorded[$nodeCode]
+        $procInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue
+        if ($procInfo -and $procInfo.Name -eq 'node.exe' -and $procInfo.CommandLine -match 'bin/run\.js\s+--mode\s+service') {
+            $matched += [PSCustomObject]@{
+                PID = $pid
+                NodeCode = $nodeCode
+                CommandLine = $procInfo.CommandLine
+            }
+        }
+    }
+
+    # Fallback: scan all node.exe processes if PID file missing or empty
+    if ($matched.Count -eq 0) {
+        $processes = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {
+            $_.CommandLine -match 'bin/run\.js\s+--mode\s+service'
+        }
+        foreach ($proc in $processes) {
+            $nodeCode = $null
+            if ($proc.EnvironmentVariables) {
+                $envVars = $proc.EnvironmentVariables
+                if ($envVars -is [System.Collections.IDictionary]) {
+                    $nodeCode = $envVars['CRAWLER_NODE_CODE']
+                } elseif ($envVars -is [string] -and $envVars -match 'CRAWLER_NODE_CODE=([^\s;]*)') {
                     $nodeCode = $matches[1]
                 }
             }
-        }
-        # 备选：如果环境变量不可读，则跳过该进程
-        if (-not $nodeCode) { continue }
-        # 过滤：只保留匹配 ${NodePrefix}-* 的
-        if ($nodeCode -and $nodeCode -match "^${NodePrefix}-") {
-            $matched += [PSCustomObject]@{
-                PID = $proc.ProcessId
-                NodeCode = $nodeCode
-                CommandLine = $proc.CommandLine
+            if ($nodeCode -and $nodeCode -match "^$([regex]::Escape($NodePrefix))-") {
+                $matched += [PSCustomObject]@{
+                    PID = $proc.ProcessId
+                    NodeCode = $nodeCode
+                    CommandLine = $proc.CommandLine
+                }
             }
         }
     }
+
     return $matched
 }
 
@@ -318,6 +335,7 @@ function Invoke-Start {
 
         if (-not $alive) {
             Write-Host " 失败 (进程启动后立即退出)" -ForegroundColor Red
+            $process.Dispose()
             if (Test-Path $logFileErr) {
                 Write-Host "  错误日志最后 10 行:" -ForegroundColor DarkGray
                 Get-Content $logFileErr -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
@@ -326,6 +344,17 @@ function Invoke-Start {
         }
 
         Write-Host " 成功 (PID=$($process.Id))" -ForegroundColor Green
+
+        # 记录 PID 到文件，用于可靠进程跟踪
+        $pidFile = Join-Path $logDir ".pids.json"
+        $pidsData = @{}
+        if (Test-Path $pidFile) {
+            $json = Get-Content $pidFile -Raw
+            ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+        }
+        $pidsData[$nodeCode] = $process.Id
+        $pidsData | ConvertTo-Json | Set-Content $pidFile
+
         $started += [PSCustomObject]@{
             PID = $process.Id
             NodeCode = $nodeCode
@@ -415,6 +444,22 @@ function Invoke-Stop {
     Write-Host ""
     Write-Host "停止完成: 共 $($stopped.Count) 个进程已停止" -ForegroundColor Green
     Write-Host ""
+
+    # 清理 PID 文件
+    $pidFile = Join-Path $ProjectDir "output" "windows-native-logs" ".pids.json"
+    if (Test-Path $pidFile) {
+        $pidsData = @{}
+        $json = Get-Content $pidFile -Raw
+        ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+        foreach ($proc in $stopped) {
+            $pidsData.Remove($proc.NodeCode)
+        }
+        if ($pidsData.Count -eq 0) {
+            Remove-Item $pidFile
+        } else {
+            $pidsData | ConvertTo-Json | Set-Content $pidFile
+        }
+    }
 }
 
 # ── logs ───────────────────────────────────────────────────────────
