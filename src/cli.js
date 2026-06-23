@@ -48,6 +48,7 @@ const FLAG_MAP = {
   'poll-interval': 'pollInterval',
   'poll-limit': 'pollLimit',
   'push-retries': 'pushRetries',
+  proxy: 'proxy',
 };
 
 const BOOLEAN_FLAGS = new Set([
@@ -139,6 +140,7 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_POLL_INTERVAL: 'pollInterval',
     CRAWLER_POLL_LIMIT: 'pollLimit',
     CRAWLER_PUSH_RETRIES: 'pushRetries',
+    CRAWLER_PROXY: 'proxy',
   };
 
   for (const [envKey, configKey] of Object.entries(envMap)) {

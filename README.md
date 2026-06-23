@@ -61,7 +61,7 @@ In service mode the crawler does **not** read an Excel file. Instead it:
 **Pull tasks**
 
 ```http
-GET /renren-api/classify/open/crawler/tasks?nodeCode=crawler-01&nodeToken=&limit=10
+POST /renren-api/classify/open/crawler/tasks?nodeCode=crawler-01&nodeToken=&limit=10
 ```
 
 Expected response:
@@ -182,6 +182,38 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 
 Secrets:
 - `DASHSCOPE_API_KEY` — required only if translation is enabled.
+
+## Testing
+
+### Unit and integration tests
+
+```bash
+npm test
+```
+
+Covers Poller, Pusher, proxy configuration, stub server, and the service integration test.
+
+### Load test
+
+```bash
+npm run test:load
+```
+
+Runs a single service node with 4 concurrent channels against a local stub server and verifies all tasks are processed without duplicates.
+
+### Multi-machine deployment test (local)
+
+Requires Docker.
+
+```bash
+npm run test:deployment:local
+```
+
+Starts 3 crawler nodes via Docker Compose, each with 1 channel, and verifies task distribution and deduplication.
+
+### Multi-machine deployment test (real machines)
+
+See [`test/deployment/README.md`](test/deployment/README.md) for instructions on running nodes across multiple real machines.
 
 ## Output
 

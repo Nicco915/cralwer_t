@@ -11,16 +11,16 @@ class Poller {
   }
 
   async fetchTasks() {
-    const url = new URL(this.taskUrl);
-    url.searchParams.set('nodeCode', this.nodeCode);
-    url.searchParams.set('nodeToken', this.nodeToken);
-    url.searchParams.set('limit', String(this.limit));
-
-    const response = await this.fetch(url.toString(), {
-      method: 'GET',
+    const response = await this.fetch(this.taskUrl, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        nodeCode: this.nodeCode,
+        nodeToken: this.nodeToken,
+        limit: this.limit,
+      }),
     });
 
     if (!response.ok) {

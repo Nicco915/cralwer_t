@@ -44,12 +44,18 @@ class Channel {
     const locale = this.config.locale || 'en-GB';
     const timezone = this.config.timezone || 'Europe/London';
 
-    this.browserContext = await browser.newContext({
+    const contextOptions = {
       userAgent,
       viewport,
       locale,
       timezoneId: timezone,
-    });
+    };
+
+    if (this.config.proxy) {
+      contextOptions.proxy = { server: this.config.proxy };
+    }
+
+    this.browserContext = await browser.newContext(contextOptions);
     await this.browserContext.addInitScript(this.getStealthScript());
     this.page = await this.browserContext.newPage();
     this.log(`[Channel ${this.id}] initialized`);

@@ -71,6 +71,7 @@ class CrawlerService {
           cloudflareMaxWait: this.config.cloudflareMaxWait,
           minDelay: this.config.minDelay,
           maxDelay: this.config.maxDelay,
+          proxy: this.config.proxy,
         },
         log: this.log.bind(this),
       });

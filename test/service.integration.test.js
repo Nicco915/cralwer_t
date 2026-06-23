@@ -10,7 +10,7 @@ function startMockUpstream({ tasks = [], onCallback }) {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
-      if (req.url.startsWith('/tasks') && req.method === 'GET') {
+      if (req.url.startsWith('/tasks') && req.method === 'POST') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         if (!returnedTasks) {
           returnedTasks = true;

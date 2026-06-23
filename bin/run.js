@@ -5,12 +5,8 @@ const { loadEnvFile, parse } = require('../src/cli');
 const { run } = require('../src/crawler');
 const { runService } = require('../src/service');
 
-loadEnvFile(process.cwd());
-
-const config = parse(process.argv.slice(2));
-
-if (config.mode === 'service') {
-  const serviceConfig = {
+function buildServiceConfig(config) {
+  return {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
     imageDir: config.imageDir || path.resolve('./output/images'),
     userAgent: config.userAgent,
@@ -31,15 +27,32 @@ if (config.mode === 'service') {
     pollInterval: config.pollInterval !== undefined ? Number(config.pollInterval) : 5000,
     pollLimit: config.pollLimit !== undefined ? Number(config.pollLimit) : 10,
     pushRetries: config.pushRetries !== undefined ? Number(config.pushRetries) : 3,
+    proxy: config.proxy,
   };
-
-  runService(serviceConfig).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-} else {
-  run(config).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
 }
+
+function main() {
+  loadEnvFile(process.cwd());
+
+  const config = parse(process.argv.slice(2));
+
+  if (config.mode === 'service') {
+    const serviceConfig = buildServiceConfig(config);
+
+    runService(serviceConfig).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else {
+    run(config).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  }
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = { buildServiceConfig };

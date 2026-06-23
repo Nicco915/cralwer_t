@@ -31,13 +31,13 @@ describe('Poller.fetchTasks', () => {
     const tasks = await poller.fetchTasks();
 
     assert.strictEqual(fetched.length, 1);
-    assert.ok(fetched[0].url.startsWith('http://example.com/tasks'));
-    const urlObj = new URL(fetched[0].url);
-    assert.strictEqual(urlObj.searchParams.get('nodeCode'), 'node-1');
-    assert.strictEqual(urlObj.searchParams.get('nodeToken'), 'token-1');
-    assert.strictEqual(urlObj.searchParams.get('limit'), '5');
-    assert.strictEqual(fetched[0].options.method, 'GET');
-    assert.strictEqual(fetched[0].options.body, undefined);
+    assert.strictEqual(fetched[0].url, 'http://example.com/tasks');
+    assert.strictEqual(fetched[0].options.method, 'POST');
+    assert.strictEqual(fetched[0].options.headers['Content-Type'], 'application/json');
+    const body = JSON.parse(fetched[0].options.body);
+    assert.strictEqual(body.nodeCode, 'node-1');
+    assert.strictEqual(body.nodeToken, 'token-1');
+    assert.strictEqual(body.limit, 5);
     assert.strictEqual(tasks.length, 2);
     assert.strictEqual(tasks[0].crawlerTaskId, 1);
     assert.strictEqual(tasks[0].sku, 'ABC-001');
