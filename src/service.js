@@ -192,6 +192,7 @@ class CrawlerService {
 
       try {
         this.worker.stop();
+        await this.worker.drain();
 
         for (const channel of this.channels) {
           await channel.close();

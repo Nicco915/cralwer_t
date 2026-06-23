@@ -81,11 +81,20 @@ class Channel {
   }
 
   async isHealthy() {
+    if (this.busy) {
+      return true;
+    }
     if (!this.page || !this.browserContext) {
       return false;
     }
     try {
-      if (!this.browserContext.browser().isConnected() || this.page.isClosed()) {
+      let browser;
+      try {
+        browser = this.browserContext.browser();
+      } catch (e) {
+        return false;
+      }
+      if (!browser.isConnected() || this.page.isClosed()) {
         return false;
       }
       // Verify the page context is actually usable by executing a trivial script
