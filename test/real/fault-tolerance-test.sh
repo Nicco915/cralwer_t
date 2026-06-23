@@ -20,6 +20,7 @@ fi
 FAULT_TIMEOUT_SECONDS="${FAULT_TIMEOUT_SECONDS:-600}"
 FAULT_MIN_SUCCESS="${FAULT_MIN_SUCCESS:-5}"
 FAULT_BLOCK_DURATION="${FAULT_BLOCK_DURATION:-30}"
+FAULT_PREBLOCK_WAIT_SECONDS="${FAULT_PREBLOCK_WAIT_SECONDS:-90}"
 FAULT_CALLBACK_STUB_PORT="${FAULT_CALLBACK_STUB_PORT:-19000}"
 FAULT_LOG_FILE="${FAULT_LOG_FILE:-${PROJECT_DIR}/test/real/fault-tolerance-test.log}"
 
@@ -31,6 +32,7 @@ PATTERN_DONE_NOT_FOUND='done task .* status not_found'
 SERVICE_PID=0
 STUB_PID=0
 PASS=true
+TASK_API_BLOCKED=false
 
 # Ensure log directory exists
 mkdir -p "$(dirname "${FAULT_LOG_FILE}")"
@@ -91,8 +93,38 @@ resolve_task_api_ip() {
   fi
 }
 
+check_upstream_tasks() {
+  log_info "Checking upstream task API for available tasks..."
+  local start_time
+  start_time=$(date +%s)
+  while true; do
+    local response
+    response=$(curl -s -X POST "$CRAWLER_TASK_URL" \
+      -H 'Content-Type: application/json' \
+      -d "{\"nodeCode\":\"$CRAWLER_NODE_CODE\",\"nodeToken\":\"$CRAWLER_NODE_TOKEN\",\"limit\":1}" \
+      --max-time 10 2>/dev/null || true)
+    if [ -n "$response" ]; then
+      local task_count
+      task_count=$(echo "$response" | sed -n 's/.*"data":\[\([^]]*\)\].*/\1/p' | tr ',' '\n' | grep -c '{' || true)
+      if [ "${task_count:-0}" -gt 0 ]; then
+        log_info "Upstream has tasks available."
+        return 0
+      fi
+    fi
+
+    if [ "$(($(date +%s) - start_time))" -ge "$FAULT_PREBLOCK_WAIT_SECONDS" ]; then
+      log_error "Upstream task API returned no tasks within ${FAULT_PREBLOCK_WAIT_SECONDS}s. Cannot run fault tolerance test."
+      exit 1
+    fi
+
+    log_info "No tasks available yet, retrying in 5s..."
+    sleep 5
+  done
+}
+
 block_task_api() {
   log_info "Blocking task API IP ${TASK_API_IP} for ${FAULT_BLOCK_DURATION}s..."
+  TASK_API_BLOCKED=true
   if [ "$PLATFORM" = "Darwin" ]; then
     sudo route add -host "$TASK_API_IP" -interface lo0 || true
   else
@@ -103,11 +135,15 @@ block_task_api() {
 }
 
 unblock_task_api() {
+  if [ "$TASK_API_BLOCKED" != "true" ]; then
+    return 0
+  fi
+  TASK_API_BLOCKED=false
   log_info "Unblocking task API IP ${TASK_API_IP}..."
   if [ "$PLATFORM" = "Darwin" ]; then
-    sudo route delete -host "$TASK_API_IP" -interface lo0 || true
+    sudo route delete -host "$TASK_API_IP" -interface lo0 2>/dev/null || true
   else
-    sudo ip route del blackhole "${TASK_API_IP}/32" || true
+    sudo ip route del blackhole "${TASK_API_IP}/32" 2>/dev/null || true
   fi
 }
 
@@ -331,8 +367,8 @@ scene_1_block_task_api() {
   log_info "[SCENE 1] Block task API for ${FAULT_BLOCK_DURATION}s"
 
   # Ensure at least one task has started before blocking
-  if ! wait_for_log "$PATTERN_START_TASK" 60; then
-    fail "No tasks started before blocking task API."
+  if ! wait_for_log "$PATTERN_START_TASK" "$FAULT_PREBLOCK_WAIT_SECONDS"; then
+    fail "No tasks started before blocking task API (waited ${FAULT_PREBLOCK_WAIT_SECONDS}s)."
     return 1
   fi
 
@@ -503,6 +539,7 @@ echo ""
 
 validate_env
 resolve_task_api_ip "$CRAWLER_TASK_URL"
+check_upstream_tasks
 
 START_TIME=$(date +%s)
 DEADLINE=$((START_TIME + FAULT_TIMEOUT_SECONDS))
