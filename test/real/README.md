@@ -41,6 +41,8 @@ npx playwright install chromium
 .\test\real\smoke-test.ps1
 ```
 
+If script execution is disabled, run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` first.
+
 ## How It Works
 
 1. Loads environment variables from `.env`

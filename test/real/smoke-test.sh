@@ -57,8 +57,12 @@ if [ ! -d "${PROJECT_DIR}/node_modules" ]; then
 fi
 
 # Check Playwright browsers
-if ! npx playwright install chromium 2>/dev/null; then
-  echo "WARNING: Playwright browser installation may have failed. Continuing..."
+if command -v npx >/dev/null 2>&1; then
+  if ! npx playwright install chromium 2>/dev/null; then
+    echo "WARNING: Playwright browser installation may have failed. Continuing..."
+  fi
+else
+  echo "WARNING: npx not found. Skipping Playwright browser check."
 fi
 
 echo "Starting crawler service mode (logging to ${SMOKE_LOG_FILE})..."
@@ -77,6 +81,14 @@ cleanup() {
     echo ""
     echo "Sending SIGTERM to crawler service (PID ${SERVICE_PID})..."
     kill -TERM "$SERVICE_PID" 2>/dev/null || true
+    local waited=0
+    while kill -0 "$SERVICE_PID" 2>/dev/null && [ "$waited" -lt 5 ]; do
+      sleep 0.5
+      waited=$((waited + 1))
+    done
+    if kill -0 "$SERVICE_PID" 2>/dev/null; then
+      kill -KILL "$SERVICE_PID" 2>/dev/null || true
+    fi
     wait "$SERVICE_PID" 2>/dev/null || true
   fi
 }

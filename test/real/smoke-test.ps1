@@ -115,8 +115,8 @@ $Cleanup = {
         Write-Host ""
         Write-Host "Stopping crawler service (PID $($ServiceProcess.Id))..."
 
-        # Graceful attempt
-        $null = & taskkill /PID $ServiceProcess.Id 2>&1
+        # Graceful attempt (terminate process tree)
+        $null = & taskkill /PID $ServiceProcess.Id /T 2>&1
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         while (-not $ServiceProcess.HasExited -and $sw.Elapsed.TotalSeconds -lt 5) {
             Start-Sleep -Milliseconds 200
