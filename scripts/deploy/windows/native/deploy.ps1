@@ -124,8 +124,14 @@ function Get-MatchingProcesses {
     $pidFile = Join-Path $ProjectDir "output" "windows-native-logs" ".pids.json"
     $recorded = @{}
     if (Test-Path $pidFile) {
-        $json = Get-Content $pidFile -Raw
-        ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $recorded[$_.Name] = $_.Value }
+        try {
+            $json = Get-Content $pidFile -Raw
+            $data = $json | ConvertFrom-Json
+            $data.PSObject.Properties | ForEach-Object { $recorded[$_.Name] = $_.Value }
+        } catch {
+            Write-Host "  警告: PID 文件损坏，将回退到进程扫描: $_" -ForegroundColor DarkYellow
+            $recorded = @{}
+        }
     }
 
     foreach ($nodeCode in $recorded.Keys) {
@@ -310,8 +316,21 @@ function Invoke-Start {
     $started = @()
     for ($i = 1; $i -le $NodeCount; $i++) {
         $nodeCode = Get-NodeCode -Index $i
+
+        # 节点代码白名单验证，防止命令注入
+        if ($nodeCode -notmatch '^[A-Za-z0-9_-]+$') {
+            Write-Host " 错误: 节点代码只能包含字母、数字、连字符和下划线: ${nodeCode}" -ForegroundColor Red
+            continue
+        }
+
         $logFileOut = Join-Path $logDir "${nodeCode}.log"
         $logFileErr = Join-Path $logDir "${nodeCode}.err.log"
+
+        # 日志路径 cmd 特殊字符验证
+        if ($logFileOut -match '[&|<>^%"]' -or $logFileErr -match '[&|<>^%"]') {
+            Write-Host " 错误: 日志路径包含 cmd 特殊字符: ${logFileOut}" -ForegroundColor Red
+            continue
+        }
 
         Write-Host "  启动节点 ${i}/${NodeCount}: ${nodeCode} ..." -NoNewline
 
@@ -362,8 +381,14 @@ function Invoke-Start {
         $pidFile = Join-Path $logDir ".pids.json"
         $pidsData = @{}
         if (Test-Path $pidFile) {
-            $json = Get-Content $pidFile -Raw
-            ($json | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+            try {
+                $json = Get-Content $pidFile -Raw
+                $data = $json | ConvertFrom-Json
+                $data.PSObject.Properties | ForEach-Object { $pidsData[$_.Name] = $_.Value }
+            } catch {
+                Write-Host "  警告: PID 文件解析失败，将重新创建: $_" -ForegroundColor DarkYellow
+                $pidsData = @{}
+            }
         }
         $pidsData[$nodeCode] = $process.Id
         try {
