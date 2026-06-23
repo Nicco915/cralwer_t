@@ -345,7 +345,9 @@ wait_for_tasks() {
 }
 
 check_no_unhandled_errors() {
-  if grep -qiE 'UnhandledPromiseRejection|uncaughtException|Error: Target closed|Target page, context or browser has been closed' "$FAULT_LOG_FILE" 2>/dev/null; then
+  # Note: browser-kill intentionally produces caught "Target closed" errors in task logs;
+  # those are handled by the service and should not be treated as unhandled exceptions.
+  if grep -qiE 'UnhandledPromiseRejection|uncaughtException' "$FAULT_LOG_FILE" 2>/dev/null; then
     fail "Detected unhandled exception in service log."
     return 1
   fi

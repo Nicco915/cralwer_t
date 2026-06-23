@@ -36,7 +36,14 @@ class Poller {
       throw new Error(`Fetch tasks returned invalid JSON: ${e.message}. Body: ${text}`);
     }
 
-    return Array.isArray(data.data) ? data.data : [];
+    return (Array.isArray(data.data) ? data.data : []).map((task) => {
+      // The real upstream API uses `id` as the task identifier.
+      // Normalize it to `crawlerTaskId` for downstream consumers.
+      if (task && task.crawlerTaskId === undefined && task.id !== undefined) {
+        return { ...task, crawlerTaskId: task.id };
+      }
+      return task;
+    });
   }
 
   start(onTasks) {
