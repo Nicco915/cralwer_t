@@ -78,7 +78,7 @@ if (-not $env:CRAWLER_NODE_CODE) {
     exit 1
 }
 
-if (-not $env:CRAWLER_NODE_TOKEN) {
+if (-not [Environment]::GetEnvironmentVariables().ContainsKey('CRAWLER_NODE_TOKEN')) {
     Write-Host "ERROR: CRAWLER_NODE_TOKEN is not set. Copy test/real/.env.example to .env and configure." -ForegroundColor Red
     exit 1
 }

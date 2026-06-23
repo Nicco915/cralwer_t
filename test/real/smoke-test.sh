@@ -45,7 +45,7 @@ if [ -z "${CRAWLER_NODE_CODE:-}" ]; then
   exit 1
 fi
 
-if [ -z "${CRAWLER_NODE_TOKEN:-}" ]; then
+if [ -z "${CRAWLER_NODE_TOKEN+set}" ]; then
   echo "ERROR: CRAWLER_NODE_TOKEN is not set. Copy test/real/.env.example to .env and configure."
   exit 1
 fi
