@@ -68,7 +68,7 @@ npx playwright install chromium
 | `CRAWLER_CALLBACK_URL` | `http://117.72.52.0/renren-api/classify/open/crawler/callback` | Result push endpoint |
 | `SMOKE_TIMEOUT_SECONDS` | `300` | Max seconds to wait for tasks |
 | `SMOKE_MIN_SUCCESS` | `1` | Minimum successful crawls to pass |
-| `SMOKE_LOG_FILE` | `./test/real/smoke-test.log` | Log file path |
+| `SMOKE_LOG_FILE` | 项目根目录下的 `test/real/smoke-test.log` | Log file path |
 
 ## Expected Output
 

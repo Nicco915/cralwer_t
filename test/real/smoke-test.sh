@@ -115,10 +115,10 @@ while true; do
   fi
 
   # Count from log file
-  STARTED=$(grep -c "start task" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-  SUCCESS=$(grep -c "done task .* status success" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-  ERROR=$(grep -c "done task .* status error" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-  NOT_FOUND=$(grep -c "done task .* status not_found" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
+  STARTED=$(grep -c "start task" "$SMOKE_LOG_FILE" 2>/dev/null) || STARTED=0
+  SUCCESS=$(grep -c "done task .* status success" "$SMOKE_LOG_FILE" 2>/dev/null) || SUCCESS=0
+  ERROR=$(grep -c "done task .* status error" "$SMOKE_LOG_FILE" 2>/dev/null) || ERROR=0
+  NOT_FOUND=$(grep -c "done task .* status not_found" "$SMOKE_LOG_FILE" 2>/dev/null) || NOT_FOUND=0
   COMPLETED=$((SUCCESS + ERROR + NOT_FOUND))
 
   ELAPSED=$(( $(date +%s) - START_TIME ))
@@ -148,10 +148,10 @@ echo "  Smoke Test Summary"
 echo "========================================"
 
 # Final counts from log
-STARTED=$(grep -c "start task" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-SUCCESS=$(grep -c "done task .* status success" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-ERROR=$(grep -c "done task .* status error" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
-NOT_FOUND=$(grep -c "done task .* status not_found" "$SMOKE_LOG_FILE" 2>/dev/null || echo 0)
+STARTED=$(grep -c "start task" "$SMOKE_LOG_FILE" 2>/dev/null) || STARTED=0
+SUCCESS=$(grep -c "done task .* status success" "$SMOKE_LOG_FILE" 2>/dev/null) || SUCCESS=0
+ERROR=$(grep -c "done task .* status error" "$SMOKE_LOG_FILE" 2>/dev/null) || ERROR=0
+NOT_FOUND=$(grep -c "done task .* status not_found" "$SMOKE_LOG_FILE" 2>/dev/null) || NOT_FOUND=0
 COMPLETED=$((SUCCESS + ERROR + NOT_FOUND))
 
 # Check for service shutdown

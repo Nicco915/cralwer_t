@@ -97,11 +97,9 @@ Write-Host "Starting crawler service mode (logging to $SmokeLogFile)..."
 Write-Host ""
 
 # Start service in background, redirect output to log file
-$ServiceProcess = Start-Process -FilePath "node" `
-    -ArgumentList "bin/run.js", "--mode", "service" `
+$ServiceProcess = Start-Process -FilePath "cmd" `
+    -ArgumentList "/c", "node bin/run.js --mode service > `"$SmokeLogFile`" 2>&1" `
     -WorkingDirectory $ProjectDir `
-    -RedirectStandardOutput $SmokeLogFile `
-    -RedirectStandardError $SmokeLogFile `
     -WindowStyle Hidden `
     -PassThru
 
