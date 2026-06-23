@@ -61,7 +61,14 @@ In service mode the crawler does **not** read an Excel file. Instead it:
 **Pull tasks**
 
 ```http
-POST /renren-api/classify/open/crawler/tasks?nodeCode=crawler-01&nodeToken=&limit=10
+POST /renren-api/classify/open/crawler/tasks
+Content-Type: application/json
+
+{
+  "nodeCode": "crawler-01",
+  "nodeToken": "",
+  "limit": 10
+}
 ```
 
 Expected response:
@@ -120,6 +127,50 @@ CRAWLER_NODE_CODE=crawler-01 npm run service
 # Machine 2
 CRAWLER_NODE_CODE=crawler-02 npm run service
 ```
+
+### Windows deployment
+
+For Windows hosts we provide two deployment options. Both run each node with `CRAWLER_CHANNELS=1`; scale horizontally by increasing the node count.
+
+**Option 1: Docker Desktop (`scripts/deploy/windows/docker/`)**
+
+Requires Docker Desktop with WSL 2 backend.
+
+```powershell
+cd scripts\deploy\windows\docker
+copy .env.example .env
+# Edit .env with real API endpoints and token
+.\deploy.ps1 check
+.\deploy.ps1 start
+.\deploy.ps1 status
+.\deploy.ps1 logs
+.\deploy.ps1 stop
+```
+
+See [`scripts/deploy/windows/docker/README.md`](scripts/deploy/windows/docker/README.md) for details.
+
+**Option 2: Native PowerShell (`scripts/deploy/windows/native/`)**
+
+No Docker required. Requires Node.js >= 20, npm, and project dependencies installed locally.
+
+```powershell
+cd scripts\deploy\windows\native
+Copy-Item .env.example .env
+# Edit .env with real API endpoints and token
+.\deploy.ps1 check
+.\deploy.ps1 start
+.\deploy.ps1 status
+.\deploy.ps1 logs
+.\deploy.ps1 stop
+```
+
+If PowerShell refuses to run the script, set the execution policy first:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+See [`scripts/deploy/windows/native/README.md`](scripts/deploy/windows/native/README.md) for details.
 
 ## Use as a Node.js Module
 
@@ -214,6 +265,30 @@ Starts 3 crawler nodes via Docker Compose, each with 1 channel, and verifies tas
 ### Multi-machine deployment test (real machines)
 
 See [`test/deployment/README.md`](test/deployment/README.md) for instructions on running nodes across multiple real machines.
+
+### Real API smoke test
+
+A manual smoke test that runs a single service node against the **real** upstream task API and the real VEVOR site. This is not part of `npm test` because it requires live credentials and produces real network traffic.
+
+Setup:
+
+```bash
+cd test/real
+cp .env.example .env
+# Edit .env with real CRAWLER_TASK_URL, CRAWLER_CALLBACK_URL, and CRAWLER_NODE_TOKEN
+```
+
+Run:
+
+```bash
+# Linux / macOS
+bash test/real/smoke-test.sh
+
+# Windows PowerShell (requires execution policy: RemoteSigned or Unrestricted)
+.\test\real\smoke-test.ps1
+```
+
+The script starts one service node, waits for it to process at least `SMOKE_MIN_SUCCESS` tasks, then gracefully shuts it down and prints a PASS/FAIL summary. See [`test/real/README.md`](test/real/README.md) for full configuration options.
 
 ## Output
 
