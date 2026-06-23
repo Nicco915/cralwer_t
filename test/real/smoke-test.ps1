@@ -51,6 +51,12 @@ $SmokeTimeoutSeconds = if ($env:SMOKE_TIMEOUT_SECONDS) { [int]$env:SMOKE_TIMEOUT
 $SmokeMinSuccess = if ($env:SMOKE_MIN_SUCCESS) { [int]$env:SMOKE_MIN_SUCCESS } else { 1 }
 $SmokeLogFile = if ($env:SMOKE_LOG_FILE) { $env:SMOKE_LOG_FILE } else { Join-Path $ProjectDir "test\real\smoke-test.log" }
 
+# Pattern variables for log parsing
+$PatternStartTask = 'start task'
+$PatternDoneSuccess = 'done task .* status success'
+$PatternDoneError = 'done task .* status error'
+$PatternDoneNotFound = 'done task .* status not_found'
+
 # Ensure log directory exists
 $LogDir = Split-Path -Parent $SmokeLogFile
 if (-not (Test-Path $LogDir)) {
@@ -107,78 +113,94 @@ $ServiceProcess = Start-Process -FilePath "cmd" `
 $Cleanup = {
     if ($ServiceProcess -and -not $ServiceProcess.HasExited) {
         Write-Host ""
-        Write-Host "Sending SIGTERM to crawler service (PID $($ServiceProcess.Id))..."
-        Stop-Process -Id $ServiceProcess.Id -ErrorAction SilentlyContinue
+        Write-Host "Stopping crawler service (PID $($ServiceProcess.Id))..."
+
+        # Graceful attempt
+        $null = & taskkill /PID $ServiceProcess.Id 2>&1
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        while (-not $ServiceProcess.HasExited -and $sw.Elapsed.TotalSeconds -lt 5) {
+            Start-Sleep -Milliseconds 200
+        }
+        $sw.Stop()
+
+        # Force kill if still running
+        if (-not $ServiceProcess.HasExited) {
+            Stop-Process -Id $ServiceProcess.Id -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $Cleanup | Out-Null
 
-# Wait for service startup
-$StartTime = Get-Date
-$StartupTimeout = 30
+try {
+    # Wait for service startup
+    $StartTime = Get-Date
+    $StartupTimeout = 30
 
-while ($true) {
-    if (Test-Path $SmokeLogFile) {
-        $LogContent = Get-Content $SmokeLogFile -Raw -ErrorAction SilentlyContinue
-        if ($LogContent -and $LogContent.Contains("Starting crawler service")) {
-            Write-Host "Service started successfully."
+    while ($true) {
+        if (Test-Path $SmokeLogFile) {
+            $LogContent = Get-Content $SmokeLogFile -Raw -ErrorAction SilentlyContinue
+            if ($LogContent -and $LogContent.Contains("Starting crawler service")) {
+                Write-Host "Service started successfully."
+                break
+            }
+        }
+
+        if ($ServiceProcess.HasExited) {
+            Write-Host "ERROR: Service process exited before startup." -ForegroundColor Red
+            exit 1
+        }
+
+        $Elapsed = ((Get-Date) - $StartTime).TotalSeconds
+        if ($Elapsed -ge $StartupTimeout) {
+            Write-Host "ERROR: Service startup timed out after ${StartupTimeout}s." -ForegroundColor Red
+            exit 1
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    Write-Host "Waiting for tasks to complete (timeout: ${SmokeTimeoutSeconds}s)..."
+    Write-Host ""
+
+    # Wait loop
+    while ($true) {
+        if ($ServiceProcess.HasExited) {
+            Write-Host "Service process exited."
             break
         }
+
+        $LogContent = Get-Content $SmokeLogFile -Raw -ErrorAction SilentlyContinue
+        if (-not $LogContent) { $LogContent = "" }
+
+        $Started = ([regex]::Matches($LogContent, $PatternStartTask)).Count
+        $Success = ([regex]::Matches($LogContent, $PatternDoneSuccess)).Count
+        $ErrorCount = ([regex]::Matches($LogContent, $PatternDoneError)).Count
+        $NotFound = ([regex]::Matches($LogContent, $PatternDoneNotFound)).Count
+        $Completed = $Success + $ErrorCount + $NotFound
+
+        $Elapsed = [int]((Get-Date) - $StartTime).TotalSeconds
+
+        # Print progress on same line
+        $Progress = "  Elapsed: {0,3:D}s | Started: {1,2:D} | Completed: {2,2:D} (success={3,2:D} error={4,2:D} not_found={5,2:D})" -f `
+            $Elapsed, $Started, $Completed, $Success, $ErrorCount, $NotFound
+        Write-Host "`r$Progress" -NoNewline
+
+        if ($Completed -ge $Started -and $Started -gt 0) {
+            Write-Host ""
+            Write-Host "All started tasks have completed."
+            break
+        }
+
+        if ($Elapsed -ge $SmokeTimeoutSeconds) {
+            Write-Host ""
+            Write-Host "WARNING: Reached timeout (${SmokeTimeoutSeconds}s). Stopping service." -ForegroundColor Yellow
+            break
+        }
+
+        Start-Sleep -Seconds 2
     }
-
-    if ($ServiceProcess.HasExited) {
-        Write-Host "ERROR: Service process exited before startup." -ForegroundColor Red
-        exit 1
-    }
-
-    $Elapsed = ((Get-Date) - $StartTime).TotalSeconds
-    if ($Elapsed -ge $StartupTimeout) {
-        Write-Host "ERROR: Service startup timed out after ${StartupTimeout}s." -ForegroundColor Red
-        exit 1
-    }
-
-    Start-Sleep -Seconds 1
-}
-
-Write-Host "Waiting for tasks to complete (timeout: ${SmokeTimeoutSeconds}s)..."
-Write-Host ""
-
-# Wait loop
-while ($true) {
-    if ($ServiceProcess.HasExited) {
-        Write-Host "Service process exited."
-        break
-    }
-
-    $LogContent = Get-Content $SmokeLogFile -Raw -ErrorAction SilentlyContinue
-    if (-not $LogContent) { $LogContent = "" }
-
-    $Started = ([regex]::Matches($LogContent, "start task")).Count
-    $Success = ([regex]::Matches($LogContent, "done task .* status success")).Count
-    $ErrorCount = ([regex]::Matches($LogContent, "done task .* status error")).Count
-    $NotFound = ([regex]::Matches($LogContent, "done task .* status not_found")).Count
-    $Completed = $Success + $ErrorCount + $NotFound
-
-    $Elapsed = [int]((Get-Date) - $StartTime).TotalSeconds
-
-    # Print progress on same line
-    $Progress = "  Elapsed: {0,3:D}s | Started: {1,2:D} | Completed: {2,2:D} (success={3,2:D} error={4,2:D} not_found={5,2:D})" -f `
-        $Elapsed, $Started, $Completed, $Success, $ErrorCount, $NotFound
-    Write-Host "`r$Progress" -NoNewline
-
-    if ($Completed -ge $Started -and $Started -gt 0) {
-        Write-Host ""
-        Write-Host "All started tasks have completed."
-        break
-    }
-
-    if ($Elapsed -ge $SmokeTimeoutSeconds) {
-        Write-Host ""
-        Write-Host "WARNING: Reached timeout (${SmokeTimeoutSeconds}s). Stopping service." -ForegroundColor Yellow
-        break
-    }
-
-    Start-Sleep -Seconds 2
+} finally {
+    & $Cleanup
 }
 
 Write-Host ""
@@ -190,10 +212,10 @@ Write-Host "========================================"
 $LogContent = Get-Content $SmokeLogFile -Raw -ErrorAction SilentlyContinue
 if (-not $LogContent) { $LogContent = "" }
 
-$Started = ([regex]::Matches($LogContent, "start task")).Count
-$Success = ([regex]::Matches($LogContent, "done task .* status success")).Count
-$ErrorCount = ([regex]::Matches($LogContent, "done task .* status error")).Count
-$NotFound = ([regex]::Matches($LogContent, "done task .* status not_found")).Count
+$Started = ([regex]::Matches($LogContent, $PatternStartTask)).Count
+$Success = ([regex]::Matches($LogContent, $PatternDoneSuccess)).Count
+$ErrorCount = ([regex]::Matches($LogContent, $PatternDoneError)).Count
+$NotFound = ([regex]::Matches($LogContent, $PatternDoneNotFound)).Count
 $Completed = $Success + $ErrorCount + $NotFound
 
 $Shutdown = if ($LogContent.Contains("Shutdown complete")) { "yes" } else { "no" }
