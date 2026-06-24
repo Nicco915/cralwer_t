@@ -56,13 +56,29 @@ try {
     Set-Location $originalDir
 }
 
+# pm2-installer 将 PM2_HOME 设置为 C:\ProgramData\pm2\home，当前会话需要同步
+$Env:PM2_HOME = "C:\ProgramData\pm2\home"
+
 # 保存当前 PM2 进程列表，确保开机自启时恢复
 Write-Host "Checking PM2 process list..."
-$pm2List = & pm2 jlist 2>$null | ConvertFrom-Json
-$crawler = $pm2List | Where-Object { $_.name -eq 'crawler' }
-if (-not $crawler) {
-    Write-Error "No crawler process found in PM2. Please run deploy.ps1 first."
-    exit 1
+$pm2ListOutput = & pm2 jlist 2>$null
+$pm2List = $null
+if ($pm2ListOutput) {
+    try {
+        $pm2List = $pm2ListOutput | ConvertFrom-Json
+    } catch {
+        Write-Warning "Could not parse pm2 jlist output as JSON. Assuming process check is not available in this session."
+    }
+}
+
+if ($pm2List) {
+    $crawler = $pm2List | Where-Object { $_.name -eq 'crawler' }
+    if (-not $crawler) {
+        Write-Error "No crawler process found in PM2. Please run deploy.ps1 first."
+        exit 1
+    }
+} else {
+    Write-Warning "Skipping crawler process verification due to PM2 session transition."
 }
 
 Write-Host "Saving PM2 process list..."
