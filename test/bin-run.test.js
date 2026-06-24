@@ -12,4 +12,23 @@ describe('bin/run service config', () => {
     const config = buildServiceConfig({});
     assert.strictEqual(config.proxy, undefined);
   });
+
+  it('passes proxy pool config to service config', () => {
+    const config = buildServiceConfig({
+      kuaidailiSecretId: 'sid',
+      kuaidailiSecretKey: 'skey',
+      proxyMachineIndex: '1',
+      proxyMachineTotal: '3',
+      proxyRefreshIntervalMs: '60000',
+      proxyAssignmentsFile: './pool.json',
+    });
+    assert.strictEqual(config.kuaidailiSecretId, 'sid');
+    assert.strictEqual(config.kuaidailiSecretKey, 'skey');
+    assert.strictEqual(config.kuaidailiProxyType, 'kps');
+    assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
+    assert.strictEqual(config.proxyMachineIndex, 1);
+    assert.strictEqual(config.proxyMachineTotal, 3);
+    assert.strictEqual(config.proxyRefreshIntervalMs, 60000);
+    assert.strictEqual(config.proxyAssignmentsFile, './pool.json');
+  });
 });

@@ -28,6 +28,14 @@ function buildServiceConfig(config) {
     pollLimit: config.pollLimit !== undefined ? Number(config.pollLimit) : 10,
     pushRetries: config.pushRetries !== undefined ? Number(config.pushRetries) : 3,
     proxy: config.proxy,
+    kuaidailiSecretId: config.kuaidailiSecretId,
+    kuaidailiSecretKey: config.kuaidailiSecretKey,
+    kuaidailiProxyType: config.kuaidailiProxyType || 'kps',
+    kuaidailiTokenCacheFile: config.kuaidailiTokenCacheFile || '.kdl_token',
+    proxyMachineIndex: config.proxyMachineIndex !== undefined ? Number(config.proxyMachineIndex) : 0,
+    proxyMachineTotal: config.proxyMachineTotal !== undefined ? Number(config.proxyMachineTotal) : 1,
+    proxyRefreshIntervalMs: config.proxyRefreshIntervalMs !== undefined ? Number(config.proxyRefreshIntervalMs) : 300000,
+    proxyAssignmentsFile: config.proxyAssignmentsFile || path.resolve('./proxy-assignments.json'),
   };
 }
 
