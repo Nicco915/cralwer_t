@@ -251,9 +251,9 @@ node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const { 
 pm2 reload crawler
 ```
 
-#### 清理 Token 缓存
+#### 清理 Token 缓存（历史兼容）
 
-如果 Kuaidaili 鉴权 token 过期或异常，可删除缓存文件强制重新获取：
+当前版本已改用本地 `hmacsha1` 签名鉴权，不再调用快代理 `get_secret_token` 接口，因此 `.kdl_token` 缓存文件不再影响代理池运行。如果旧版本遗留了该文件，可以删除：
 
 ```powershell
 Remove-Item C:\hs-sku-crawler\.kdl_token -ErrorAction SilentlyContinue
@@ -285,7 +285,7 @@ pm2 reload crawler
 
 | 关键字 | 含义 | 处理建议 |
 |--------|------|----------|
-| `[PROXY] Refresh failed:` | 刷新代理列表失败 | 检查网络、Kuaidaili 凭据、token 缓存 |
+| `[PROXY] Refresh failed:` | 刷新代理列表失败 | 检查网络、Kuaidaili 凭据是否正确、能否访问 `kps.kdlapi.com` |
 | `[PROXY] Refresh changed proxies:` | 部分 Channel IP 已变更 | 观察后续任务成功率 |
 | `[SERVICE] Channel X unhealthy detected` | Channel 不健康 | 服务会自动尝试切换 IP，若持续失败则检查代理可用性 |
 | `[SERVICE] Rotating channel X to ...` | 正在切换 IP | 正常自愈行为 |
@@ -532,8 +532,8 @@ Get-Content C:\hs-sku-crawler\proxy-assignments.json
    - 解决：删除或注释 `CRAWLER_PROXY`
 
 4. **代理刷新失败**
-   - 原因：网络不稳定、Kuaidaili 接口限流、token 过期
-   - 解决：检查日志中 `[PROXY] Refresh failed:` 错误信息，确认能访问 `auth.kdlapi.com` 和 `kps.kdlapi.com`
+   - 原因：网络不稳定、Kuaidaili 接口限流、凭据错误
+   - 解决：检查日志中 `[PROXY] Refresh failed:` 错误信息，确认能访问 `kps.kdlapi.com`，并验证 `KUAIDAILI_SECRET_ID` / `KUAIDAILI_SECRET_KEY` 是否正确
 
 ### 3.5 负载测试（可选）
 
@@ -606,9 +606,9 @@ npm run test:load
 2. 检查日志中 `[PROXY]` 相关输出，确认 `assign`、`refresh`、`rotate` 是否正常。
 3. 验证 Kuaidaili 凭据：
    ```powershell
-   node -e "require('./src/kuaidaili-client').KuaidailiClient" 2>&1
+   node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const c = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY }); c.getKpsProxies().then(list => console.log('OK, got', list.length)).catch(e => console.error(e.message));" 2>&1
    ```
-   或直接查看 `.kdl_token` 缓存文件是否存在。
+   如果凭据正确且网络可达，会输出 `OK, got N`；如果失败，会打印具体错误（如 `-130 missing parameters` 表示凭据错误，`-120 req over limit` 表示限流）。
 4. 使用 `Invoke-WebRequest -Proxy` 测试单个代理是否可用（见 3.4.2）。
 5. 如果问题持续，参考 3.4.7「代理池常见问题」逐项排查。
 
@@ -652,7 +652,7 @@ npm run test:load
 | `KUAIDAILI_SECRET_KEY` | Kuaidaili 订单 SecretKey | - |
 | `KUAIDAILI_PROXY_TYPE` | Kuaidaili 产品类型 | `kps` |
 | `KUAIDAILI_PROXY_NUM` | 每次拉取代理数量 | `1000` |
-| `KUAIDAILI_TOKEN_CACHE_FILE` | Kuaidaili token 缓存文件 | `.kdl_token` |
+| `KUAIDAILI_TOKEN_CACHE_FILE` | ~~Kuaidaili token 缓存文件~~（当前已改用 `hmacsha1` 签名，保留兼容） | `.kdl_token` |
 | `PROXY_MACHINE_INDEX` | 当前机器序号（从 0 开始） | `0` |
 | `PROXY_MACHINE_TOTAL` | 机器总数 | `1` |
 | `PROXY_REFRESH_INTERVAL_MS` | 代理池刷新间隔（毫秒） | `300000` |
@@ -682,7 +682,7 @@ npm run test:load
 | `C:\hs-sku-crawler\.deployment-state.json` | 部署状态（当前/历史 commit） |
 | `C:\hs-sku-crawler\logs\` | 应用日志目录 |
 | `C:\hs-sku-crawler\proxy-assignments.json` | Channel-IP 映射持久化文件 |
-| `C:\hs-sku-crawler\.kdl_token` | Kuaidaili token 缓存文件 |
+| `C:\hs-sku-crawler\.kdl_token` | ~~Kuaidaili token 缓存文件~~（当前已改用 `hmacsha1` 签名，旧文件可删除） |
 | `C:\hs-sku-crawler\deployment\windows\` | 部署脚本目录 |
 | `C:\hs-sku-crawler\deployment\windows\ecosystem.config.js` | PM2 进程配置 |
 | `C:\hs-sku-crawler\bin\run.js` | 服务入口文件 |
