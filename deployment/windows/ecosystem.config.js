@@ -1,6 +1,6 @@
 const path = require('path');
 
-const installDir = process.env.CRAWLER_INSTALL_DIR || 'C:\\hs-sku-crawler';
+const installDir = process.env.CRAWLER_INSTALL_DIR || path.resolve(__dirname, '..', '..');
 
 module.exports = {
   apps: [
