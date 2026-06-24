@@ -38,7 +38,10 @@ class Channel {
     }`;
   }
 
-  async init(browser) {
+  async init(browser, proxyOverride) {
+    if (proxyOverride !== undefined) {
+      this.config.proxy = proxyOverride;
+    }
     const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
     const viewport = this.config.viewport || DEFAULT_VIEWPORT;
     const locale = this.config.locale || 'en-GB';
@@ -105,9 +108,9 @@ class Channel {
     }
   }
 
-  async reinit(browser) {
+  async reinit(browser, proxyOverride) {
     await this.close();
-    await this.init(browser);
+    await this.init(browser, proxyOverride);
   }
 
   async close() {

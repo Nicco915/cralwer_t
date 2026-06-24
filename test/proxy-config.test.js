@@ -42,4 +42,23 @@ describe('Proxy configuration', () => {
     assert.ok(contextOptions);
     assert.strictEqual(contextOptions.proxy.server, 'http://proxy:8080');
   });
+
+  it('Channel.reinit accepts new proxy override', async () => {
+    const contexts = [];
+    const fakeBrowser = {
+      newContext: async (opts) => {
+        contexts.push(opts);
+        return {
+          addInitScript: async () => {},
+          newPage: async () => ({ isClosed: () => false }),
+          close: async () => {},
+        };
+      },
+    };
+    const channel = new Channel({ id: 1, config: { proxy: 'http://old' }, log: () => {} });
+    await channel.init(fakeBrowser);
+    await channel.reinit(fakeBrowser, 'http://new');
+    assert.strictEqual(contexts.length, 2);
+    assert.strictEqual(contexts[1].proxy.server, 'http://new');
+  });
 });
