@@ -36,17 +36,24 @@ if (-not (Test-Path $installerDir)) {
 }
 
 # 运行 pm2-installer 的 Windows 服务安装脚本
-$installScript = Join-Path $installerDir "src\windows-service\install.ps1"
+# 注意：setup.ps1 内部使用相对路径，必须从 $installerDir 目录执行
+$installScript = Join-Path $installerDir "src\windows\setup.ps1"
 if (-not (Test-Path $installScript)) {
-    Write-Error "pm2-installer install script not found at: $installScript"
+    Write-Error "pm2-installer setup script not found at: $installScript"
     exit 1
 }
 
 Write-Host "Running pm2-installer Windows service setup..."
-& $installScript
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "pm2-installer failed with exit code $LASTEXITCODE"
-    exit 1
+$originalDir = Get-Location
+Set-Location $installerDir
+try {
+    & $installScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "pm2-installer failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+} finally {
+    Set-Location $originalDir
 }
 
 # 保存当前 PM2 进程列表，确保开机自启时恢复
