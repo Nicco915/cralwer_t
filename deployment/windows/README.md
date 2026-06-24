@@ -94,6 +94,48 @@ deployment\windows\setup-pm2-service.ps1
 - 应用日志：`<InstallDir>\logs\`
 - 部署脚本日志：控制台输出，建议重定向保存
 
+## 常见问题
+
+### 1. PowerShell 执行策略报错
+
+如果运行脚本时提示执行策略限制，在管理员 PowerShell 中执行：
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+输入 `Y` 确认。如果仍然报错，可临时绕过：
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+```
+
+注意：
+- `-Scope CurrentUser` 只对当前用户生效，安全性较好
+- `-Scope Process` 只对当前 PowerShell 窗口生效，关闭后失效
+- 修改执行策略需要管理员权限
+
+### 2. npm 全局前缀警告
+
+`pm2-installer` 可能会提示当前 npm 全局前缀是用户目录（如 `C:\Users\<用户名>\AppData\Roaming\npm`），而 Windows 服务通常以 `LocalService` 等系统账户运行，无法访问用户目录。
+
+这会导致 PM2 服务开机自启失败。建议在安装服务前先配置 npm 全局位置为系统级目录：
+
+```powershell
+cd "$env:APPDATA\npm\node_modules\pm2-installer"
+npm run configure
+```
+
+配置完成后，再重新运行 `deploy.ps1`。`npm run configure` 会把 npm 全局位置改为 `C:\ProgramData\npm`，系统账户也能访问。
+
+### 3. PM2 服务注册后当前会话找不到进程
+
+`pm2-installer` 安装服务后会将 PM2_HOME 设置为 `C:\ProgramData\pm2\home`。当前 PowerShell 会话可能需要重新打开，或手动设置：
+
+```powershell
+$Env:PM2_HOME="C:\ProgramData\pm2\home"
+```
+
 ## 注意事项
 
 1. **管理员权限**：所有 PowerShell 脚本均包含 `#Requires -RunAsAdministrator`，必须以管理员身份运行，否则脚本会报错退出。
