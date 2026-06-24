@@ -48,6 +48,14 @@ const FLAG_MAP = {
   'poll-interval': 'pollInterval',
   'poll-limit': 'pollLimit',
   'push-retries': 'pushRetries',
+  'kuaidaili-secret-id': 'kuaidailiSecretId',
+  'kuaidaili-secret-key': 'kuaidailiSecretKey',
+  'kuaidaili-proxy-type': 'kuaidailiProxyType',
+  'kuaidaili-token-cache-file': 'kuaidailiTokenCacheFile',
+  'proxy-machine-index': 'proxyMachineIndex',
+  'proxy-machine-total': 'proxyMachineTotal',
+  'proxy-refresh-interval-ms': 'proxyRefreshIntervalMs',
+  'proxy-assignments-file': 'proxyAssignmentsFile',
   proxy: 'proxy',
 };
 
@@ -140,9 +148,16 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_POLL_INTERVAL: 'pollInterval',
     CRAWLER_POLL_LIMIT: 'pollLimit',
     CRAWLER_PUSH_RETRIES: 'pushRetries',
+    KUAIDAILI_SECRET_ID: 'kuaidailiSecretId',
+    KUAIDAILI_SECRET_KEY: 'kuaidailiSecretKey',
+    KUAIDAILI_PROXY_TYPE: 'kuaidailiProxyType',
+    KUAIDAILI_TOKEN_CACHE_FILE: 'kuaidailiTokenCacheFile',
+    PROXY_MACHINE_INDEX: 'proxyMachineIndex',
+    PROXY_MACHINE_TOTAL: 'proxyMachineTotal',
+    PROXY_REFRESH_INTERVAL_MS: 'proxyRefreshIntervalMs',
+    PROXY_ASSIGNMENTS_FILE: 'proxyAssignmentsFile',
     CRAWLER_PROXY: 'proxy',
   };
-
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {
       config[configKey] = coerceValue(process.env[envKey], configKey);
