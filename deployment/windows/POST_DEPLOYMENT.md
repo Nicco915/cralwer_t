@@ -1,0 +1,437 @@
+# hs-sku-crawler Windows 部署后验证与生产运维指南
+
+本文档面向运维人员和开发/测试人员，说明项目通过 `deployment/windows/deploy.ps1` 成功部署到 Windows 服务器后：
+
+- 如何验证部署是否成功
+- 如何在生产机上执行日常操作（查看状态、重启、升级、回滚）
+- 如何运行测试验证端到端流程
+- 如何排查常见问题
+
+适用范围：已完成首次部署，PM2 已注册为 Windows 服务，安装目录默认为 `C:\hs-sku-crawler`。
+
+---
+
+## 1. 部署后验证清单
+
+部署脚本执行完成后，按以下顺序验证服务是否正常运行。
+
+### 1.1 以管理员身份打开 PowerShell
+
+所有 PM2 和部署相关操作都需要管理员权限。右键点击 PowerShell 图标，选择「以管理员身份运行」。
+
+### 1.2 检查 PM2 进程状态
+
+```powershell
+pm2 list
+```
+
+**通过标准：**
+
+- `crawler` 进程状态为 `online`
+- `uptime` 持续增长，没有频繁重启
+
+查看更详细的进程信息：
+
+```powershell
+pm2 describe crawler
+```
+
+重点关注：
+
+- `restart count`：若数值持续增加，说明进程在反复崩溃
+- `error log path`：确认错误日志路径正确
+
+### 1.3 检查 Windows 服务
+
+PM2 已被注册为 Windows 服务，系统重启后会自动恢复 crawler 进程。
+
+```powershell
+Get-Service PM2
+```
+
+**通过标准：** `Status` 为 `Running`。
+
+也可以在「服务」管理控制台中查看：
+
+```powershell
+services.msc
+```
+
+### 1.4 检查日志文件
+
+```powershell
+Get-ChildItem C:\hs-sku-crawler\logs
+```
+
+**通过标准：** 存在以下日志文件：
+
+- `crawler-out.log` —— 标准输出
+- `crawler-error.log` —— 错误输出
+- `crawler-combined.log` —— 合并日志
+
+查看最近的输出：
+
+```powershell
+Get-Content C:\hs-sku-crawler\logs\crawler-out.log -Tail 30
+```
+
+### 1.5 核对 .env 配置
+
+```powershell
+Get-Content C:\hs-sku-crawler\.env
+```
+
+**必须确认的关键变量：**
+
+| 变量 | 说明 |
+|------|------|
+| `CRAWLER_NODE_CODE` | 节点唯一标识，如 `crawler-01` |
+| `CRAWLER_NODE_TOKEN` | 上游 API 认证 Token |
+| `CRAWLER_TASK_URL` | 任务拉取地址 |
+| `CRAWLER_CALLBACK_URL` | 结果回调地址 |
+| `CRAWLER_CHANNELS` | 并发通道数，生产环境通常为 `4` |
+
+### 1.6 检查上游 API 连通性（可选）
+
+```powershell
+$body = '{"nodeCode":"test","nodeToken":"","limit":1}'
+Invoke-WebRequest -Uri "http://117.72.52.0/renren-api/classify/open/crawler/tasks" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing
+```
+
+**通过标准：** 返回 HTTP 200。即使业务返回码非 0，也说明网络可达。
+
+---
+
+## 2. 生产环境日常操作
+
+### 2.1 查看服务状态
+
+```powershell
+pm2 list
+pm2 describe crawler
+pm2 monit
+```
+
+`pm2 monit` 会打开一个实时 CPU/内存监控面板，按 `q` 退出。
+
+### 2.2 查看日志
+
+实时跟踪日志：
+
+```powershell
+pm2 logs crawler
+```
+
+查看最近 100 行：
+
+```powershell
+pm2 logs crawler --lines 100
+```
+
+直接读取日志文件：
+
+```powershell
+Get-Content C:\hs-sku-crawler\logs\crawler-out.log -Tail 50
+Get-Content C:\hs-sku-crawler\logs\crawler-error.log -Tail 50
+```
+
+### 2.3 重启与重载服务
+
+**普通重启**（进程会短暂中断）：
+
+```powershell
+pm2 restart crawler
+```
+
+**平滑重载**（推荐，服务不中断）：
+
+```powershell
+pm2 reload crawler
+```
+
+**停止服务：**
+
+```powershell
+pm2 stop crawler
+```
+
+**启动已停止的服务：**
+
+```powershell
+pm2 start crawler
+```
+
+> 注意：如果执行了 `pm2 delete crawler`，则需要重新运行 `deploy.ps1` 或手动通过 `ecosystem.config.js` 启动。
+
+### 2.4 系统重启后的自动恢复
+
+PM2 注册为 Windows 服务后，会在系统启动时自动加载已保存的进程列表。保存当前进程列表：
+
+```powershell
+pm2 save
+```
+
+如果新增或删除了 crawler 进程，建议重新执行一次 `pm2 save`。
+
+### 2.5 更新代码
+
+在已部署的服务器上执行：
+
+```powershell
+cd C:\hs-sku-crawler\deployment\windows
+.\update.ps1 -InstallDir "C:\hs-sku-crawler" -Branch "main"
+```
+
+`update.ps1` 会完成以下操作：
+
+1. `git fetch origin`
+2. `git reset --hard origin/<branch>`
+3. `npm ci`
+4. `pm2 reload` 重启服务
+5. 健康检查，等待 `crawler` 状态变为 `online`
+
+**自动回滚：** 如果更新后健康检查失败，脚本会自动回滚到上一个成功版本。
+
+### 2.6 回滚代码
+
+回滚到上一个版本：
+
+```powershell
+cd C:\hs-sku-crawler\deployment\windows
+.\rollback.ps1 -InstallDir "C:\hs-sku-crawler"
+```
+
+回滚到指定 commit：
+
+```powershell
+.\rollback.ps1 -InstallDir "C:\hs-sku-crawler" -TargetCommit "abc1234"
+```
+
+`rollback.ps1` 会：
+
+1. `git reset --hard <target_commit>`
+2. `npm ci`
+3. `pm2 reload`
+4. 健康检查确认服务恢复
+
+> 回滚依赖 `.deployment-state.json` 中记录的历史版本。如果该文件丢失，可手动通过 `git log` 查找目标 commit。
+
+---
+
+## 3. 测试方法
+
+### 3.1 单元与集成测试
+
+```powershell
+cd C:\hs-sku-crawler
+npm test
+```
+
+覆盖范围：Poller、Pusher、代理配置、stub server、service 集成测试等。
+
+### 3.2 部署脚本单元测试
+
+```powershell
+npm run test:deployment:unit
+```
+
+验证 `deploy.js`、`update.js`、`rollback.js` 在缺少 `.env` 或参数错误时能否正确退出。
+
+### 3.3 真实 API 冒烟测试
+
+这是最重要的生产验证测试，连接真实的上游任务 API 和 VEVOR 网站。
+
+#### 环境准备
+
+```powershell
+cd C:\hs-sku-crawler
+Copy-Item test\real\.env.example .env
+```
+
+编辑 `.env`，填入真实值：
+
+```env
+CRAWLER_NODE_CODE=smoke-test-node
+CRAWLER_NODE_TOKEN=your-real-token-here
+CRAWLER_TASK_URL=http://117.72.52.0/renren-api/classify/open/crawler/tasks
+CRAWLER_CALLBACK_URL=http://117.72.52.0/renren-api/classify/open/crawler/callback
+CRAWLER_CHANNELS=2
+CRAWLER_POLL_LIMIT=5
+SMOKE_MIN_SUCCESS=1
+SMOKE_TIMEOUT_SECONDS=300
+```
+
+> 建议使用独立的 `CRAWLER_NODE_CODE`（如 `smoke-test-node`），避免干扰正式生产节点。
+
+#### 执行测试
+
+```powershell
+.\test\real\smoke-test.ps1
+```
+
+如果 PowerShell 执行策略限制，先运行：
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+#### 通过标准
+
+测试输出应类似：
+
+```text
+========================================
+  Smoke Test Summary
+========================================
+  Service started: yes
+  Service shutdown: yes
+  Tasks started:   5
+  Tasks completed: 5
+    - success:    4
+    - error:      0
+    - not_found:  1
+
+RESULT: PASS
+```
+
+关键指标：
+
+- `Service started: yes`
+- `success >= SMOKE_MIN_SUCCESS`（默认至少 1 个成功）
+- `completed >= started`
+
+测试日志保留在 `test/real/smoke-test.log`，可用于事后分析。
+
+### 3.4 负载测试（可选）
+
+```powershell
+npm run test:load
+```
+
+使用本地 stub server 验证 4 并发通道下任务不重复、全部成功回调。
+
+### 3.5 多机部署测试（可选）
+
+- **本地 Docker Compose 模拟：** `npm run test:deployment:local`
+- **真实多机部署：** 参考 `test/deployment/README.md`
+
+---
+
+## 4. 常见问题排查
+
+### 4.1 PM2 状态为 `errored` 或 `stopped`
+
+1. 查看错误日志：
+   ```powershell
+   pm2 logs crawler --lines 200
+   ```
+2. 检查 `.env` 是否存在且关键变量正确。
+3. 手动前台运行一次，观察报错：
+   ```powershell
+   cd C:\hs-sku-crawler
+   node bin/run.js --mode service
+   ```
+
+### 4.2 浏览器启动失败 / Chromium 找不到
+
+1. 安装 Playwright 浏览器：
+   ```powershell
+   npx playwright install chromium
+   ```
+2. 检查日志中 `[BROWSER]` 相关输出。
+3. 如需指定浏览器路径，在 `.env` 中设置：
+   ```env
+   CRAWLER_BROWSER_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+   ```
+
+### 4.3 上游 API 拉不到任务
+
+1. 检查 `.env` 中的 `CRAWLER_TASK_URL`、`CRAWLER_NODE_CODE`、`CRAWLER_NODE_TOKEN`。
+2. 使用 `Invoke-WebRequest` 测试连通性（见 1.6）。
+3. 确认上游任务队列中有待处理任务。
+
+### 4.4 Callback 推送失败
+
+1. 检查 `CRAWLER_CALLBACK_URL` 是否正确。
+2. 查看日志中 `Pusher` 相关错误与重试记录。
+3. 确认网络可以访问回调地址，无防火墙拦截。
+
+### 4.5 升级后健康检查失败
+
+1. `update.ps1` 会自动回滚到上一个版本，观察日志确认回滚是否成功。
+2. 若自动回滚失败，手动执行：
+   ```powershell
+   .\rollback.ps1 -InstallDir "C:\hs-sku-crawler"
+   ```
+
+### 4.6 回滚失败
+
+1. 确认 `.deployment-state.json` 存在：
+   ```powershell
+   Get-Content C:\hs-sku-crawler\.deployment-state.json
+   ```
+2. 检查 Git 历史：
+   ```powershell
+   cd C:\hs-sku-crawler
+   git log --oneline -5
+   ```
+3. 手动指定 commit 回滚：
+   ```powershell
+   .\rollback.ps1 -InstallDir "C:\hs-sku-crawler" -TargetCommit "<commit-sha>"
+   ```
+
+---
+
+## 5. 附录
+
+### 5.1 环境变量速查表
+
+| 环境变量 | 说明 | 默认值/示例 |
+|----------|------|-------------|
+| `CRAWLER_NODE_CODE` | 节点唯一标识 | `crawler-01` |
+| `CRAWLER_NODE_TOKEN` | 上游 API 认证 Token | `your-token` |
+| `CRAWLER_TASK_URL` | 任务拉取地址 | `http://117.72.52.0/renren-api/classify/open/crawler/tasks` |
+| `CRAWLER_CALLBACK_URL` | 结果回调地址 | `http://117.72.52.0/renren-api/classify/open/crawler/callback` |
+| `CRAWLER_CHANNELS` | 并发通道数 | `4` |
+| `CRAWLER_POLL_INTERVAL` | 轮询间隔（毫秒） | `5000` |
+| `CRAWLER_POLL_LIMIT` | 每次拉取任务数 | `10` |
+| `CRAWLER_PUSH_RETRIES` | 回调失败重试次数 | `3` |
+| `CRAWLER_HEADLESS` | 是否无头运行浏览器 | `true` |
+| `CRAWLER_MIN_DELAY` | SKU 间最小延迟（秒） | `5` |
+| `CRAWLER_MAX_DELAY` | SKU 间最大延迟（秒） | `10` |
+
+### 5.2 PM2 命令速查表
+
+| 命令 | 作用 |
+|------|------|
+| `pm2 list` | 查看所有进程 |
+| `pm2 describe crawler` | 查看 crawler 详情 |
+| `pm2 logs crawler` | 实时查看日志 |
+| `pm2 logs crawler --lines 100` | 查看最近 100 行日志 |
+| `pm2 restart crawler` | 重启服务 |
+| `pm2 reload crawler` | 平滑重载服务 |
+| `pm2 stop crawler` | 停止服务 |
+| `pm2 start crawler` | 启动已停止的服务 |
+| `pm2 save` | 保存进程列表，用于开机自启 |
+| `pm2 monit` | 打开监控面板 |
+
+### 5.3 关键文件路径清单
+
+| 路径 | 说明 |
+|------|------|
+| `C:\hs-sku-crawler` | 项目安装目录 |
+| `C:\hs-sku-crawler\.env` | 环境变量配置 |
+| `C:\hs-sku-crawler\.deployment-state.json` | 部署状态（当前/历史 commit） |
+| `C:\hs-sku-crawler\logs\` | 应用日志目录 |
+| `C:\hs-sku-crawler\deployment\windows\` | 部署脚本目录 |
+| `C:\hs-sku-crawler\deployment\windows\ecosystem.config.js` | PM2 进程配置 |
+| `C:\hs-sku-crawler\bin\run.js` | 服务入口文件 |
+
+---
+
+## 6. 相关文档
+
+- [Windows 部署说明](README.md) —— 首次部署、更新、回滚脚本说明
+- [项目主 README](../../README.md) —— 整体架构、配置项、CLI 用法
+- [真实 API 测试说明](../../test/real/README.md) —— 冒烟测试与故障容忍测试详情
+- [多机部署测试说明](../../test/deployment/README.md) —— 本地模拟与真实多机测试
