@@ -216,6 +216,81 @@ cd C:\hs-sku-crawler\deployment\windows
 
 > 回滚依赖 `.deployment-state.json` 中记录的历史版本。如果该文件丢失，可手动通过 `git log` 查找目标 commit。
 
+### 2.7 代理池日常维护
+
+如果启用了 Kuaidaili 独享代理池（配置了 `KUAIDAILI_SECRET_ID` / `KUAIDAILI_SECRET_KEY`），需要进行以下日常维护。
+
+#### 查看当前 Channel-IP 分配
+
+```powershell
+Get-Content C:\hs-sku-crawler\proxy-assignments.json
+```
+
+#### 手动刷新代理池
+
+服务会按 `PROXY_REFRESH_INTERVAL_MS` 自动刷新。如需立即刷新（例如发现多个 Channel 被拦截）：
+
+```powershell
+cd C:\hs-sku-crawler
+node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const { ProxyPool } = require('./src/proxy-pool'); (async () => { const client = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY, proxyNum: process.env.KUAIDAILI_PROXY_NUM || 1000 }); const pool = new ProxyPool({ client, machineIndex: process.env.PROXY_MACHINE_INDEX || 0, machineTotal: process.env.PROXY_MACHINE_TOTAL || 1, channels: process.env.CRAWLER_CHANNELS || 4, assignmentsFile: process.env.PROXY_ASSIGNMENTS_FILE || 'C:\\\\hs-sku-crawler\\\\proxy-assignments.json' }); const map = await pool.assign(); console.log(JSON.stringify(map, null, 2)); })().catch(console.error);"
+```
+
+然后平滑重载服务使新分配生效：
+
+```powershell
+pm2 reload crawler
+```
+
+#### 手动切换指定 Channel 的 IP
+
+当某个 Channel 频繁被拦截时，可手动让它切换到分区中的下一个 IP：
+
+```powershell
+cd C:\hs-sku-crawler
+node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const { ProxyPool } = require('./src/proxy-pool'); (async () => { const client = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY }); const pool = new ProxyPool({ client, machineIndex: process.env.PROXY_MACHINE_INDEX || 0, machineTotal: process.env.PROXY_MACHINE_TOTAL || 1, channels: process.env.CRAWLER_CHANNELS || 4, assignmentsFile: process.env.PROXY_ASSIGNMENTS_FILE || 'C:\\\\hs-sku-crawler\\\\proxy-assignments.json' }); await pool.assign(); const next = await pool.nextForChannel('ch-1'); console.log('ch-1 next proxy:', next); })().catch(console.error);"
+pm2 reload crawler
+```
+
+#### 清理 Token 缓存
+
+如果 Kuaidaili 鉴权 token 过期或异常，可删除缓存文件强制重新获取：
+
+```powershell
+Remove-Item C:\hs-sku-crawler\.kdl_token -ErrorAction SilentlyContinue
+pm2 reload crawler
+```
+
+#### 水平扩展时调整机器分区
+
+新增机器时，需要为每台机器分配唯一的 `PROXY_MACHINE_INDEX`：
+
+| 机器 | `PROXY_MACHINE_INDEX` | `PROXY_MACHINE_TOTAL` |
+|------|----------------------:|----------------------:|
+| machine-01 | 0 | N |
+| machine-02 | 1 | N |
+| ... | ... | N |
+| machine-N | N-1 | N |
+
+确保：
+
+- 所有机器使用相同的 `PROXY_MACHINE_TOTAL`（机器总数）
+- 每台机器的 `PROXY_MACHINE_INDEX` 从 `0` 开始递增，不重复
+- 单个分区内的 IP 数 ≥ 该机器的 `CRAWLER_CHANNELS`
+
+如果 `KUAIDAILI_PROXY_NUM / PROXY_MACHINE_TOTAL < CRAWLER_CHANNELS`，需要增加 `KUAIDAILI_PROXY_NUM` 或减少 Channel 数。
+
+#### 代理池健康监控要点
+
+日常巡检时关注日志中的以下关键字：
+
+| 关键字 | 含义 | 处理建议 |
+|--------|------|----------|
+| `[PROXY] Refresh failed:` | 刷新代理列表失败 | 检查网络、Kuaidaili 凭据、token 缓存 |
+| `[PROXY] Refresh changed proxies:` | 部分 Channel IP 已变更 | 观察后续任务成功率 |
+| `[SERVICE] Channel X unhealthy detected` | Channel 不健康 | 服务会自动尝试切换 IP，若持续失败则检查代理可用性 |
+| `[SERVICE] Rotating channel X to ...` | 正在切换 IP | 正常自愈行为 |
+| `Proxy partition too small` | 分区 IP 不足 | 增加 `KUAIDAILI_PROXY_NUM` 或减少 `CRAWLER_CHANNELS` |
+
 ---
 
 ## 3. 测试方法
