@@ -13,6 +13,8 @@ class Channel {
     this.page = null;
     this.busy = false;
     this.currentTask = null;
+    this.consecutiveFailures = 0;
+    this.lastFailureWasProxy = false;
     this.pageCrawler = new PageCrawler({
       baseUrl: this.config.baseUrl,
       imageDir: this.config.imageDir,
@@ -76,7 +78,14 @@ class Channel {
       const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page);
       result.crawlerTaskId = task.crawlerTaskId;
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status}`);
+      this.consecutiveFailures = 0;
+      this.lastFailureWasProxy = false;
       return result;
+    } catch (e) {
+      this.consecutiveFailures++;
+      this.lastFailureWasProxy = this.isProxyError(e);
+      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error`);
+      throw e;
     } finally {
       this.busy = false;
       this.currentTask = null;
@@ -106,6 +115,13 @@ class Channel {
     } catch (e) {
       return false;
     }
+  }
+
+  isProxyError(e) {
+    const msg = (e && e.message) || '';
+    return msg.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+           msg.includes('ERR_PROXY_CONNECTION_FAILED') ||
+           msg.includes('ERR_CONNECTION_RESET');
   }
 
   async reinit(browser, proxyOverride) {

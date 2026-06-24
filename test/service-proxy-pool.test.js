@@ -57,6 +57,72 @@ test('service assigns different proxies per channel from pool', async () => {
   await service.stop();
 });
 
+test('service rotates proxy after consecutive proxy failures', async () => {
+  const assignmentsFile = path.join(os.tmpdir(), `svc-rotate-${Date.now()}.json`);
+  const proxies = ['1.1.1.1:8080', '2.2.2.2:8080'];
+  const rotatedChannels = [];
+
+  const service = new CrawlerService({
+    baseUrl: 'https://example.com',
+    imageDir: path.join(os.tmpdir(), 'imgs'),
+    headless: true,
+    channels: 2,
+    pollInterval: 10000,
+    pollLimit: 10,
+    pushRetries: 1,
+    callbackUrl: 'http://localhost:9999/callback',
+    nodeCode: 'test-node',
+    nodeToken: '',
+    taskUrl: 'http://localhost:9999/tasks',
+    kuaidailiSecretId: 'sid',
+    kuaidailiSecretKey: 'skey',
+    proxyMachineIndex: 0,
+    proxyMachineTotal: 1,
+    proxyRefreshIntervalMs: 60000,
+    proxyAssignmentsFile: assignmentsFile,
+  });
+
+  const fakeBrowser = {
+    isConnected: () => true,
+    close: async () => {},
+    newContext: async (opts) => ({
+      addInitScript: async () => {},
+      newPage: async () => ({
+        isClosed: () => false,
+        evaluate: async () => document.title,
+      }),
+      close: async () => {},
+    }),
+  };
+  service.initBrowser = async () => { service.browser = fakeBrowser; };
+  service.worker = { addChannel: () => {}, stop: () => {}, drain: async () => {}, resetChannels: () => {}, start: () => {} };
+  service.poller = { stop: () => {} };
+  service.proxyPool = {
+    assign: async () => ({ 'ch-1': proxies[0], 'ch-2': proxies[1] }),
+    getProxyForChannel: (id) => ({ 'ch-1': proxies[0], 'ch-2': proxies[1] }[id]),
+    refresh: async () => [],
+    nextForChannel: async (id) => {
+      rotatedChannels.push(id);
+      return id === 'ch-1' ? proxies[1] : proxies[0];
+    },
+  };
+
+  await service.initBrowser();
+  await service.initChannels();
+
+  // Simulate ch-1 having consecutive proxy tunnel failures
+  service.channels[0].consecutiveFailures = 2;
+  service.channels[0].lastFailureWasProxy = true;
+
+  await service.runHealthCheck();
+
+  assert.strictEqual(rotatedChannels.includes('ch-1'), true, 'expected ch-1 proxy rotation after consecutive failures');
+  assert.strictEqual(service.channels[0].consecutiveFailures, 0, 'expected failure count reset after rotation');
+  assert.strictEqual(service.channels[0].lastFailureWasProxy, false, 'expected proxy failure flag reset after rotation');
+
+  await service.stop();
+});
+
 test('service uses static proxy for all channels when configured', async () => {
   const service = new CrawlerService({
     baseUrl: 'https://example.com',

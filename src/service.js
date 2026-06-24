@@ -231,13 +231,20 @@ class CrawlerService {
 
     for (const channel of this.channels) {
       const healthy = await channel.isHealthy();
-      if (!healthy) {
-        this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
+      const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
+      if (!healthy || proxyFailed) {
+        if (proxyFailed) {
+          this.log(`[SERVICE] Channel ${channel.id} has ${channel.consecutiveFailures} consecutive proxy failures, rotating proxy`);
+        } else {
+          this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
+        }
         if (this.proxyPool) {
           try {
             const channelId = `ch-${channel.id}`;
             const newProxy = await this.proxyPool.nextForChannel(channelId);
             this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
+            channel.consecutiveFailures = 0;
+            channel.lastFailureWasProxy = false;
             await channel.reinit(this.browser, newProxy);
             const stillUnhealthy = !(await channel.isHealthy());
             if (!stillUnhealthy) {
