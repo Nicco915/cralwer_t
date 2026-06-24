@@ -6,6 +6,8 @@ const { Worker } = require('./worker');
 const { Channel } = require('./channel');
 const { Pusher } = require('./pusher');
 const { resolveBrowserPath } = require('./crawler');
+const { KuaidailiClient } = require('./kuaidaili-client');
+const { ProxyPool } = require('./proxy-pool');
 
 class CrawlerService {
   constructor(config) {
@@ -20,6 +22,8 @@ class CrawlerService {
     this.shutdownPromise = null;
     this.healthCheckTimer = null;
     this.restartPromise = null;
+    this.proxyPool = null;
+    this.proxyRefreshTimer = null;
   }
 
   log(...args) {
@@ -60,6 +64,10 @@ class CrawlerService {
   async initChannels() {
     const { channels: channelCount } = this.config;
     for (let i = 1; i <= channelCount; i++) {
+      const channelId = `ch-${i}`;
+      const proxy = this.proxyPool
+        ? this.proxyPool.getProxyForChannel(channelId)
+        : this.config.proxy;
       const channel = new Channel({
         id: i,
         config: {
@@ -73,7 +81,7 @@ class CrawlerService {
           cloudflareMaxWait: this.config.cloudflareMaxWait,
           minDelay: this.config.minDelay,
           maxDelay: this.config.maxDelay,
-          proxy: this.config.proxy,
+          proxy,
         },
         log: this.log.bind(this),
       });
@@ -112,6 +120,24 @@ class CrawlerService {
       pollInterval: this.config.pollInterval,
     });
 
+    if (!this.config.proxy && this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey) {
+      const client = new KuaidailiClient({
+        secretId: this.config.kuaidailiSecretId,
+        secretKey: this.config.kuaidailiSecretKey,
+        proxyType: this.config.kuaidailiProxyType,
+        tokenCacheFile: this.config.kuaidailiTokenCacheFile,
+      });
+      this.proxyPool = new ProxyPool({
+        client,
+        machineIndex: this.config.proxyMachineIndex,
+        machineTotal: this.config.proxyMachineTotal,
+        channels: this.config.channels,
+        assignmentsFile: this.config.proxyAssignmentsFile,
+      });
+      await this.proxyPool.assign();
+      this.startProxyRefresh();
+    }
+
     await this.initBrowser();
     await this.initChannels();
 
@@ -132,6 +158,7 @@ class CrawlerService {
     this.log('[SERVICE] Shutting down gracefully...');
 
     this.stopHealthCheck();
+    this.stopProxyRefresh();
     this.poller.stop();
     await this.worker.drain();
 
@@ -145,6 +172,35 @@ class CrawlerService {
     this.log('[SERVICE] Shutdown complete');
     if (this.shutdownResolve) {
       this.shutdownResolve();
+    }
+  }
+
+  startProxyRefresh() {
+    const interval = this.config.proxyRefreshIntervalMs || 300000;
+    this.proxyRefreshTimer = setInterval(async () => {
+      try {
+        const changed = await this.proxyPool.refresh();
+        if (changed.length > 0) {
+          this.log('[PROXY] Refresh changed proxies:', changed);
+          for (const channel of this.channels) {
+            const channelId = `ch-${channel.id}`;
+            if (changed.includes(channelId)) {
+              const newProxy = this.proxyPool.getProxyForChannel(channelId);
+              this.log(`[PROXY] Reinitializing channel ${channel.id} with ${newProxy}`);
+              await channel.reinit(this.browser, newProxy);
+            }
+          }
+        }
+      } catch (e) {
+        this.log('[PROXY] Refresh failed:', e.message);
+      }
+    }, interval);
+  }
+
+  stopProxyRefresh() {
+    if (this.proxyRefreshTimer) {
+      clearInterval(this.proxyRefreshTimer);
+      this.proxyRefreshTimer = null;
     }
   }
 
@@ -176,6 +232,21 @@ class CrawlerService {
       const healthy = await channel.isHealthy();
       if (!healthy) {
         this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
+        if (this.proxyPool) {
+          try {
+            const channelId = `ch-${channel.id}`;
+            const newProxy = await this.proxyPool.nextForChannel(channelId);
+            this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
+            await channel.reinit(this.browser, newProxy);
+            const stillUnhealthy = !(await channel.isHealthy());
+            if (!stillUnhealthy) {
+              this.log(`[SERVICE] Channel ${channel.id} recovered after proxy rotation`);
+              continue;
+            }
+          } catch (e) {
+            this.log(`[SERVICE] Proxy rotation failed for channel ${channel.id}:`, e.message);
+          }
+        }
         await this.restartBrowser();
         return;
       }
@@ -204,6 +275,10 @@ class CrawlerService {
           await this.browser.close();
         }
         this.browser = null;
+
+        if (this.proxyPool) {
+          try { await this.proxyPool.refresh(); } catch (e) { this.log('[PROXY] refresh on restart failed:', e.message); }
+        }
 
         await this.initBrowser();
         await this.initChannels();
