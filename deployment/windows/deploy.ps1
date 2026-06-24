@@ -37,7 +37,7 @@ if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
     npm install -g pm2
 }
 
-$deployScript = Join-Path $PSScriptRoot "lib" "deploy.js"
+$deployScript = Join-Path $PSScriptRoot "lib\deploy.js"
 & node "$deployScript" --repo-url "$RepoUrl" --branch "$Branch" --install-dir "$InstallDir"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Deploy script failed."

@@ -12,7 +12,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
-$rollbackScript = Join-Path $PSScriptRoot "lib" "rollback.js"
+$rollbackScript = Join-Path $PSScriptRoot "lib\rollback.js"
 if ($TargetCommit) {
     & node "$rollbackScript" --install-dir "$InstallDir" --target-commit "$TargetCommit"
 } else {

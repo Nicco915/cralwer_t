@@ -12,7 +12,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
-$updateScript = Join-Path $PSScriptRoot "lib" "update.js"
+$updateScript = Join-Path $PSScriptRoot "lib\update.js"
 & node "$updateScript" --install-dir "$InstallDir" --branch "$Branch"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Update script failed."

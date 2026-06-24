@@ -32,7 +32,7 @@ if (-not (Test-Path $installerDir)) {
 }
 
 # 运行 pm2-installer 的 Windows 服务安装脚本
-$installScript = Join-Path $installerDir "src" "windows-service" "install.ps1"
+$installScript = Join-Path $installerDir "src\windows-service\install.ps1"
 if (-not (Test-Path $installScript)) {
     Write-Error "pm2-installer install script not found at: $installScript"
     exit 1
