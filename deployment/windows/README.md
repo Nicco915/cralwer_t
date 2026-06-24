@@ -11,13 +11,24 @@
 
 ## 首次部署
 
-1. 打开 PowerShell（以管理员身份运行）。
-2. 进入 `deployment/windows` 目录。
-3. 执行 `deploy.ps1`：
+推荐先在目标服务器上 clone 代码，再运行 `deploy.ps1`：
 
 ```powershell
-.\deploy.ps1 -RepoUrl "https://github.com/your-org/hs-sku-crawler.git" -Branch "main" -InstallDir "C:\hs-sku-crawler"
+# 1. 以管理员身份打开 PowerShell
+# 2. 安装 Git（如果还没装）
+# 3. 把代码拉下来
+git clone https://github.com/Nicco915/cralwer_t.git C:\hs-sku-crawler
+cd C:\hs-sku-crawler
+
+# 4. 把 .env 配置文件放进 C:\hs-sku-crawler\
+# 5. 运行部署脚本
+C:\hs-sku-crawler\deployment\windows\deploy.ps1 `
+    -RepoUrl "https://github.com/Nicco915/cralwer_t.git" `
+    -Branch "main" `
+    -InstallDir "C:\hs-sku-crawler"
 ```
+
+脚本会检测到 `InstallDir` 已经是 git 仓库，自动执行 `git fetch` + `git reset --hard`，然后安装 npm 依赖、启动 crawler、并把 PM2 注册成 Windows 服务。
 
 参数说明：
 - `-RepoUrl`（必填）：Git 仓库地址
@@ -27,7 +38,7 @@
 `deploy.ps1` 会自动完成以下操作：
 - 检查并安装 Node.js LTS、Git（通过 winget）
 - 全局安装 pm2
-- 克隆仓库并安装依赖
+- 更新/克隆仓库并安装依赖
 - 调用 `setup-pm2-service.ps1` 将 PM2 注册为 Windows 服务
 
 ### 服务注册前置条件
