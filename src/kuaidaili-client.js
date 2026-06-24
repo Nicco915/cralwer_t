@@ -1,4 +1,5 @@
 const fs = require('fs');
+const crypto = require('crypto');
 
 class KuaidailiClient {
   constructor(options) {
@@ -8,6 +9,24 @@ class KuaidailiClient {
     this.proxyNum = options.proxyNum !== undefined ? Number(options.proxyNum) : 1000;
     this.tokenCacheFile = options.tokenCacheFile || '.kdl_token';
     this.fetch = options.fetch || globalThis.fetch;
+  }
+
+  /**
+   * 生成签名原文字符串，与官方 SDK 语义一致：
+   * METHOD + endpoint.path + '?' + 按 key 字典序排序后的 query string
+   */
+  _getStringToSign(method, endpoint, params) {
+    const sortedKeys = Object.keys(params).sort();
+    const query = sortedKeys.map(key => `${key}=${params[key]}`).join('&');
+    const path = endpoint.split('.com')[1];
+    return `${method}${path}?${query}`;
+  }
+
+  /**
+   * HMAC-SHA1 签名并 base64 编码，与官方 SDK 一致。
+   */
+  _sign(rawStr) {
+    return crypto.createHmac('sha1', this.secretKey).update(rawStr).digest().toString('base64');
   }
 
   async getSecretToken() {
@@ -66,14 +85,22 @@ class KuaidailiClient {
   }
 
   async getKpsProxies() {
-    const token = await this.getSecretToken();
+    const endpoint = 'kps.kdlapi.com/api/getkps';
+    const params = {
+      secret_id: this.secretId,
+      sign_type: 'hmacsha1',
+      timestamp: Date.now(),
+      num: String(this.proxyNum),
+      format: 'json',
+    };
 
-    const url = new URL('https://kps.kdlapi.com/api/getkps');
-    url.searchParams.set('secret_id', this.secretId);
-    url.searchParams.set('signature', token);
-    url.searchParams.set('sign_type', 'token');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('num', String(this.proxyNum));
+    const rawStr = this._getStringToSign('GET', endpoint, params);
+    params.signature = this._sign(rawStr);
+
+    const url = new URL(`https://${endpoint}`);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, String(value));
+    }
 
     const res = await this.fetch(url.toString());
     if (!res.ok) {
@@ -81,7 +108,7 @@ class KuaidailiClient {
     }
     const body = await res.json();
     if (body.code !== 0 || !body.data) {
-      throw new Error(`getkps error: ${body.code}`);
+      throw new Error(`getkps error: ${body.code}, msg: ${body.msg || 'unknown'}`);
     }
 
     return body.data.proxy_list || [];

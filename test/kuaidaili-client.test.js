@@ -1,44 +1,26 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const fs = require('fs');
-const path = require('path');
+const crypto = require('crypto');
 const { KuaidailiClient } = require('../src/kuaidaili-client');
 
 describe('KuaidailiClient', () => {
-  const cacheDir = path.join(__dirname, 'tmp-kdl-cache');
-
-  function setup() {
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
+  function buildExpectedSignature(secretKey, method, endpoint, params) {
+    const sorted = Object.keys(params)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = params[key];
+        return acc;
+      }, {});
+    const query = Object.entries(sorted).map(([k, v]) => `${k}=${v}`).join('&');
+    const path = endpoint.split('.com')[1];
+    const rawStr = `${method}${path}?${query}`;
+    return crypto.createHmac('sha1', secretKey).update(rawStr).digest().toString('base64');
   }
 
-  function cleanup() {
-    if (fs.existsSync(cacheDir)) {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-    }
-  }
-
-  it('full flow: fetches token then proxies and includes signature', async () => {
-    setup();
-    const cacheFile = path.join(cacheDir, 'token-cache.json');
-
+  it('getKpsProxies uses hmacsha1 signature and does not call get_secret_token', async () => {
     let fetchCalls = [];
     const fakeFetch = async (url, options) => {
       fetchCalls.push({ url: url.toString(), options });
-      if (url.toString().includes('get_secret_token')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            code: 0,
-            data: {
-              secret_token: 'tok123',
-              expire: 3600,
-            },
-          }),
-        };
-      }
       if (url.toString().includes('getkps')) {
         return {
           ok: true,
@@ -61,7 +43,7 @@ describe('KuaidailiClient', () => {
       secretId: 'sid',
       secretKey: 'skey',
       proxyType: 'kps',
-      tokenCacheFile: cacheFile,
+      proxyNum: 5,
       fetch: fakeFetch,
     });
 
@@ -70,74 +52,54 @@ describe('KuaidailiClient', () => {
     assert.strictEqual(proxies.length, 2);
     assert.strictEqual(proxies[0], 'http://proxy1.example.com:8080');
 
+    const tokenCall = fetchCalls.find(c => c.url.includes('get_secret_token'));
+    assert.strictEqual(tokenCall, undefined, 'should not call get_secret_token with hmacsha1');
+
     const getkpsCall = fetchCalls.find(c => c.url.includes('getkps'));
     assert.ok(getkpsCall, 'expected getkps call');
+
     const getkpsUrl = new URL(getkpsCall.url);
-    assert.strictEqual(getkpsUrl.searchParams.get('signature'), 'tok123');
+    assert.strictEqual(getkpsUrl.searchParams.get('secret_id'), 'sid');
+    assert.strictEqual(getkpsUrl.searchParams.get('sign_type'), 'hmacsha1');
+    assert.ok(getkpsUrl.searchParams.get('timestamp'), 'expected timestamp');
+    assert.strictEqual(getkpsUrl.searchParams.get('num'), '5');
     assert.strictEqual(getkpsUrl.searchParams.get('format'), 'json');
-    assert.strictEqual(getkpsUrl.searchParams.get('num'), '1000');
 
-    const tokenCall = fetchCalls.find(c => c.url.includes('get_secret_token'));
-    assert.ok(tokenCall, 'expected get_secret_token call');
-    assert.strictEqual(tokenCall.options?.method, 'POST');
-    assert.strictEqual(tokenCall.options?.headers?.['Content-Type'], 'application/x-www-form-urlencoded');
-    assert.ok(tokenCall.options?.body?.includes('secret_id=sid'), 'expected body to include secret_id');
-    assert.ok(tokenCall.options?.body?.includes('secret_key=skey'), 'expected body to include secret_key');
-
-    cleanup();
+    const timestamp = getkpsUrl.searchParams.get('timestamp');
+    const params = {
+      secret_id: 'sid',
+      sign_type: 'hmacsha1',
+      timestamp,
+      num: '5',
+      format: 'json',
+    };
+    const expectedSig = buildExpectedSignature('skey', 'GET', 'kps.kdlapi.com/api/getkps', params);
+    assert.strictEqual(getkpsUrl.searchParams.get('signature'), expectedSig);
   });
 
-  it('reuses cached token and skips get_secret_token', async () => {
-    setup();
-    const cacheFile = path.join(cacheDir, 'token-cache.json');
-
-    fs.writeFileSync(
-      cacheFile,
-      JSON.stringify({
-        secret_token: 'cachedTok',
-        expire_time: Math.floor(Date.now() / 1000) + 3600,
-      })
-    );
-
-    let fetchCalls = [];
-    const fakeFetch = async (url, options) => {
-      fetchCalls.push({ url: url.toString(), options });
-      if (url.toString().includes('getkps')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            code: 0,
-            data: {
-              proxy_list: ['http://proxy3.example.com:8080'],
-            },
-          }),
-        };
-      }
-      throw new Error('Unexpected URL: ' + url);
-    };
-
+  it('internal signing helpers match official SDK semantics', () => {
     const client = new KuaidailiClient({
       secretId: 'sid',
       secretKey: 'skey',
-      proxyType: 'kps',
-      tokenCacheFile: cacheFile,
-      fetch: fakeFetch,
+      fetch: async () => ({}),
     });
 
-    const proxies = await client.getKpsProxies();
+    const params = {
+      secret_id: 'sid',
+      sign_type: 'hmacsha1',
+      timestamp: 1234567890,
+      num: '5',
+      format: 'json',
+    };
+    const rawStr = client._getStringToSign('GET', 'kps.kdlapi.com/api/getkps', params);
+    assert.strictEqual(rawStr, 'GET/api/getkps?format=json&num=5&secret_id=sid&sign_type=hmacsha1&timestamp=1234567890');
 
-    assert.strictEqual(proxies.length, 1);
-    assert.strictEqual(proxies[0], 'http://proxy3.example.com:8080');
-
-    const getkpsCall = fetchCalls.find(c => c.url.includes('getkps'));
-    assert.ok(getkpsCall, 'expected getkps call');
-    const getkpsUrl = new URL(getkpsCall.url);
-    assert.strictEqual(getkpsUrl.searchParams.get('signature'), 'cachedTok');
-
-    const tokenCall = fetchCalls.find(c => c.url.includes('get_secret_token'));
-    assert.strictEqual(tokenCall, undefined, 'should not call get_secret_token when cache is valid');
-
-    cleanup();
+    const signature = client._sign(rawStr);
+    const expectedSig = crypto
+      .createHmac('sha1', 'skey')
+      .update(rawStr)
+      .digest()
+      .toString('base64');
+    assert.strictEqual(signature, expectedSig);
   });
 });
