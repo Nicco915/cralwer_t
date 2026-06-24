@@ -31,4 +31,14 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.proxyRefreshIntervalMs, 60000);
     assert.strictEqual(config.proxyAssignmentsFile, './pool.json');
   });
+
+  it('uses proxy pool defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.ok(config.proxyAssignmentsFile.includes('proxy-assignments.json'));
+    assert.strictEqual(config.proxyMachineIndex, 0);
+    assert.strictEqual(config.proxyMachineTotal, 1);
+    assert.strictEqual(config.proxyRefreshIntervalMs, 300000);
+    assert.strictEqual(config.kuaidailiProxyType, 'kps');
+    assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
+  });
 });
