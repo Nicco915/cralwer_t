@@ -30,6 +30,8 @@ class KuaidailiClient {
     const body = new URLSearchParams();
     body.set('secret_id', this.secretId);
     body.set('secret_key', this.secretKey);
+    body.set('sign_type', 'simple');
+    body.set('signature', this.secretKey);
 
     const res = await this.fetch(url, {
       method: 'POST',
@@ -69,6 +71,7 @@ class KuaidailiClient {
     const url = new URL('https://kps.kdlapi.com/api/getkps');
     url.searchParams.set('secret_id', this.secretId);
     url.searchParams.set('signature', token);
+    url.searchParams.set('sign_type', 'token');
     url.searchParams.set('format', 'json');
     url.searchParams.set('num', String(this.proxyNum));
 
