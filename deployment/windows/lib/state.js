@@ -26,11 +26,24 @@ function writeState(installDir, state) {
   fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8');
 }
 
-function recordCurrent(installDir, commit) {
+function recordCurrent(installDir, commit, previous = null) {
   const state = readState(installDir);
-  state.previous = state.current;
+  if (previous !== null) {
+    state.previous = previous;
+  } else {
+    state.previous = state.current;
+  }
   state.current = commit;
-  state.history = [commit, ...state.history].slice(0, 20);
+  if (commit) {
+    state.history = [commit, ...state.history].slice(0, 20);
+  }
+  writeState(installDir, state);
+}
+
+function setCurrentCommit(installDir, commit, previous) {
+  const state = readState(installDir);
+  state.current = commit;
+  state.previous = previous;
   writeState(installDir, state);
 }
 
@@ -40,4 +53,5 @@ module.exports = {
   readState,
   writeState,
   recordCurrent,
+  setCurrentCommit,
 };

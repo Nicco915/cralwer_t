@@ -2,6 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { execSync } = require('node:child_process');
 const { recordCurrent } = require('./state.js');
+const { startPm2 } = require('./pm2.js');
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -56,30 +57,7 @@ async function deploy({ installDir, repoUrl, branch = 'main' }) {
     throw new Error(`[deploy] npm ci failed: ${err.message}`);
   }
 
-  const ecosystemPath = path.join(installDir, 'deployment', 'windows', 'ecosystem.config.js');
-  if (fs.existsSync(ecosystemPath)) {
-    try {
-      execSync(`pm2 start "${ecosystemPath}"`, { cwd: installDir, encoding: 'utf-8', stdio: 'inherit' });
-    } catch (err) {
-      throw new Error(`[deploy] pm2 start ecosystem failed: ${err.message}`);
-    }
-    try {
-      execSync('pm2 save', { cwd: installDir, encoding: 'utf-8', stdio: 'inherit' });
-    } catch (err) {
-      throw new Error(`[deploy] pm2 save failed: ${err.message}`);
-    }
-  } else {
-    try {
-      execSync('pm2 start bin/run.js --name crawler -- --mode=service', { cwd: installDir, encoding: 'utf-8', stdio: 'inherit' });
-    } catch (err) {
-      throw new Error(`[deploy] pm2 start failed: ${err.message}`);
-    }
-    try {
-      execSync('pm2 save', { cwd: installDir, encoding: 'utf-8', stdio: 'inherit' });
-    } catch (err) {
-      throw new Error(`[deploy] pm2 save failed: ${err.message}`);
-    }
-  }
+  startPm2(installDir);
 
   const commit = getCurrentCommit(installDir);
   recordCurrent(installDir, commit);

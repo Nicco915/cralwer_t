@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { getStatePath, readState, writeState, recordCurrent } = require('../../deployment/windows/lib/state.js');
+const { getStatePath, readState, writeState, recordCurrent, setCurrentCommit } = require('../../deployment/windows/lib/state.js');
 
 describe('state', () => {
   let tmpDir;
@@ -57,5 +57,15 @@ describe('state', () => {
     assert.strictEqual(state.history.length, 20);
     assert.strictEqual(state.history[0], 'commit-24');
     assert.strictEqual(state.history[19], 'commit-5');
+  });
+
+  it('setCurrentCommit 更新 current 和 previous', () => {
+    const installDir = path.join(tmpDir, 'set-current-test');
+    fs.mkdirSync(installDir, { recursive: true });
+    writeState(installDir, { current: 'v2', previous: 'v1', history: ['v2', 'v1', 'v0'] });
+    setCurrentCommit(installDir, 'v1', 'v0');
+    const state = readState(installDir);
+    assert.strictEqual(state.current, 'v1');
+    assert.strictEqual(state.previous, 'v0');
   });
 });
