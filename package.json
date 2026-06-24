@@ -12,6 +12,7 @@
     "test:integration": "node --test test/service.integration.test.js",
     "test:load": "node --test test/load/load-test.js",
     "test:deployment:local": "bash test/deployment/run-local.sh",
+    "test:deployment:unit": "node --test test/deployment/*.test.js",
     "cli:test": "node bin/run-test.js",
     "service": "CRAWLER_MODE=service node bin/run.js",
     "install-browsers": "npx playwright install chromium"
