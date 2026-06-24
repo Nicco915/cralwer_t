@@ -33,8 +33,10 @@ describe('KuaidailiClient', () => {
           json: async () => ({
             code: 0,
             data: {
-              secret_token: 'tok123',
-              expire_time: Math.floor(Date.now() / 1000) + 3600,
+              data: {
+                secret_token: 'tok123',
+                expire: Math.floor(Date.now() / 1000) + 3600,
+              },
             },
           }),
         };
@@ -74,6 +76,15 @@ describe('KuaidailiClient', () => {
     assert.ok(getkpsCall, 'expected getkps call');
     const getkpsUrl = new URL(getkpsCall.url);
     assert.strictEqual(getkpsUrl.searchParams.get('signature'), 'tok123');
+    assert.strictEqual(getkpsUrl.searchParams.get('format'), 'json');
+    assert.strictEqual(getkpsUrl.searchParams.get('num'), '1000');
+
+    const tokenCall = fetchCalls.find(c => c.url.includes('get_secret_token'));
+    assert.ok(tokenCall, 'expected get_secret_token call');
+    assert.strictEqual(tokenCall.options?.method, 'POST');
+    assert.strictEqual(tokenCall.options?.headers?.['Content-Type'], 'application/x-www-form-urlencoded');
+    assert.ok(tokenCall.options?.body?.includes('secret_id=sid'), 'expected body to include secret_id');
+    assert.ok(tokenCall.options?.body?.includes('secret_key=skey'), 'expected body to include secret_key');
 
     cleanup();
   });

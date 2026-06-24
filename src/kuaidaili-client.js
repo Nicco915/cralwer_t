@@ -6,7 +6,7 @@ class KuaidailiClient {
     this.secretId = options.secretId;
     this.secretKey = options.secretKey;
     this.proxyType = options.proxyType || 'kps';
-    this.tokenCacheFile = options.tokenCacheFile;
+    this.tokenCacheFile = options.tokenCacheFile || '.kdl_token';
     this.fetch = options.fetch || globalThis.fetch;
   }
 
@@ -26,29 +26,26 @@ class KuaidailiClient {
       }
     }
 
-    const timestamp = now;
-    const signature = crypto
-      .createHmac('sha1', this.secretKey)
-      .update(`${this.secretId}${timestamp}`)
-      .digest('hex');
+    const url = 'https://auth.kdlapi.com/api/get_secret_token';
+    const body = new URLSearchParams();
+    body.set('secret_id', this.secretId);
+    body.set('secret_key', this.secretKey);
 
-    const url = new URL('https://auth.kdlapi.com/api/get_secret_token');
-    url.searchParams.set('secret_id', this.secretId);
-    url.searchParams.set('timestamp', String(timestamp));
-    url.searchParams.set('signature', signature);
-    url.searchParams.set('signature_method', 'HMAC-SHA1');
-
-    const res = await this.fetch(url.toString());
+    const res = await this.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
     if (!res.ok) {
       throw new Error(`get_secret_token failed: ${res.status}`);
     }
-    const body = await res.json();
-    if (body.code !== 0 || !body.data) {
-      throw new Error(`get_secret_token error: ${body.code}`);
+    const data = await res.json();
+    if (data.code !== 0 || !data.data) {
+      throw new Error(`get_secret_token error: ${data.code}`);
     }
 
-    const token = body.data.secret_token;
-    const expireTime = body.data.expire_time;
+    const token = data.data.data.secret_token;
+    const expireTime = data.data.data.expire;
 
     if (this.tokenCacheFile) {
       const cacheDir = require('path').dirname(this.tokenCacheFile);
@@ -70,8 +67,8 @@ class KuaidailiClient {
     const url = new URL('https://kps.kdlapi.com/api/getkps');
     url.searchParams.set('secret_id', this.secretId);
     url.searchParams.set('signature', token);
-    url.searchParams.set('proxy_type', this.proxyType);
-    url.searchParams.set('num', '1');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('num', '1000');
 
     const res = await this.fetch(url.toString());
     if (!res.ok) {
