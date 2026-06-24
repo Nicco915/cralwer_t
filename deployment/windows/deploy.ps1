@@ -46,7 +46,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $setupServiceScript = Join-Path $PSScriptRoot "setup-pm2-service.ps1"
 if (Test-Path $setupServiceScript) {
-    & $setupServiceScript -InstallDir "$InstallDir"
+    & $setupServiceScript
 } else {
     Write-Warning "setup-pm2-service.ps1 not found. Skipping service setup."
 }
