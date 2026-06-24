@@ -70,3 +70,31 @@ module.exports = {
   ensureDir,
   getCurrentCommit,
 };
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  function getArg(flag) {
+    const index = args.indexOf(flag);
+    if (index === -1) return undefined;
+    if (index + 1 >= args.length || args[index + 1].startsWith('--')) {
+      console.error(`Missing value for ${flag}`);
+      process.exit(1);
+    }
+    return args[index + 1];
+  }
+  const repoUrl = getArg('--repo-url');
+  const branch = getArg('--branch') || 'main';
+  const installDir = getArg('--install-dir') || 'C:\\hs-sku-crawler';
+  if (!repoUrl) {
+    console.error('Usage: node deploy.js --repo-url <url> [--branch <branch>] [--install-dir <dir>]');
+    process.exit(1);
+  }
+  deploy({ repoUrl, branch, installDir })
+    .then((result) => {
+      console.log(JSON.stringify(result, null, 2));
+    })
+    .catch((err) => {
+      console.error(err.message);
+      process.exit(1);
+    });
+}

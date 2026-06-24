@@ -81,3 +81,26 @@ module.exports = {
   update,
   performUpdate,
 };
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  function getArg(flag) {
+    const index = args.indexOf(flag);
+    if (index === -1) return undefined;
+    if (index + 1 >= args.length || args[index + 1].startsWith('--')) {
+      console.error(`Missing value for ${flag}`);
+      process.exit(1);
+    }
+    return args[index + 1];
+  }
+  const installDir = getArg('--install-dir') || 'C:\\hs-sku-crawler';
+  const branch = getArg('--branch') || 'main';
+  update({ installDir, branch })
+    .then((result) => {
+      console.log(JSON.stringify(result, null, 2));
+    })
+    .catch((err) => {
+      console.error(err.message);
+      process.exit(1);
+    });
+}
