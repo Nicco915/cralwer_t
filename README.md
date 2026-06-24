@@ -128,6 +128,38 @@ CRAWLER_NODE_CODE=crawler-01 npm run service
 CRAWLER_NODE_CODE=crawler-02 npm run service
 ```
 
+### 多机器独享代理池部署
+
+所有机器共享同一组 Kuaidaili 凭据（`KUAIDAILI_SECRET_ID` 和 `KUAIDAILI_SECRET_KEY`），通过 `PROXY_MACHINE_INDEX` 与 `PROXY_MACHINE_TOTAL` 将可用 IP 均匀切分，每台机器上的每个 Channel 获得不同 IP。Channel-IP 映射会持久化到 `PROXY_ASSIGNMENTS_FILE`，进程重启后仍保持同一 IP，避免会话中断。
+
+| 环境变量 | 说明 |
+|---------|------|
+| `PROXY_MACHINE_INDEX` | 当前机器序号，从 `0` 开始 |
+| `PROXY_MACHINE_TOTAL` | 机器总数 |
+| `PROXY_ASSIGNMENTS_FILE` | 映射持久化文件路径 |
+
+示例：3 台机器部署
+
+```bash
+# machine-01
+CRAWLER_NODE_CODE=machine-01
+CRAWLER_CHANNELS=2
+PROXY_MACHINE_INDEX=0
+PROXY_MACHINE_TOTAL=3
+
+# machine-02
+CRAWLER_NODE_CODE=machine-02
+CRAWLER_CHANNELS=1
+PROXY_MACHINE_INDEX=1
+PROXY_MACHINE_TOTAL=3
+
+# machine-03
+CRAWLER_NODE_CODE=machine-03
+CRAWLER_CHANNELS=3
+PROXY_MACHINE_INDEX=2
+PROXY_MACHINE_TOTAL=3
+```
+
 ### Windows deployment
 
 For Windows hosts we provide two deployment options. Both run each node with `CRAWLER_CHANNELS=1`; scale horizontally by increasing the node count.
@@ -230,6 +262,14 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 | `--poll-interval` | `CRAWLER_POLL_INTERVAL` | `5000` | Poll interval in ms (service mode) |
 | `--poll-limit` | `CRAWLER_POLL_LIMIT` | `10` | Tasks per poll (service mode) |
 | `--push-retries` | `CRAWLER_PUSH_RETRIES` | `3` | Callback retry count (service mode) |
+| `--kuaidaili-secret-id` | `KUAIDAILI_SECRET_ID` | - | Kuaidaili order SecretId |
+| `--kuaidaili-secret-key` | `KUAIDAILI_SECRET_KEY` | - | Kuaidaili order SecretKey |
+| `--kuaidaili-proxy-type` | `KUAIDAILI_PROXY_TYPE` | `kps` | Proxy product type |
+| `--kuaidaili-token-cache-file` | `KUAIDAILI_TOKEN_CACHE_FILE` | `.kdl_token` | Token cache file |
+| `--proxy-machine-index` | `PROXY_MACHINE_INDEX` | `0` | This machine's index |
+| `--proxy-machine-total` | `PROXY_MACHINE_TOTAL` | `1` | Total machines |
+| `--proxy-refresh-interval-ms` | `PROXY_REFRESH_INTERVAL_MS` | `300000` | Proxy list refresh interval |
+| `--proxy-assignments-file` | `PROXY_ASSIGNMENTS_FILE` | `./proxy-assignments.json` | Channel-IP assignment file |
 
 Secrets:
 - `DASHSCOPE_API_KEY` — required only if translation is enabled.
