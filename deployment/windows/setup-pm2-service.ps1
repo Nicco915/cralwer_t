@@ -23,10 +23,14 @@ $installerDir = Join-Path $globalModules "pm2-installer"
 
 # 检查 pm2-installer 是否已安装
 if (-not (Test-Path $installerDir)) {
-    Write-Host "pm2-installer not found. Installing globally..."
-    npm install -g pm2-installer
+    Write-Host "pm2-installer not found. Cloning from GitHub..."
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Error "git not found. Please install Git first."
+        exit 1
+    }
+    git clone https://github.com/jessety/pm2-installer.git "$installerDir"
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to install pm2-installer."
+        Write-Error "Failed to clone pm2-installer from GitHub."
         exit 1
     }
 }
