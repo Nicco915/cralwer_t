@@ -125,6 +125,7 @@ class CrawlerService {
         secretId: this.config.kuaidailiSecretId,
         secretKey: this.config.kuaidailiSecretKey,
         proxyType: this.config.kuaidailiProxyType,
+        proxyNum: this.config.kuaidailiProxyNum,
         tokenCacheFile: this.config.kuaidailiTokenCacheFile,
       });
       this.proxyPool = new ProxyPool({

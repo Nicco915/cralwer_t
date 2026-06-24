@@ -31,6 +31,7 @@ function buildServiceConfig(config) {
     kuaidailiSecretId: config.kuaidailiSecretId,
     kuaidailiSecretKey: config.kuaidailiSecretKey,
     kuaidailiProxyType: config.kuaidailiProxyType || 'kps',
+    kuaidailiProxyNum: config.kuaidailiProxyNum !== undefined ? Number(config.kuaidailiProxyNum) : 1000,
     kuaidailiTokenCacheFile: config.kuaidailiTokenCacheFile || '.kdl_token',
     proxyMachineIndex: config.proxyMachineIndex !== undefined ? Number(config.proxyMachineIndex) : 0,
     proxyMachineTotal: config.proxyMachineTotal !== undefined ? Number(config.proxyMachineTotal) : 1,

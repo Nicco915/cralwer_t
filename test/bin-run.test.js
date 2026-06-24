@@ -21,6 +21,7 @@ describe('bin/run service config', () => {
       proxyMachineTotal: '3',
       proxyRefreshIntervalMs: '60000',
       proxyAssignmentsFile: './pool.json',
+      kuaidailiProxyNum: '500',
     });
     assert.strictEqual(config.kuaidailiSecretId, 'sid');
     assert.strictEqual(config.kuaidailiSecretKey, 'skey');
@@ -30,6 +31,7 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.proxyMachineTotal, 3);
     assert.strictEqual(config.proxyRefreshIntervalMs, 60000);
     assert.strictEqual(config.proxyAssignmentsFile, './pool.json');
+    assert.strictEqual(config.kuaidailiProxyNum, 500);
   });
 
   it('uses proxy pool defaults when not provided', () => {
@@ -40,5 +42,6 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.proxyRefreshIntervalMs, 300000);
     assert.strictEqual(config.kuaidailiProxyType, 'kps');
     assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
+    assert.strictEqual(config.kuaidailiProxyNum, 1000);
   });
 });

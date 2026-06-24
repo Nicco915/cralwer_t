@@ -265,6 +265,7 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 | `--kuaidaili-secret-id` | `KUAIDAILI_SECRET_ID` | - | Kuaidaili order SecretId |
 | `--kuaidaili-secret-key` | `KUAIDAILI_SECRET_KEY` | - | Kuaidaili order SecretKey |
 | `--kuaidaili-proxy-type` | `KUAIDAILI_PROXY_TYPE` | `kps` | Proxy product type |
+| `--kuaidaili-proxy-num` | `KUAIDAILI_PROXY_NUM` | `1000` | Number of proxies to fetch per call |
 | `--kuaidaili-token-cache-file` | `KUAIDAILI_TOKEN_CACHE_FILE` | `.kdl_token` | Token cache file |
 | `--proxy-machine-index` | `PROXY_MACHINE_INDEX` | `0` | This machine's index |
 | `--proxy-machine-total` | `PROXY_MACHINE_TOTAL` | `1` | Total machines |

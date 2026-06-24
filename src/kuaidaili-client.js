@@ -6,6 +6,7 @@ class KuaidailiClient {
     this.secretId = options.secretId;
     this.secretKey = options.secretKey;
     this.proxyType = options.proxyType || 'kps';
+    this.proxyNum = options.proxyNum !== undefined ? Number(options.proxyNum) : 1000;
     this.tokenCacheFile = options.tokenCacheFile || '.kdl_token';
     this.fetch = options.fetch || globalThis.fetch;
   }
@@ -68,7 +69,7 @@ class KuaidailiClient {
     url.searchParams.set('secret_id', this.secretId);
     url.searchParams.set('signature', token);
     url.searchParams.set('format', 'json');
-    url.searchParams.set('num', '1000');
+    url.searchParams.set('num', String(this.proxyNum));
 
     const res = await this.fetch(url.toString());
     if (!res.ok) {
