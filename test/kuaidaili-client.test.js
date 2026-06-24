@@ -33,10 +33,8 @@ describe('KuaidailiClient', () => {
           json: async () => ({
             code: 0,
             data: {
-              data: {
-                secret_token: 'tok123',
-                expire: Math.floor(Date.now() / 1000) + 3600,
-              },
+              secret_token: 'tok123',
+              expire: 3600,
             },
           }),
         };

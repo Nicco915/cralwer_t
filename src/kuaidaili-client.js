@@ -41,11 +41,13 @@ class KuaidailiClient {
     }
     const data = await res.json();
     if (data.code !== 0 || !data.data) {
-      throw new Error(`get_secret_token error: ${data.code}`);
+      throw new Error(`get_secret_token error: ${data.code}, msg: ${data.msg || 'unknown'}`);
     }
 
-    const token = data.data.data.secret_token;
-    const expireTime = data.data.data.expire;
+    const token = data.data.secret_token;
+    const expireSeconds = Number(data.data.expire);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expireTime = nowSec + expireSeconds;
 
     if (this.tokenCacheFile) {
       const cacheDir = require('path').dirname(this.tokenCacheFile);
