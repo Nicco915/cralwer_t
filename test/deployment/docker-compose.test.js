@@ -15,6 +15,6 @@ describe('docker-compose.yml', () => {
     const content = fs.readFileSync(composePath, 'utf-8');
     assert.ok(content.includes('./.env:/app/.env:ro'), 'should mount .env read-only');
     assert.ok(content.includes('restart: unless-stopped'), 'should set restart policy');
-    assert.ok(content.includes('${CRAWLER_IMAGE}'), 'should use CRAWLER_IMAGE');
+    assert.ok(content.includes('${CRAWLER_IMAGE:?'), 'should use CRAWLER_IMAGE with required error message');
   });
 });
