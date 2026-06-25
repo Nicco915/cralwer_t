@@ -21,13 +21,15 @@ describe('docker update', () => {
     pullShouldFail = false;
     cp.execSync = (cmd, opts) => {
       commands.push({ cmd, cwd: opts?.cwd, env: opts?.env });
-      if (cmd.includes('docker pull') && pullShouldFail) throw new Error('pull failed');
-      if (cmd.includes('docker pull')) return '';
       if (cmd.includes('docker compose')) return '';
       return originalExecSync(cmd, opts);
     };
     cp.execFileSync = (file, args, opts) => {
       commands.push([file, ...args].join(' '));
+      if (file === 'docker' && args.includes('pull')) {
+        if (pullShouldFail) throw new Error('pull failed');
+        return '';
+      }
       if (file === 'docker' && args.includes('inspect')) {
         return execFileOutput;
       }
@@ -71,9 +73,9 @@ describe('docker update', () => {
 
     await update({ installDir, imageTag: 'registry/a:2', healthCheckTimeoutMs: 100 });
 
-    const pullCmd = commands.find(c => typeof c === 'object' && c.cmd.includes('docker pull'));
+    const pullCmd = commands.find(c => typeof c === 'string' && c.includes('docker pull'));
     assert.ok(pullCmd);
-    assert.ok(pullCmd.cmd.includes('registry/a:2'));
+    assert.ok(pullCmd.includes('registry/a:2'));
     const composeCmd = commands.find(c => typeof c === 'object' && c.cmd.includes('docker compose up -d'));
     assert.ok(composeCmd);
     assert.strictEqual(composeCmd.env?.CRAWLER_IMAGE, 'registry/a:2');

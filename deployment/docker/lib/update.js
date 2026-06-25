@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execSync, execFileSync } = require('node:child_process');
 const { readState, writeState, recordCurrent, setCurrentImage } = require('./state.js');
-const { waitForContainer } = require('./health-check.js');
+const { waitForContainer, DEFAULT_CONTAINER_NAME } = require('./health-check.js');
 
 async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
   if (!installDir || typeof installDir !== 'string') {
@@ -37,7 +37,7 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
           stdio: 'inherit',
           env: { ...process.env, CRAWLER_IMAGE: previousImage },
         });
-        const online = await waitForContainer('hs-sku-crawler', healthCheckTimeoutMs);
+        const online = await waitForContainer(DEFAULT_CONTAINER_NAME, healthCheckTimeoutMs);
         if (!online) {
           throw new Error('[update] health check failed after rollback');
         }
@@ -53,7 +53,7 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
 
 async function performUpdate(installDir, newImage, healthCheckTimeoutMs, previousImage, oldPrevious) {
   try {
-    execSync(`docker pull ${newImage}`, { encoding: 'utf-8', stdio: 'inherit', timeout: 120000 });
+    execFileSync('docker', ['pull', newImage], { encoding: 'utf-8', stdio: 'inherit', timeout: 120000 });
   } catch (err) {
     throw new Error(`[update] docker pull failed: ${err.message}`);
   }
@@ -69,7 +69,7 @@ async function performUpdate(installDir, newImage, healthCheckTimeoutMs, previou
     throw new Error(`[update] docker compose up failed: ${err.message}`);
   }
 
-  const healthy = await waitForContainer('hs-sku-crawler', healthCheckTimeoutMs);
+  const healthy = await waitForContainer(DEFAULT_CONTAINER_NAME, healthCheckTimeoutMs);
   if (!healthy) {
     throw new Error('[update] health check failed after update');
   }

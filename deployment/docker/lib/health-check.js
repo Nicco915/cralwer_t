@@ -1,6 +1,8 @@
 const { execFileSync } = require('node:child_process');
 
-function isContainerRunning(containerName = 'hs-sku-crawler') {
+const DEFAULT_CONTAINER_NAME = 'hs-sku-crawler';
+
+function isContainerRunning(containerName = DEFAULT_CONTAINER_NAME) {
   try {
     const output = execFileSync(
       'docker',
@@ -13,7 +15,7 @@ function isContainerRunning(containerName = 'hs-sku-crawler') {
   }
 }
 
-function waitForContainer(containerName = 'hs-sku-crawler', timeoutMs = 30000, intervalMs = 2000) {
+function waitForContainer(containerName = DEFAULT_CONTAINER_NAME, timeoutMs = 30000, intervalMs = 2000) {
   return new Promise((resolve) => {
     const start = Date.now();
     let timer = null;
@@ -34,6 +36,7 @@ function waitForContainer(containerName = 'hs-sku-crawler', timeoutMs = 30000, i
 }
 
 module.exports = {
+  DEFAULT_CONTAINER_NAME,
   isContainerRunning,
   waitForContainer,
 };
