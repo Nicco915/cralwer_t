@@ -14,6 +14,7 @@ function buildServiceConfig(config) {
     locale: config.locale,
     timezone: config.timezone,
     browserPath: config.browserPath,
+    browserTempDir: config.browserTempDir,
     headless: config.headless !== false,
     maxImages: config.maxImages !== undefined ? Number(config.maxImages) : 5,
     cloudflareMaxWait: config.cloudflareMaxWait !== undefined ? Number(config.cloudflareMaxWait) : 45,

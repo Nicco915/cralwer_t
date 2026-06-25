@@ -38,7 +38,7 @@ class CrawlerService {
   }
 
   async initBrowser() {
-    const { headless, browserPath, userAgent, viewport, locale, timezone } = this.config;
+    const { headless, browserPath, browserTempDir, userAgent, viewport, locale, timezone } = this.config;
     const resolvedBrowser = resolveBrowserPath(browserPath);
     if (resolvedBrowser) {
       this.log(`[BROWSER] Using: ${resolvedBrowser}`);
@@ -46,9 +46,16 @@ class CrawlerService {
       this.log('[BROWSER] Edge not found, falling back to Playwright bundled Chromium');
     }
 
+    const tempDir = browserTempDir || path.resolve('./output/browser-temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     this.browser = await chromium.launch({
       headless,
       executablePath: resolvedBrowser,
+      tracesDir: tempDir,
+      downloadsPath: tempDir,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',
