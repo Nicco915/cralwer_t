@@ -29,15 +29,21 @@ async function rollback({ installDir, targetImage = null, healthCheckTimeoutMs =
 
   const healthy = await waitForContainer(DEFAULT_CONTAINER_NAME, healthCheckTimeoutMs);
   if (!healthy) {
+    // Rollback itself failed to become healthy; there is no further automatic
+    // fallback. The operator must inspect the container and intervene manually.
     throw new Error('[rollback] health check failed after rollback');
   }
 
   const originalCurrent = state.current;
   let newPrevious = originalCurrent;
+  // history is maintained newest-first by state.js; the entry before the target
+  // in the array is the image deployed immediately after it.
   const idx = state.history.indexOf(image);
   if (idx !== -1 && idx > 0) {
     newPrevious = state.history[idx - 1];
   }
+  // When the target is the newest image in history (idx === 0) or not in
+  // history at all, fall back to the original current as the previous reference.
 
   state.current = image;
   state.previous = newPrevious;

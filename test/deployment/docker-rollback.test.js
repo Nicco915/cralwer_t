@@ -8,6 +8,7 @@ const cp = require('node:child_process');
 const originalExecFileSync = cp.execFileSync;
 const rollbackModulePath = path.resolve(__dirname, '../../deployment/docker/lib/rollback.js');
 const stateModulePath = path.resolve(__dirname, '../../deployment/docker/lib/state.js');
+const healthCheckModulePath = path.resolve(__dirname, '../../deployment/docker/lib/health-check.js');
 let tmpDir;
 let commands;
 let execFileOutput;
@@ -29,6 +30,7 @@ describe('docker rollback', () => {
     };
     delete require.cache[rollbackModulePath];
     delete require.cache[stateModulePath];
+    delete require.cache[healthCheckModulePath];
   });
 
   afterEach(() => {
@@ -36,6 +38,7 @@ describe('docker rollback', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete require.cache[rollbackModulePath];
     delete require.cache[stateModulePath];
+    delete require.cache[healthCheckModulePath];
   });
 
   it('throws when installDir is not a string', async () => {
