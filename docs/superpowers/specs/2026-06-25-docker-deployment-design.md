@@ -79,9 +79,8 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler
     restart: unless-stopped
-    env_file:
-      - .env
     volumes:
+      - ./.env:/app/.env:ro
       - ./logs:/app/logs
       - ./output:/app/output
       - ./images:/app/images
@@ -89,7 +88,8 @@ services:
 ```
 
 - `CRAWLER_IMAGE` 由部署脚本根据当前 tag 注入。
-- `.env` 从主机挂载，日志/输出/图片目录持久化到主机。
+- 主机上的 `.env` 以只读 volume 形式挂载到容器 `/app/.env`，与 PM2 方案的"预放置配置"保持一致。
+- 日志/输出/图片目录持久化到主机。
 
 ## 镜像构建与推送
 
@@ -112,7 +112,7 @@ docker push $latestImage
 ```
 
 - 镜像 tag 使用 Git commit 短 SHA，同时更新 `latest` 指针。
-- 部署脚本默认读取 `.deployment-state.json` 中的 `current` 字段，也可通过参数指定 tag。
+- 目标机部署/更新时使用精确的 SHA tag（如 `abc1234`），`latest` 仅作为人工拉取的别名，不用于状态追踪。
 
 ## 部署脚本
 
@@ -133,7 +133,7 @@ docker push $latestImage
 
 1. 读取 `.deployment-state.json` 的 `current`。
 2. 将 `current` 写入 `previous`。
-3. 拉取新镜像 tag（通过 `-ImageTag` 参数，或默认解析 `latest`）。
+3. 拉取新镜像 tag（通过 `-ImageTag` 参数，必须显式指定，如 `abc1234`）。
 4. 更新 `CRAWLER_IMAGE` 环境变量，执行 `docker compose up -d`。
 5. 健康检查：
    - 通过：将新 tag 写入 `current`，追加到 `history`。
