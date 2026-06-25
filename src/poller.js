@@ -1,3 +1,5 @@
+const JSONbig = require('json-bigint')({ useNativeBigInt: true });
+
 class Poller {
   constructor(options) {
     this.taskUrl = options.taskUrl;
@@ -29,24 +31,19 @@ class Poller {
     }
 
     let data;
+    let responseText = '';
     try {
-      const text = await response.text();
-      // JavaScript cannot safely parse integers above Number.MAX_SAFE_INTEGER
-      // (9007199254740991). Upstream returns 19-digit task ids that lose
-      // precision if parsed as Numbers. Pre-process the raw JSON text to wrap
-      // any large integer (>=15 digits) in quotes so they remain strings.
-      const safeText = text.replace(/:\s*(\d{15,})/g, ':"$1"');
-      data = JSON.parse(safeText);
+      responseText = await response.text();
+      data = JSONbig.parse(responseText);
     } catch (e) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Fetch tasks returned invalid JSON: ${e.message}. Body: ${text}`);
+      throw new Error(`Fetch tasks returned invalid JSON: ${e.message}. Body: ${responseText}`);
     }
 
     return (Array.isArray(data.data) ? data.data : []).map((task) => {
       // The real upstream API uses `id` as the task identifier.
-      // Normalize it to `crawlerTaskId` (always string) for downstream consumers.
+      // Normalize it to `crawlerTaskId` for downstream consumers.
       if (task && task.crawlerTaskId === undefined && task.id !== undefined) {
-        return { ...task, crawlerTaskId: String(task.id) };
+        return { ...task, crawlerTaskId: task.id };
       }
       return task;
     });

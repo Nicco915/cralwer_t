@@ -1,5 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
+const JSONbig = require('json-bigint')({ useNativeBigInt: true });
 const { Pusher } = require('../src/pusher');
 
 describe('Pusher.push', () => {
@@ -164,5 +165,38 @@ describe('Pusher.push', () => {
       }),
       /Callback failed: 500/
     );
+  });
+
+  it('serializes large crawlerTaskId as JSON number without precision loss', async () => {
+    const fetched = [];
+    const fakeFetch = async (url, options) => {
+      fetched.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ code: 0 }) };
+    };
+
+    const pusher = new Pusher({
+      callbackUrl: 'http://example.com/callback',
+      nodeCode: 'node-1',
+      nodeToken: 'token-1',
+      fetch: fakeFetch,
+    });
+
+    await pusher.push({
+      crawlerTaskId: 2070043611483398145n,
+      sku: 'ABC-BIG',
+      status: 'success',
+      product_name: 'Product Name',
+      features_details: 'Features details',
+      product_specification: 'Specification',
+      product_url: 'https://example.com/item',
+      error: '',
+    });
+
+    assert.strictEqual(fetched.length, 1);
+    const rawBody = fetched[0].options.body;
+    // The raw JSON body must contain the 19-digit id as an unquoted number.
+    assert.ok(rawBody.includes('"crawlerTaskId":2070043611483398145,'), `body did not preserve precision: ${rawBody}`);
+    const body = JSONbig.parse(rawBody);
+    assert.strictEqual(body.crawlerTaskId, 2070043611483398145n);
   });
 });

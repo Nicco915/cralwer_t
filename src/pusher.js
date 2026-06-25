@@ -1,3 +1,5 @@
+const JSONbig = require('json-bigint')({ useNativeBigInt: true });
+
 class Pusher {
   constructor(options) {
     this.callbackUrl = options.callbackUrl;
@@ -33,7 +35,7 @@ class Pusher {
     let lastError = null;
 
     console.log(`[PUSHER] Start pushing task ${result.crawlerTaskId} sku ${result.sku} status=${result.status} to ${this.callbackUrl}`);
-    console.log(`[PUSHER] Body ${result.crawlerTaskId}: ${JSON.stringify(body)}`);
+    console.log(`[PUSHER] Body ${result.crawlerTaskId}: ${JSONbig.stringify(body)}`);
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       if (attempt > 0) {
@@ -45,7 +47,7 @@ class Pusher {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(body),
+          body: JSONbig.stringify(body),
         });
 
         if (!response.ok) {

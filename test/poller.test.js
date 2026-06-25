@@ -43,7 +43,7 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
-  it('preserves precision of large upstream numeric ids', async () => {
+  it('preserves precision of large upstream numeric ids as BigInt', async () => {
     const fakeFetch = async () => ({
       ok: true,
       status: 200,
@@ -62,7 +62,8 @@ describe('Poller.fetchTasks', () => {
     const tasks = await poller.fetchTasks();
 
     assert.strictEqual(tasks.length, 1);
-    assert.strictEqual(tasks[0].crawlerTaskId, '2070043611483398145');
+    assert.strictEqual(typeof tasks[0].crawlerTaskId, 'bigint');
+    assert.strictEqual(tasks[0].crawlerTaskId, 2070043611483398145n);
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
