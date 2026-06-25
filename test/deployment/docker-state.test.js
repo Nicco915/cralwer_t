@@ -31,7 +31,8 @@ describe('docker state', () => {
   });
 
   it('recordCurrent updates current/previous/history', () => {
-    const dir = tmpDir;
+    const dir = path.join(tmpDir, 'record-current');
+    fs.mkdirSync(dir, { recursive: true });
     recordCurrent(dir, 'registry/a:1');
     let state = readState(dir);
     assert.strictEqual(state.current, 'registry/a:1');
