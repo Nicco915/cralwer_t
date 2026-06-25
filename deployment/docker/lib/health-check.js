@@ -1,9 +1,10 @@
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 
 function isContainerRunning(containerName = 'hs-sku-crawler') {
   try {
-    const output = execSync(
-      `docker inspect --format='{{.State.Status}}' ${containerName}`,
+    const output = execFileSync(
+      'docker',
+      ['inspect', '--format={{.State.Status}}', containerName],
       { encoding: 'utf-8', timeout: 10000 }
     );
     return output.trim() === 'running';
