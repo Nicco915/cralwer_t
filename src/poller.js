@@ -54,7 +54,9 @@ class Poller {
       if (!this.running) return;
       try {
         const tasks = await this.fetchTasks();
+        console.log(`[Poller] fetched ${tasks.length} task(s)`);
         if (tasks.length > 0 && onTasks) {
+          console.log(`[Poller] pushing ${tasks.length} task(s) to worker`);
           onTasks(tasks);
         }
       } catch (e) {

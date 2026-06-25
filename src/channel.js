@@ -77,14 +77,14 @@ class Channel {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
       const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page);
       result.crawlerTaskId = task.crawlerTaskId;
-      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status}`);
+      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status} error=${result.error || 'none'}`);
       this.consecutiveFailures = 0;
       this.lastFailureWasProxy = false;
       return result;
     } catch (e) {
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
-      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error`);
+      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
       throw e;
     } finally {
       this.busy = false;
