@@ -39,7 +39,7 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(body.nodeToken, 'token-1');
     assert.strictEqual(body.limit, 5);
     assert.strictEqual(tasks.length, 2);
-    assert.strictEqual(tasks[0].crawlerTaskId, 1);
+    assert.strictEqual(tasks[0].crawlerTaskId, '1');
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 

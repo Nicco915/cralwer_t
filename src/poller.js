@@ -38,9 +38,12 @@ class Poller {
 
     return (Array.isArray(data.data) ? data.data : []).map((task) => {
       // The real upstream API uses `id` as the task identifier.
-      // Normalize it to `crawlerTaskId` for downstream consumers.
-      if (task && task.crawlerTaskId === undefined && task.id !== undefined) {
-        return { ...task, crawlerTaskId: task.id };
+      // Normalize it to `crawlerTaskId` (always string) for downstream consumers.
+      if (task && task.crawlerTaskId !== undefined) {
+        return { ...task, crawlerTaskId: String(task.crawlerTaskId) };
+      }
+      if (task && task.id !== undefined) {
+        return { ...task, crawlerTaskId: String(task.id) };
       }
       return task;
     });
