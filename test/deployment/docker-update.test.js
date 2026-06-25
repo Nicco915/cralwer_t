@@ -5,7 +5,6 @@ const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
 
-const originalExecSync = cp.execSync;
 const originalExecFileSync = cp.execFileSync;
 const updateModulePath = path.resolve(__dirname, '../../deployment/docker/lib/update.js');
 let tmpDir;
@@ -21,7 +20,6 @@ describe('docker update', () => {
     execFileOutput = 'running\n';
     pullShouldFail = false;
     composeShouldFail = false;
-    cp.execSync = originalExecSync;
     cp.execFileSync = (file, args, opts) => {
       commands.push({ file, args, cwd: opts?.cwd, env: opts?.env });
       if (file === 'docker' && args.includes('pull')) {
@@ -32,7 +30,9 @@ describe('docker update', () => {
         return execFileOutput;
       }
       if (file === 'docker' && args.includes('compose') && args.includes('up')) {
-        if (composeShouldFail) throw new Error('docker compose up failed');
+        if (composeShouldFail && opts?.env?.CRAWLER_IMAGE === 'registry/a:2') {
+          throw new Error('docker compose up failed');
+        }
         return '';
       }
       return originalExecFileSync(file, args, opts);
@@ -41,7 +41,6 @@ describe('docker update', () => {
   });
 
   afterEach(() => {
-    cp.execSync = originalExecSync;
     cp.execFileSync = originalExecFileSync;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete require.cache[updateModulePath];
@@ -122,6 +121,7 @@ describe('docker update', () => {
 
     const state = readState(installDir);
     assert.strictEqual(state.current, 'registry/a:1');
+    assert.strictEqual(state.previous, null);
   });
 
   it('update rolls back to previous image on docker compose up failure', async () => {
@@ -140,5 +140,6 @@ describe('docker update', () => {
 
     const state = readState(installDir);
     assert.strictEqual(state.current, 'registry/a:1');
+    assert.strictEqual(state.previous, null);
   });
 });

@@ -5,7 +5,6 @@ const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
 
-const originalExecSync = cp.execSync;
 const originalExecFileSync = cp.execFileSync;
 const deployModulePath = path.resolve(__dirname, '../../deployment/docker/lib/deploy.js');
 let tmpDir;
@@ -15,7 +14,6 @@ describe('docker deploy', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docker-deploy-test-'));
     commands = [];
-    cp.execSync = originalExecSync;
     cp.execFileSync = (file, args, opts) => {
       commands.push({ file, args, cwd: opts?.cwd, env: opts?.env });
       if (file === 'docker' && args.includes('compose') && args.includes('up')) {
@@ -27,7 +25,6 @@ describe('docker deploy', () => {
   });
 
   afterEach(() => {
-    cp.execSync = originalExecSync;
     cp.execFileSync = originalExecFileSync;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete require.cache[deployModulePath];
@@ -111,5 +108,6 @@ describe('docker deploy', () => {
       async () => deploy({ installDir, image: 'registry/a:1' }),
       /\[deploy\] docker compose up failed/
     );
+    assert.ok(!fs.existsSync(path.join(installDir, '.deployment-state.json')), 'state file should not be written on failure');
   });
 });
