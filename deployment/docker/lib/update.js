@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { readState, writeState, recordCurrent, setCurrentImage } = require('./state.js');
+const { readState, writeState, recordCurrent } = require('./state.js');
 const { waitForContainer, DEFAULT_CONTAINER_NAME } = require('./health-check.js');
 
 async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
@@ -17,16 +17,13 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
     throw new Error(`.env not found at ${envPath}`);
   }
 
-  const state = readState(installDir);
-  const previousImage = state.current;
-  const oldPrevious = state.previous;
-  state.previous = previousImage;
-  writeState(installDir, state);
+  const originalState = readState(installDir);
+  const previousImage = originalState.current;
 
   const newImage = imageTag.includes(':') ? imageTag : `${imageTag}:latest`;
 
   try {
-    return await performUpdate(installDir, newImage, healthCheckTimeoutMs, previousImage, oldPrevious);
+    return await performUpdate(installDir, newImage, previousImage, healthCheckTimeoutMs);
   } catch (err) {
     if (previousImage) {
       console.error(`Update failed, rolling back to ${previousImage}...`);
@@ -41,7 +38,9 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
         if (!online) {
           throw new Error('[update] health check failed after rollback');
         }
-        setCurrentImage(installDir, previousImage, oldPrevious);
+        // Restore the complete original state so that current/previous/history
+        // remain consistent even if a future refactor records history earlier.
+        writeState(installDir, originalState);
       } catch (rollbackErr) {
         console.error(`Rollback also failed: ${rollbackErr.message}`);
         throw new Error(`Update failed and rollback failed: ${err.message}\nRollback error: ${rollbackErr.message}`);
@@ -51,7 +50,7 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
   }
 }
 
-async function performUpdate(installDir, newImage, healthCheckTimeoutMs, previousImage, oldPrevious) {
+async function performUpdate(installDir, newImage, previousImage, healthCheckTimeoutMs) {
   try {
     execFileSync('docker', ['pull', newImage], { encoding: 'utf-8', stdio: 'inherit', timeout: 120000 });
   } catch (err) {

@@ -124,14 +124,15 @@ describe('docker update', () => {
     assert.strictEqual(state.previous, null);
   });
 
-  it('update rolls back to previous image on docker compose up failure', async () => {
+  it('update preserves history during rollback', async () => {
     const { update, readState } = require(updateModulePath);
-    const installDir = path.join(tmpDir, 'update-compose-fail');
+    const installDir = path.join(tmpDir, 'update-rollback-history');
     fs.mkdirSync(installDir, { recursive: true });
     fs.writeFileSync(path.join(installDir, '.env'), 'TEST=1\n');
     const { recordCurrent } = require(path.resolve(__dirname, '../../deployment/docker/lib/state.js'));
+    recordCurrent(installDir, 'registry/a:0');
     recordCurrent(installDir, 'registry/a:1');
-    composeShouldFail = true;
+    execFileOutput = 'exited\n';
 
     await assert.rejects(
       async () => update({ installDir, imageTag: 'registry/a:2', healthCheckTimeoutMs: 100 }),
@@ -140,6 +141,7 @@ describe('docker update', () => {
 
     const state = readState(installDir);
     assert.strictEqual(state.current, 'registry/a:1');
-    assert.strictEqual(state.previous, null);
+    assert.strictEqual(state.previous, 'registry/a:0');
+    assert.deepStrictEqual(state.history, ['registry/a:1', 'registry/a:0']);
   });
 });
