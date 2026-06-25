@@ -20,6 +20,13 @@ if ($TargetImage -and ($TargetImage -match '[\s;|&$`<>()]')) {
     exit 1
 }
 
+if ($InstallDir -match '[\s;|&$`<>()]' -or -not [System.IO.Path]::IsPathRooted($InstallDir)) {
+    Write-Error "InstallDir must be an absolute path and must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
+$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error "Node.js is not installed. Please install Node.js first."
     exit 1

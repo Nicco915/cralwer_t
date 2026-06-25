@@ -32,6 +32,13 @@ if ($ImageTag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $I
     exit 1
 }
 
+if ($InstallDir -match '[\s;|&$`<>()]' -or -not [System.IO.Path]::IsPathRooted($InstallDir)) {
+    Write-Error "InstallDir must be an absolute path and must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
+$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+
 # Check Docker Compose is available
 try {
     $null = & docker compose version 2>$null
