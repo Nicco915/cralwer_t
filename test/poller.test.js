@@ -10,7 +10,7 @@ describe('Poller.fetchTasks', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({
+        text: async () => JSON.stringify({
           code: 0,
           data: [
             { crawlerTaskId: 1, sku: 'ABC-001' },
@@ -39,7 +39,30 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(body.nodeToken, 'token-1');
     assert.strictEqual(body.limit, 5);
     assert.strictEqual(tasks.length, 2);
-    assert.strictEqual(tasks[0].crawlerTaskId, '1');
+    assert.strictEqual(tasks[0].crawlerTaskId, 1);
+    assert.strictEqual(tasks[0].sku, 'ABC-001');
+  });
+
+  it('preserves precision of large upstream numeric ids', async () => {
+    const fakeFetch = async () => ({
+      ok: true,
+      status: 200,
+      // Raw JSON text is used on purpose: JavaScript number literals lose
+      // precision for 19-digit integers, so we must not build this via JSON.stringify.
+      text: async () => '{"code":0,"data":[{"id":2070043611483398145,"sku":"ABC-001"}]}',
+    });
+
+    const poller = new Poller({
+      taskUrl: 'http://example.com/tasks',
+      nodeCode: 'node-1',
+      nodeToken: 'token-1',
+      fetch: fakeFetch,
+    });
+
+    const tasks = await poller.fetchTasks();
+
+    assert.strictEqual(tasks.length, 1);
+    assert.strictEqual(tasks[0].crawlerTaskId, '2070043611483398145');
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
@@ -47,7 +70,7 @@ describe('Poller.fetchTasks', () => {
     const fakeFetch = async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ code: 0, data: [] }),
+      text: async () => JSON.stringify({ code: 0, data: [] }),
     });
 
     const poller = new Poller({
@@ -65,7 +88,7 @@ describe('Poller.fetchTasks', () => {
     const fakeFetch = async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ code: 0 }),
+      text: async () => JSON.stringify({ code: 0 }),
     });
 
     const poller = new Poller({
@@ -103,7 +126,6 @@ describe('Poller.fetchTasks', () => {
     const fakeFetch = async () => ({
       ok: true,
       status: 200,
-      json: async () => { throw new Error('not json'); },
       text: async () => 'not json',
     });
 
@@ -129,7 +151,7 @@ describe('Poller.start/stop', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({
+        text: async () => JSON.stringify({
           code: 0,
           data: callCount === 1 ? [{ crawlerTaskId: 1, sku: 'ABC-001' }] : [],
         }),
