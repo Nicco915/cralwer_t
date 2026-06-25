@@ -16,6 +16,16 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
+if ($ImageTag -match '[\s;|&$`<>()]') {
+    Write-Error "ImageTag must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Error "Node.js is not installed. Please install Node.js first."
+    exit 1
+}
+
 $updateScript = Join-Path $PSScriptRoot "lib\update.js"
 & node "$updateScript" --image-tag "$ImageTag" --install-dir "$InstallDir"
 if ($LASTEXITCODE -ne 0) {

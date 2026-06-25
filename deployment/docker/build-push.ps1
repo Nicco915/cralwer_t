@@ -11,7 +11,7 @@ param (
     [string]$Tag = ''
 )
 
-if ($Tag -match '[\s;|&$`]' -or $Registry -match '[\s;|&$`]' -or $ImageName -match '[\s;|&$`]') {
+if ($Tag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
     Write-Error "Registry, ImageName and Tag must not contain whitespace or shell metacharacters."
     exit 1
 }
@@ -34,6 +34,11 @@ $latestImage = "$Registry/$ImageName`:latest"
 
 $dockerfilePath = Join-Path $PSScriptRoot 'Dockerfile'
 $buildContext = Split-Path -Parent $PSScriptRoot | Split-Path -Parent
+
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Error "Docker is not installed. Please install Docker first."
+    exit 1
+}
 
 Write-Host "Building $fullImage ..."
 & docker build -t "$fullImage" -f "$dockerfilePath" "$buildContext"

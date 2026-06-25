@@ -26,6 +26,12 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# Validate inputs
+if ($ImageTag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
+    Write-Error "Registry, ImageName and ImageTag must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
 # Check Docker Compose is available
 try {
     $null = & docker compose version 2>$null
@@ -69,6 +75,11 @@ if (-not (Test-Path $composeDest)) {
 $fullImage = "$Registry/$ImageName`:$ImageTag"
 
 # Call deploy.js
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Error "Node.js is not installed. Please install Node.js first."
+    exit 1
+}
+
 $deployScript = Join-Path $PSScriptRoot "lib\deploy.js"
 & node "$deployScript" --image "$fullImage" --install-dir "$InstallDir"
 if ($LASTEXITCODE -ne 0) {
