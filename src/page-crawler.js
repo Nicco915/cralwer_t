@@ -162,10 +162,12 @@ class PageCrawler {
       if (dlSku) return dlSku;
 
       const html = await page.content();
+      // 至少 5 个字符，减少误匹配极短字符串
       const match = html.match(/"sku":"([^"]{5,})"/);
-      if (match) return match[1];
-      const metaMatch = html.match(/<meta[^>]*sku[^>]*content="([^"]+)"/i);
-      if (metaMatch) return metaMatch[1];
+      if (match) return match[1].trim();
+      const metaMatch = html.match(/<meta\s+[^>]*?\bname=["']?sku["']?[^>]*?\bcontent=["']([^"']+)["'][^>]*>/i)
+        || html.match(/<meta\s+[^>]*?\bcontent=["']([^"']+)["'][^>]*?\bname=["']?sku["']?[^>]*>/i);
+      if (metaMatch) return metaMatch[1].trim();
       return '';
     } catch (e) {
       return '';
