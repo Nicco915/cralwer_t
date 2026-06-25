@@ -175,16 +175,19 @@ class VevorCrawler {
 
   loadCheckpoint() {
     const { checkpointFile } = this.config;
-    if (fs.existsSync(checkpointFile)) {
-      return JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'));
-    }
-    return {
+    const defaults = {
       completed_skus: [],
       failed_skus: [],
       not_found_skus: [],
+      mismatched_skus: [],
       current_batch: 1,
       last_processed_index: -1,
     };
+    if (fs.existsSync(checkpointFile)) {
+      const saved = JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'));
+      return { ...defaults, ...saved };
+    }
+    return defaults;
   }
 
   saveCheckpoint(checkpoint) {
@@ -416,6 +419,13 @@ ${result.product_specification || ''}`;
     return Promise.all(workers);
   }
 
+  classifyResult(checkpoint, result) {
+    if (result.status === 'success') checkpoint.completed_skus.push(result.sku);
+    else if (result.status === 'not_found') checkpoint.not_found_skus.push(result.sku);
+    else if (result.status === 'sku_mismatch') checkpoint.mismatched_skus.push(result.sku);
+    else checkpoint.failed_skus.push(result.sku);
+  }
+
   async writerTask(translatedQueue, worksheet, jsonlPath, pendingResults, workbook, excelPath, checkpoint) {
     const rowBuffer = new Map();
     let nextRowIndex = 0;
@@ -432,9 +442,7 @@ ${result.product_specification || ''}`;
         this.appendJsonl(jsonlPath, r);
         pendingResults.push(r);
 
-        if (r.status === 'success') checkpoint.completed_skus.push(r.sku);
-        else if (r.status === 'not_found') checkpoint.not_found_skus.push(r.sku);
-        else checkpoint.failed_skus.push(r.sku);
+        this.classifyResult(checkpoint, r);
 
         checkpoint.last_processed_index = r.globalIndex;
         this.saveCheckpoint(checkpoint);
