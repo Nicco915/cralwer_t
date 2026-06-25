@@ -467,9 +467,7 @@ ${result.product_specification || ''}`;
       this.appendJsonl(jsonlPath, r);
       pendingResults.push(r);
 
-      if (r.status === 'success') checkpoint.completed_skus.push(r.sku);
-      else if (r.status === 'not_found') checkpoint.not_found_skus.push(r.sku);
-      else checkpoint.failed_skus.push(r.sku);
+      this.classifyResult(checkpoint, r);
 
       checkpoint.last_processed_index = r.globalIndex;
       this.saveCheckpoint(checkpoint);
