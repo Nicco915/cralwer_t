@@ -144,6 +144,34 @@ class PageCrawler {
     return ['', ''];
   }
 
+  async extractPageSku(page) {
+    try {
+      const dlSku = await page.evaluate(() => {
+        try {
+          if (window.dataLayer) {
+            for (const item of window.dataLayer) {
+              if (item?.product?.sku) return item.product.sku;
+              if (item?.ecommerce?.detail?.products?.[0]?.sku) return item.ecommerce.detail.products[0].sku;
+            }
+          }
+          return '';
+        } catch (e) {
+          return '';
+        }
+      });
+      if (dlSku) return dlSku;
+
+      const html = await page.content();
+      const match = html.match(/"sku":"([^"]{5,})"/);
+      if (match) return match[1];
+      const metaMatch = html.match(/<meta[^>]*sku[^>]*content="([^"]+)"/i);
+      if (metaMatch) return metaMatch[1];
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   async hasNoResult(page) {
     const html = await page.content().catch(() => '');
     const lower = html.toLowerCase();
