@@ -24,4 +24,25 @@ describe('docker health-check', () => {
     assert.strictEqual(isContainerRunning('hs-sku-crawler'), true);
     assert.ok(calls.some(c => c.includes('docker inspect')));
   });
+
+  it('waitForContainer resolves true when container is running', async () => {
+    delete require.cache[require.resolve('../../deployment/docker/lib/health-check.js')];
+    const { waitForContainer } = require('../../deployment/docker/lib/health-check.js');
+    const result = await waitForContainer('hs-sku-crawler', 1000, 100);
+    assert.strictEqual(result, true);
+  });
+
+  it('waitForContainer resolves false when container never runs', async () => {
+    delete require.cache[require.resolve('../../deployment/docker/lib/health-check.js')];
+    cp.execSync = (cmd, opts) => {
+      calls.push(cmd);
+      if (cmd.includes('docker inspect')) {
+        return 'exited\n';
+      }
+      return originalExecSync(cmd, opts);
+    };
+    const { waitForContainer } = require('../../deployment/docker/lib/health-check.js');
+    const result = await waitForContainer('hs-sku-crawler', 200, 50);
+    assert.strictEqual(result, false);
+  });
 });
