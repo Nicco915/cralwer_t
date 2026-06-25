@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { loadEnvFile, parse } = require('../src/cli');
@@ -45,6 +46,17 @@ function main() {
   loadEnvFile(process.cwd());
 
   const config = parse(process.argv.slice(2));
+
+  // 强制 Playwright 使用项目目录作为临时目录，避免系统 Temp 权限/锁定问题
+  const browserTempDir = config.browserTempDir || path.resolve(process.cwd(), 'output', 'browser-temp');
+  if (!fs.existsSync(browserTempDir)) {
+    fs.mkdirSync(browserTempDir, { recursive: true });
+  }
+  process.env.TEMP = browserTempDir;
+  process.env.TMP = browserTempDir;
+  if (process.env.TMPDIR !== undefined) {
+    process.env.TMPDIR = browserTempDir;
+  }
 
   if (config.mode === 'service') {
     const serviceConfig = buildServiceConfig(config);
