@@ -102,4 +102,54 @@ describe('KuaidailiClient', () => {
       .toString('base64');
     assert.strictEqual(signature, expectedSig);
   });
+
+  it('getProxyAuthorization uses hmacsha1 signature and returns auth data', async () => {
+    let fetchCalls = [];
+    const fakeFetch = async (url, options) => {
+      fetchCalls.push({ url: url.toString(), options });
+      if (url.toString().includes('getproxyauthorization')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            code: 0,
+            data: {
+              username: 'kdl_user',
+              password: 'kdl_pass',
+            },
+          }),
+        };
+      }
+      throw new Error('Unexpected URL: ' + url);
+    };
+
+    const client = new KuaidailiClient({
+      secretId: 'sid',
+      secretKey: 'skey',
+      fetch: fakeFetch,
+    });
+
+    const auth = await client.getProxyAuthorization(1);
+
+    assert.strictEqual(auth.username, 'kdl_user');
+    assert.strictEqual(auth.password, 'kdl_pass');
+
+    const authCall = fetchCalls.find(c => c.url.includes('getproxyauthorization'));
+    assert.ok(authCall, 'expected getproxyauthorization call');
+
+    const authUrl = new URL(authCall.url);
+    assert.strictEqual(authUrl.searchParams.get('secret_id'), 'sid');
+    assert.strictEqual(authUrl.searchParams.get('sign_type'), 'hmacsha1');
+    assert.strictEqual(authUrl.searchParams.get('plaintext'), '1');
+
+    const timestamp = authUrl.searchParams.get('timestamp');
+    const params = {
+      secret_id: 'sid',
+      sign_type: 'hmacsha1',
+      timestamp,
+      plaintext: '1',
+    };
+    const expectedSig = buildExpectedSignature('skey', 'GET', 'dev.kdlapi.com/api/getproxyauthorization', params);
+    assert.strictEqual(authUrl.searchParams.get('signature'), expectedSig);
+  });
 });

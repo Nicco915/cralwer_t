@@ -84,6 +84,35 @@ class KuaidailiClient {
     return token;
   }
 
+  async getProxyAuthorization(plainText = 1) {
+    const endpoint = 'dev.kdlapi.com/api/getproxyauthorization';
+    const params = {
+      secret_id: this.secretId,
+      sign_type: 'hmacsha1',
+      timestamp: Date.now(),
+      plaintext: plainText,
+    };
+
+    const rawStr = this._getStringToSign('GET', endpoint, params);
+    params.signature = this._sign(rawStr);
+
+    const url = new URL(`https://${endpoint}`);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, String(value));
+    }
+
+    const res = await this.fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`getproxyauthorization failed: ${res.status}`);
+    }
+    const body = await res.json();
+    if (body.code !== 0 || !body.data) {
+      throw new Error(`getproxyauthorization error: ${body.code}, msg: ${body.msg || 'unknown'}`);
+    }
+
+    return body.data;
+  }
+
   async getKpsProxies() {
     const endpoint = 'kps.kdlapi.com/api/getkps';
     const params = {
