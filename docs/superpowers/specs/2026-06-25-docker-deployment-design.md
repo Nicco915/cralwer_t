@@ -10,7 +10,7 @@
 - **目标环境**：Windows 服务器上预先安装 Docker Engine 与 Docker Compose，运行 Linux 容器。
 - **镜像分发**：在本地或 CI 中构建镜像，以 Git commit SHA 为 tag 推送到镜像仓库。
 - **编排工具**：使用 `docker-compose.yml` 管理容器、volume 与重启策略。
-- **配置管理**：敏感配置（`.env`）由运维人员预先放置在目标机安装目录，`docker-compose.yml` 通过 `env_file` 挂载，部署脚本只检查存在性。
+- **配置管理**：敏感配置（`.env`）由运维人员预先放置在目标机安装目录，`docker-compose.yml` 通过只读 volume 挂载，部署脚本只检查存在性。
 - **进程守护**：容器崩溃或主机重启后由 Docker `restart: unless-stopped` 自动恢复。
 - **状态管理**：在目标机维护 `.deployment-state.json`，记录 `current`、`previous` 与 `history` 镜像 tag，支持一键回滚。
 
