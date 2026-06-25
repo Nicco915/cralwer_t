@@ -280,7 +280,18 @@ class PageCrawler {
         }
       }
 
-      await this.sleep(8000);
+      await this.sleep(2000);
+
+      const pageSku = await this.extractPageSku(page);
+      if (pageSku && pageSku.toUpperCase() !== sku.toUpperCase()) {
+        result.status = 'sku_mismatch';
+        result.error = `SKU mismatch: searched ${sku}, page SKU is ${pageSku}`;
+        result.product_url = page.url();
+        this.log(`[${sku}] ${result.error}`);
+        return result;
+      }
+
+      await this.sleep(6000);
 
       if (!result.product_name) {
         const titleEl = await page.$('h1');

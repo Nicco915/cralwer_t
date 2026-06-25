@@ -3,12 +3,20 @@ const assert = require('node:assert');
 const { PageCrawler } = require('../src/page-crawler');
 
 function createMockPage(opts = {}) {
+  let currentUrl = opts.url || '';
   return {
+    goto: async (url) => { currentUrl = url; },
+    url: () => currentUrl,
     evaluate: async (fn) => {
       if (opts.evaluate) return opts.evaluate(fn);
       return '';
     },
     content: async () => opts.html || '',
+    $: async (selector) => {
+      if (opts.elements && opts.elements[selector]) return opts.elements[selector];
+      return null;
+    },
+    mouse: { move: async () => {} },
   };
 }
 
@@ -135,5 +143,64 @@ describe('PageCrawler.extractPageSku', () => {
     });
     const sku = await crawler.extractPageSku(page);
     assert.strictEqual(sku, '');
+  });
+});
+
+describe('PageCrawler.crawlSingleSku SKU mismatch interception', () => {
+  it('returns sku_mismatch when page SKU differs from searched SKU', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['https://eur.vevor.com/p/B-123', ''];
+    crawler.extractFromHtml = async () => ['', ''];
+    crawler.extractPageSku = async () => 'B-123';
+
+    const page = createMockPage({ url: 'https://eur.vevor.com/p/B-123' });
+    const result = await crawler.crawlSingleSku('A-123', page);
+
+    assert.strictEqual(result.status, 'sku_mismatch');
+    assert.ok(result.error.includes('A-123'));
+    assert.ok(result.error.includes('B-123'));
+    assert.strictEqual(result.product_url, 'https://eur.vevor.com/p/B-123');
+    assert.strictEqual(result.product_name, '');
+    assert.strictEqual(result.features_details, '');
+    assert.strictEqual(result.product_specification, '');
+  });
+
+  it('continues crawling when page SKU matches searched SKU', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['https://eur.vevor.com/p/A-123', ''];
+    crawler.extractFromHtml = async () => ['', ''];
+    crawler.extractPageSku = async () => 'A-123';
+    crawler.extractAllProductImages = async () => [];
+
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/p/A-123',
+      elements: { 'h1': { innerText: async () => 'Product A' } },
+    });
+    const result = await crawler.crawlSingleSku('A-123', page);
+
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(result.product_name, 'Product A');
+  });
+
+  it('continues crawling when page SKU cannot be extracted', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['https://eur.vevor.com/p/A-123', ''];
+    crawler.extractFromHtml = async () => ['', ''];
+    crawler.extractPageSku = async () => '';
+    crawler.extractAllProductImages = async () => [];
+
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/p/A-123',
+      elements: { 'h1': { innerText: async () => 'Product A' } },
+    });
+    const result = await crawler.crawlSingleSku('A-123', page);
+
+    assert.strictEqual(result.status, 'success');
   });
 });
