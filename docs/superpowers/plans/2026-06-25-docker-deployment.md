@@ -62,7 +62,7 @@ describe('.dockerignore', () => {
 
 - [ ] **步骤 2：运行测试验证失败**
 
-运行：`npm run test:deployment:docker:unit`
+运行：`node --test test/deployment/docker-*.test.js`
 预期：FAIL，报错 `.dockerignore should exist`
 
 - [ ] **步骤 3：创建 `.dockerignore` 文件**
@@ -84,13 +84,13 @@ test
 
 - [ ] **步骤 4：运行测试验证通过**
 
-运行：`npm run test:deployment:docker:unit`
+运行：`node --test test/deployment/docker-*.test.js`
 预期：PASS
 
 - [ ] **步骤 5：Commit**
 
 ```bash
-git add deployment/docker/.dockerignore test/deployment/docker-dockerignore.test.js package.json
+git add deployment/docker/.dockerignore test/deployment/docker-dockerignore.test.js
 git commit -m "feat(deployment/docker): 添加 .dockerignore"
 ```
 
@@ -178,7 +178,7 @@ describe('docker-compose.yml', () => {
 
 - [ ] **步骤 2：运行测试验证失败**
 
-运行：`npm run test:deployment:docker:unit`
+运行：`node --test test/deployment/docker-*.test.js`
 预期：FAIL，报错 `docker-compose.yml should exist`
 
 - [ ] **步骤 3：创建 `docker-compose.yml` 文件**
@@ -201,7 +201,7 @@ services:
 
 - [ ] **步骤 4：运行测试验证通过**
 
-运行：`npm run test:deployment:docker:unit`
+运行：`node --test test/deployment/docker-*.test.js`
 预期：PASS
 
 - [ ] **步骤 5：Commit**
