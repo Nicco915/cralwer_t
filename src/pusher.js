@@ -33,6 +33,7 @@ class Pusher {
     let lastError = null;
 
     console.log(`[PUSHER] Start pushing task ${result.crawlerTaskId} sku ${result.sku} status=${result.status} to ${this.callbackUrl}`);
+    console.log(`[PUSHER] Body ${result.crawlerTaskId}: ${JSON.stringify(body)}`);
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       if (attempt > 0) {

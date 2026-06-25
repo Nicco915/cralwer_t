@@ -54,10 +54,11 @@ class Poller {
       if (!this.running) return;
       try {
         const tasks = await this.fetchTasks();
-        console.log(`[Poller] fetched ${tasks.length} task(s)`);
-        if (tasks.length > 0 && onTasks) {
-          console.log(`[Poller] pushing ${tasks.length} task(s) to worker`);
-          onTasks(tasks);
+        if (tasks.length > 0) {
+          console.log(`[Poller] fetched ${tasks.length} task(s), ids: ${tasks.map(t => t.crawlerTaskId || t.id || 'undefined').join(', ')}`);
+          if (onTasks) {
+            onTasks(tasks);
+          }
         }
       } catch (e) {
         console.error('[Poller] Failed to fetch tasks:', e.message);

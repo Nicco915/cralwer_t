@@ -77,7 +77,14 @@ class Channel {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
       const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page);
       result.crawlerTaskId = task.crawlerTaskId;
-      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status} error=${result.error || 'none'}`);
+      const summary = {
+        status: result.status,
+        product_name: result.product_name,
+        product_url: result.product_url,
+        error: result.error,
+        image_count: result.images ? result.images.length : 0,
+      };
+      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status} result=${JSON.stringify(summary)}`);
       this.consecutiveFailures = 0;
       this.lastFailureWasProxy = false;
       return result;
