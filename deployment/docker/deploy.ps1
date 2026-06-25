@@ -27,8 +27,9 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 
 # Validate inputs
-if ($ImageTag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
-    Write-Error "Registry, ImageName and ImageTag must not contain whitespace or shell metacharacters."
+if ([string]::IsNullOrWhiteSpace($ImageTag) -or [string]::IsNullOrWhiteSpace($Registry) -or [string]::IsNullOrWhiteSpace($ImageName) -or
+    $ImageTag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
+    Write-Error "Registry, ImageName and ImageTag must be non-empty and must not contain whitespace or shell metacharacters."
     exit 1
 }
 

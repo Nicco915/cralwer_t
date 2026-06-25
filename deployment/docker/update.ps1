@@ -16,8 +16,8 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
-if ($ImageTag -match '[\s;|&$`<>()]') {
-    Write-Error "ImageTag must not contain whitespace or shell metacharacters."
+if ([string]::IsNullOrWhiteSpace($ImageTag) -or $ImageTag -match '[\s;|&$`<>()]') {
+    Write-Error "ImageTag must be non-empty and must not contain whitespace or shell metacharacters."
     exit 1
 }
 

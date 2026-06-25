@@ -11,8 +11,14 @@ param (
     [string]$Tag = ''
 )
 
-if ($Tag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
-    Write-Error "Registry, ImageName and Tag must not contain whitespace or shell metacharacters."
+if ([string]::IsNullOrWhiteSpace($Registry) -or [string]::IsNullOrWhiteSpace($ImageName) -or
+    $Tag -match '[\s;|&$`<>()]' -or $Registry -match '[\s;|&$`<>()]' -or $ImageName -match '[\s;|&$`<>()]') {
+    Write-Error "Registry and ImageName must be non-empty; all parameters must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Error "Git is not installed. Please install Git first or provide -Tag explicitly."
     exit 1
 }
 
@@ -27,6 +33,11 @@ if (-not $Tag) {
         Write-Error "Failed to determine git commit hash. Please run this script from a git repository or provide -Tag explicitly."
         exit 1
     }
+}
+
+if ($Tag -match '[\s;|&$`<>()]') {
+    Write-Error "Generated tag contains invalid characters."
+    exit 1
 }
 
 $fullImage = "$Registry/$ImageName`:$Tag"
