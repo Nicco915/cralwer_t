@@ -1,4 +1,7 @@
 #Requires -RunAsAdministrator
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
 param (
     [string]$TargetImage = '',
 

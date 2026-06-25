@@ -1,3 +1,6 @@
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
 param (
     [Parameter(Mandatory = $true)]
     [string]$Registry,
@@ -5,8 +8,26 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$ImageName,
 
-    [string]$Tag = (git rev-parse --short HEAD)
+    [string]$Tag = ''
 )
+
+if ($Tag -match '[\s;|&$`]' -or $Registry -match '[\s;|&$`]' -or $ImageName -match '[\s;|&$`]') {
+    Write-Error "Registry, ImageName and Tag must not contain whitespace or shell metacharacters."
+    exit 1
+}
+
+if (-not $Tag) {
+    try {
+        $gitTag = git rev-parse --short HEAD
+        if (-not $gitTag) {
+            throw "git rev-parse returned empty"
+        }
+        $Tag = $gitTag
+    } catch {
+        Write-Error "Failed to determine git commit hash. Please run this script from a git repository or provide -Tag explicitly."
+        exit 1
+    }
+}
 
 $fullImage = "$Registry/$ImageName`:$Tag"
 $latestImage = "$Registry/$ImageName`:latest"
@@ -15,28 +36,28 @@ $dockerfilePath = Join-Path $PSScriptRoot 'Dockerfile'
 $buildContext = Split-Path -Parent $PSScriptRoot | Split-Path -Parent
 
 Write-Host "Building $fullImage ..."
-& docker build -t $fullImage -f $dockerfilePath $buildContext
+& docker build -t "$fullImage" -f "$dockerfilePath" "$buildContext"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Docker build failed."
     exit 1
 }
 
 Write-Host "Tagging $latestImage ..."
-& docker tag $fullImage $latestImage
+& docker tag "$fullImage" "$latestImage"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Docker tag failed."
     exit 1
 }
 
 Write-Host "Pushing $fullImage ..."
-& docker push $fullImage
+& docker push "$fullImage"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Docker push failed for $fullImage."
     exit 1
 }
 
 Write-Host "Pushing $latestImage ..."
-& docker push $latestImage
+& docker push "$latestImage"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Docker push failed for $latestImage."
     exit 1

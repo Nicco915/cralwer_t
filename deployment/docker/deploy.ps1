@@ -1,4 +1,7 @@
 #Requires -RunAsAdministrator
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
 param (
     [Parameter(Mandatory = $true)]
     [string]$ImageTag,
@@ -24,14 +27,12 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 
 # Check Docker Compose is available
-$dockerComposeAvailable = $false
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    $composeVersion = & docker compose version 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $dockerComposeAvailable = $true
+try {
+    $null = & docker compose version 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker compose version failed"
     }
-}
-if (-not $dockerComposeAvailable) {
+} catch {
     Write-Error "Docker Compose is not available. Please install Docker Compose."
     exit 1
 }
