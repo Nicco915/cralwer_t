@@ -1,0 +1,12 @@
+.env
+.env.*
+node_modules
+logs
+output
+images
+.git
+.gitignore
+.DS_Store
+coverage
+test
+*.log
