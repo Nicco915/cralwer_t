@@ -6,6 +6,7 @@ const os = require('node:os');
 const cp = require('node:child_process');
 
 const originalExecSync = cp.execSync;
+const originalExecFileSync = cp.execFileSync;
 const deployModulePath = path.resolve(__dirname, '../../deployment/docker/lib/deploy.js');
 let tmpDir;
 let commands;
@@ -14,16 +15,20 @@ describe('docker deploy', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docker-deploy-test-'));
     commands = [];
-    cp.execSync = (cmd, opts) => {
-      commands.push({ cmd, cwd: opts?.cwd, env: opts?.env });
-      if (cmd.includes('docker compose')) return '';
-      return originalExecSync(cmd, opts);
+    cp.execSync = originalExecSync;
+    cp.execFileSync = (file, args, opts) => {
+      commands.push({ file, args, cwd: opts?.cwd, env: opts?.env });
+      if (file === 'docker' && args.includes('compose') && args.includes('up')) {
+        return '';
+      }
+      return originalExecFileSync(file, args, opts);
     };
     delete require.cache[deployModulePath];
   });
 
   afterEach(() => {
     cp.execSync = originalExecSync;
+    cp.execFileSync = originalExecFileSync;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete require.cache[deployModulePath];
   });
@@ -72,7 +77,7 @@ describe('docker deploy', () => {
     assert.ok(fs.existsSync(path.join(installDir, 'output')));
     assert.ok(fs.existsSync(path.join(installDir, 'images')));
     assert.ok(fs.existsSync(path.join(installDir, 'docker-compose.yml')));
-    const composeCmd = commands.find(c => c.cmd.includes('docker compose up -d'));
+    const composeCmd = commands.find(c => c.file === 'docker' && c.args.includes('compose') && c.args.includes('up'));
     assert.ok(composeCmd, 'docker compose up -d should be called');
     assert.strictEqual(composeCmd.env?.CRAWLER_IMAGE, 'registry/a:1');
   });
@@ -91,9 +96,11 @@ describe('docker deploy', () => {
   });
 
   it('deploy throws when docker compose fails', async () => {
-    cp.execSync = (cmd, opts) => {
-      if (cmd.includes('docker compose')) throw new Error('docker compose failed');
-      return originalExecSync(cmd, opts);
+    cp.execFileSync = (file, args, opts) => {
+      if (file === 'docker' && args.includes('compose') && args.includes('up')) {
+        throw new Error('docker compose up failed');
+      }
+      return originalExecFileSync(file, args, opts);
     };
     const { deploy } = require(deployModulePath);
     const installDir = path.join(tmpDir, 'compose-fail');

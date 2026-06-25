@@ -12,6 +12,7 @@ let tmpDir;
 let commands;
 let execFileOutput;
 let pullShouldFail;
+let composeShouldFail;
 
 describe('docker update', () => {
   beforeEach(() => {
@@ -19,19 +20,20 @@ describe('docker update', () => {
     commands = [];
     execFileOutput = 'running\n';
     pullShouldFail = false;
-    cp.execSync = (cmd, opts) => {
-      commands.push({ cmd, cwd: opts?.cwd, env: opts?.env });
-      if (cmd.includes('docker compose')) return '';
-      return originalExecSync(cmd, opts);
-    };
+    composeShouldFail = false;
+    cp.execSync = originalExecSync;
     cp.execFileSync = (file, args, opts) => {
-      commands.push([file, ...args].join(' '));
+      commands.push({ file, args, cwd: opts?.cwd, env: opts?.env });
       if (file === 'docker' && args.includes('pull')) {
         if (pullShouldFail) throw new Error('pull failed');
         return '';
       }
       if (file === 'docker' && args.includes('inspect')) {
         return execFileOutput;
+      }
+      if (file === 'docker' && args.includes('compose') && args.includes('up')) {
+        if (composeShouldFail) throw new Error('docker compose up failed');
+        return '';
       }
       return originalExecFileSync(file, args, opts);
     };
@@ -73,10 +75,10 @@ describe('docker update', () => {
 
     await update({ installDir, imageTag: 'registry/a:2', healthCheckTimeoutMs: 100 });
 
-    const pullCmd = commands.find(c => typeof c === 'string' && c.includes('docker pull'));
+    const pullCmd = commands.find(c => c.file === 'docker' && c.args.includes('pull'));
     assert.ok(pullCmd);
-    assert.ok(pullCmd.includes('registry/a:2'));
-    const composeCmd = commands.find(c => typeof c === 'object' && c.cmd.includes('docker compose up -d'));
+    assert.ok(pullCmd.args.includes('registry/a:2'));
+    const composeCmd = commands.find(c => c.file === 'docker' && c.args.includes('compose') && c.args.includes('up'));
     assert.ok(composeCmd);
     assert.strictEqual(composeCmd.env?.CRAWLER_IMAGE, 'registry/a:2');
     const state = readState(installDir);
@@ -89,7 +91,6 @@ describe('docker update', () => {
     const installDir = path.join(tmpDir, 'update-rollback');
     fs.mkdirSync(installDir, { recursive: true });
     fs.writeFileSync(path.join(installDir, '.env'), 'TEST=1\n');
-    // setup initial state
     const { recordCurrent } = require(path.resolve(__dirname, '../../deployment/docker/lib/state.js'));
     recordCurrent(installDir, 'registry/a:1');
     execFileOutput = 'exited\n';
@@ -99,6 +100,8 @@ describe('docker update', () => {
       /Update failed/
     );
 
+    const rollbackCmd = commands.find(c => c.file === 'docker' && c.args.includes('compose') && c.args.includes('up') && c.env?.CRAWLER_IMAGE === 'registry/a:1');
+    assert.ok(rollbackCmd, 'rollback docker compose up should use previous image');
     const state = readState(installDir);
     assert.strictEqual(state.current, 'registry/a:1');
   });
@@ -111,6 +114,24 @@ describe('docker update', () => {
     const { recordCurrent } = require(path.resolve(__dirname, '../../deployment/docker/lib/state.js'));
     recordCurrent(installDir, 'registry/a:1');
     pullShouldFail = true;
+
+    await assert.rejects(
+      async () => update({ installDir, imageTag: 'registry/a:2', healthCheckTimeoutMs: 100 }),
+      /Update failed/
+    );
+
+    const state = readState(installDir);
+    assert.strictEqual(state.current, 'registry/a:1');
+  });
+
+  it('update rolls back to previous image on docker compose up failure', async () => {
+    const { update, readState } = require(updateModulePath);
+    const installDir = path.join(tmpDir, 'update-compose-fail');
+    fs.mkdirSync(installDir, { recursive: true });
+    fs.writeFileSync(path.join(installDir, '.env'), 'TEST=1\n');
+    const { recordCurrent } = require(path.resolve(__dirname, '../../deployment/docker/lib/state.js'));
+    recordCurrent(installDir, 'registry/a:1');
+    composeShouldFail = true;
 
     await assert.rejects(
       async () => update({ installDir, imageTag: 'registry/a:2', healthCheckTimeoutMs: 100 }),

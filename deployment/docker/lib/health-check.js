@@ -26,6 +26,7 @@ function waitForContainer(containerName = DEFAULT_CONTAINER_NAME, timeoutMs = 30
         return;
       }
       if (Date.now() - start >= timeoutMs) {
+        if (timer) clearTimeout(timer);
         resolve(false);
         return;
       }

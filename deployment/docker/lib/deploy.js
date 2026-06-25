@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { recordCurrent } = require('./state.js');
 
 function ensureDir(dir) {
@@ -33,7 +33,7 @@ function deploy({ installDir, image }) {
   }
 
   try {
-    execSync('docker compose up -d', {
+    execFileSync('docker', ['compose', 'up', '-d'], {
       cwd: installDir,
       encoding: 'utf-8',
       stdio: 'inherit',

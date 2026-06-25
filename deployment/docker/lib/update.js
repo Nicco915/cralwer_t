@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { execSync, execFileSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { readState, writeState, recordCurrent, setCurrentImage } = require('./state.js');
 const { waitForContainer, DEFAULT_CONTAINER_NAME } = require('./health-check.js');
 
@@ -31,7 +31,7 @@ async function update({ installDir, imageTag, healthCheckTimeoutMs = 30000 }) {
     if (previousImage) {
       console.error(`Update failed, rolling back to ${previousImage}...`);
       try {
-        execSync('docker compose up -d', {
+        execFileSync('docker', ['compose', 'up', '-d'], {
           cwd: installDir,
           encoding: 'utf-8',
           stdio: 'inherit',
@@ -59,7 +59,7 @@ async function performUpdate(installDir, newImage, healthCheckTimeoutMs, previou
   }
 
   try {
-    execSync('docker compose up -d', {
+    execFileSync('docker', ['compose', 'up', '-d'], {
       cwd: installDir,
       encoding: 'utf-8',
       stdio: 'inherit',
