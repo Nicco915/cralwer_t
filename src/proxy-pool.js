@@ -9,25 +9,6 @@ class ProxyPool {
     this.channels = Number(options.channels || 1);
     this.assignmentsFile = options.assignmentsFile || path.resolve('./proxy-assignments.json');
     this.currentAssignments = {};
-    this.proxyAuth = null;
-  }
-
-  async loadProxyAuth() {
-    if (!this.client || this.proxyAuth) return;
-    try {
-      const auth = await this.client.getProxyAuthorization(1);
-      if (auth && auth.username && auth.password) {
-        this.proxyAuth = auth;
-      }
-    } catch (e) {
-      // 白名单认证模式下该接口可能不可用或无需认证，继续按 ip:port 使用
-    }
-  }
-
-  buildProxyUrl(ipPort) {
-    if (!this.proxyAuth) return `http://${ipPort}`;
-    const { username, password } = this.proxyAuth;
-    return `http://${username}:${password}@${ipPort}`;
   }
 
   async loadProxies() {
@@ -51,7 +32,6 @@ class ProxyPool {
   }
 
   async assign() {
-    await this.loadProxyAuth();
     const partitioned = await this.loadProxies();
     if (partitioned.length < this.channels) {
       throw new Error(
@@ -79,15 +59,11 @@ class ProxyPool {
 
     this.currentAssignments = assignments;
     this.saveAssignments(assignments);
-    return Object.fromEntries(
-      Object.entries(assignments).map(([id, ip]) => [id, this.buildProxyUrl(ip)])
-    );
+    return assignments;
   }
 
   getProxyForChannel(channelId) {
-    const ipPort = this.currentAssignments[channelId];
-    if (!ipPort) return undefined;
-    return this.buildProxyUrl(ipPort);
+    return this.currentAssignments[channelId];
   }
 
   async refresh() {
@@ -109,7 +85,7 @@ class ProxyPool {
     const next = partitioned[(idx + 1) % partitioned.length];
     this.currentAssignments[channelId] = next;
     this.saveAssignments(this.currentAssignments);
-    return this.buildProxyUrl(next);
+    return next;
   }
 }
 
