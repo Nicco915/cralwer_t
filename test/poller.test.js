@@ -67,6 +67,28 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
+  it('converts string ids from upstream to BigInt', async () => {
+    const fakeFetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '{"code":0,"data":[{"id":"2070310839139160065","sku":"MJSNLDGG3C25UTA9DV0"}]}',
+    });
+
+    const poller = new Poller({
+      taskUrl: 'http://example.com/tasks',
+      nodeCode: 'node-1',
+      nodeToken: 'token-1',
+      fetch: fakeFetch,
+    });
+
+    const tasks = await poller.fetchTasks();
+
+    assert.strictEqual(tasks.length, 1);
+    assert.strictEqual(typeof tasks[0].crawlerTaskId, 'bigint');
+    assert.strictEqual(tasks[0].crawlerTaskId, 2070310839139160065n);
+    assert.strictEqual(tasks[0].sku, 'MJSNLDGG3C25UTA9DV0');
+  });
+
   it('returns empty array when upstream returns no tasks', async () => {
     const fakeFetch = async () => ({
       ok: true,

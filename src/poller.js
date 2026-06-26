@@ -1,5 +1,15 @@
 const JSONbig = require('json-bigint')({ useNativeBigInt: true });
 
+function toTaskId(value) {
+  if (typeof value === 'bigint') {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+  return value;
+}
+
 class Poller {
   constructor(options) {
     this.taskUrl = options.taskUrl;
@@ -42,8 +52,13 @@ class Poller {
     return (Array.isArray(data.data) ? data.data : []).map((task) => {
       // The real upstream API uses `id` as the task identifier.
       // Normalize it to `crawlerTaskId` for downstream consumers.
-      if (task && task.crawlerTaskId === undefined && task.id !== undefined) {
-        return { ...task, crawlerTaskId: task.id };
+      // String ids are converted to BigInt so the callback body can serialize
+      // them as JSON numbers without losing precision.
+      if (task && task.crawlerTaskId !== undefined) {
+        return { ...task, crawlerTaskId: toTaskId(task.crawlerTaskId) };
+      }
+      if (task && task.id !== undefined) {
+        return { ...task, crawlerTaskId: toTaskId(task.id) };
       }
       return task;
     });
