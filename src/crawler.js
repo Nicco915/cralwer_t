@@ -466,9 +466,17 @@ ${result.product_specification || ''}`;
     while (rowBuffer.size > 0 && rowBuffer.has(nextRowIndex)) {
       const r = rowBuffer.get(nextRowIndex);
       this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
-
       rowBuffer.delete(nextRowIndex);
       nextRowIndex++;
+
+      if (pendingResults.length >= this.config.flushInterval || this.interrupted) {
+        await this.flushExcel(workbook, excelPath, pendingResults);
+        pendingResults.length = 0;
+        if (this.interrupted) {
+          this.log('[EXIT] Interrupted, writer stopping after current flush.');
+          return;
+        }
+      }
     }
   }
 
