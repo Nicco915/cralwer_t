@@ -60,6 +60,28 @@ describe('VevorCrawler checkpoint', () => {
     assert.deepStrictEqual(checkpoint.failed_skus, []);
   });
 
+  it('classifyResult puts success into completed_skus', () => {
+    const checkpoint = {
+      completed_skus: [],
+      failed_skus: [],
+      not_found_skus: [],
+      mismatched_skus: [],
+    };
+    crawler.classifyResult(checkpoint, { sku: 'A-123', status: 'success' });
+    assert.deepStrictEqual(checkpoint.completed_skus, ['A-123']);
+  });
+
+  it('classifyResult puts not_found into not_found_skus', () => {
+    const checkpoint = {
+      completed_skus: [],
+      failed_skus: [],
+      not_found_skus: [],
+      mismatched_skus: [],
+    };
+    crawler.classifyResult(checkpoint, { sku: 'A-123', status: 'not_found' });
+    assert.deepStrictEqual(checkpoint.not_found_skus, ['A-123']);
+  });
+
   it('classifyResult puts error into failed_skus', () => {
     const checkpoint = {
       completed_skus: [],

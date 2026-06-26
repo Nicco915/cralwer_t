@@ -426,6 +426,15 @@ ${result.product_specification || ''}`;
     else checkpoint.failed_skus.push(result.sku);
   }
 
+  processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint) {
+    this.appendResultRow(worksheet, r);
+    this.appendJsonl(jsonlPath, r);
+    pendingResults.push(r);
+    this.classifyResult(checkpoint, r);
+    checkpoint.last_processed_index = r.globalIndex;
+    this.saveCheckpoint(checkpoint);
+  }
+
   async writerTask(translatedQueue, worksheet, jsonlPath, pendingResults, workbook, excelPath, checkpoint) {
     const rowBuffer = new Map();
     let nextRowIndex = 0;
@@ -438,14 +447,7 @@ ${result.product_specification || ''}`;
 
       while (rowBuffer.has(nextRowIndex)) {
         const r = rowBuffer.get(nextRowIndex);
-        this.appendResultRow(worksheet, r);
-        this.appendJsonl(jsonlPath, r);
-        pendingResults.push(r);
-
-        this.classifyResult(checkpoint, r);
-
-        checkpoint.last_processed_index = r.globalIndex;
-        this.saveCheckpoint(checkpoint);
+        this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
 
         rowBuffer.delete(nextRowIndex);
         nextRowIndex++;
@@ -463,14 +465,7 @@ ${result.product_specification || ''}`;
 
     while (rowBuffer.size > 0 && rowBuffer.has(nextRowIndex)) {
       const r = rowBuffer.get(nextRowIndex);
-      this.appendResultRow(worksheet, r);
-      this.appendJsonl(jsonlPath, r);
-      pendingResults.push(r);
-
-      this.classifyResult(checkpoint, r);
-
-      checkpoint.last_processed_index = r.globalIndex;
-      this.saveCheckpoint(checkpoint);
+      this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
 
       rowBuffer.delete(nextRowIndex);
       nextRowIndex++;
