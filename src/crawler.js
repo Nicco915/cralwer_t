@@ -479,6 +479,24 @@ ${result.product_specification || ''}`;
       }
     }
 
+    // 处理 rowBuffer 中剩余的非连续数据，避免数据丢失
+    if (rowBuffer.size > 0) {
+      this.log(`[WRITER] Processing ${rowBuffer.size} remaining out-of-order rows`);
+      for (const [rowIndex, r] of rowBuffer) {
+        await this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
+        rowBuffer.delete(rowIndex);
+
+        if (pendingResults.length >= this.config.flushInterval || this.interrupted) {
+          await this.flushExcel(workbook, excelPath, pendingResults);
+          pendingResults.length = 0;
+          if (this.interrupted) {
+            this.log('[EXIT] Interrupted, writer stopping after current flush.');
+            return;
+          }
+        }
+      }
+    }
+
     if (pendingResults.length > 0) {
       await this.flushExcel(workbook, excelPath, pendingResults);
       pendingResults.length = 0;
