@@ -37,14 +37,31 @@ class Worker {
 
   async runTask(task, channel) {
     const pushPromise = (async () => {
+      let result = null;
       try {
         this.log(`[Worker] Assigning task ${task.crawlerTaskId} sku ${task.sku} to channel ${channel.id}`);
-        const result = await channel.crawl(task);
+        result = await channel.crawl(task);
         this.log(`[Worker] Crawl finished task ${task.crawlerTaskId} status ${result.status}`);
+      } catch (e) {
+        this.log(`[Worker] Crawl failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
+        result = {
+          crawlerTaskId: task.crawlerTaskId,
+          sku: task.sku,
+          status: 'error',
+          product_name: '',
+          features_details: '',
+          product_specification: '',
+          product_url: '',
+          error: e.message,
+        };
+      }
+
+      try {
+        this.log(`[Worker] Starting push task ${task.crawlerTaskId} sku ${task.sku} status=${result.status}`);
         await this.pusher.push(result);
         this.log(`[Worker] Push completed task ${task.crawlerTaskId} status ${result.status}`);
       } catch (e) {
-        this.log(`[Worker] task ${task.crawlerTaskId} failed: ${e.message}`);
+        this.log(`[Worker] Push failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
         try {
           await this.pusher.push({
             crawlerTaskId: task.crawlerTaskId,
