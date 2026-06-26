@@ -7,6 +7,8 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',
+      // 统一 PM2 日志时间戳格式，保证所有生产环境输出一致
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       env: {
         NODE_ENV: 'production',
         CRAWLER_MODE: 'service',
