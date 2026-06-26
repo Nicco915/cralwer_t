@@ -478,6 +478,11 @@ ${result.product_specification || ''}`;
         }
       }
     }
+
+    if (pendingResults.length > 0) {
+      await this.flushExcel(workbook, excelPath, pendingResults);
+      pendingResults.length = 0;
+    }
   }
 
   getStealthScript() {
