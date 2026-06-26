@@ -39,7 +39,8 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(body.nodeToken, 'token-1');
     assert.strictEqual(body.limit, 5);
     assert.strictEqual(tasks.length, 2);
-    assert.strictEqual(tasks[0].crawlerTaskId, 1);
+    assert.strictEqual(typeof tasks[0].crawlerTaskId, 'bigint');
+    assert.strictEqual(tasks[0].crawlerTaskId, 1n);
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
@@ -67,7 +68,7 @@ describe('Poller.fetchTasks', () => {
     assert.strictEqual(tasks[0].sku, 'ABC-001');
   });
 
-  it('converts string ids from upstream to BigInt', async () => {
+  it('preserves string ids from upstream as strings', async () => {
     const fakeFetch = async () => ({
       ok: true,
       status: 200,
@@ -84,8 +85,8 @@ describe('Poller.fetchTasks', () => {
     const tasks = await poller.fetchTasks();
 
     assert.strictEqual(tasks.length, 1);
-    assert.strictEqual(typeof tasks[0].crawlerTaskId, 'bigint');
-    assert.strictEqual(tasks[0].crawlerTaskId, 2070310839139160065n);
+    assert.strictEqual(typeof tasks[0].crawlerTaskId, 'string');
+    assert.strictEqual(tasks[0].crawlerTaskId, '2070310839139160065');
     assert.strictEqual(tasks[0].sku, 'MJSNLDGG3C25UTA9DV0');
   });
 

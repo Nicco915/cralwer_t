@@ -4,9 +4,12 @@ function toTaskId(value) {
   if (typeof value === 'bigint') {
     return value;
   }
-  if (typeof value === 'string' && /^\d+$/.test(value)) {
+  if (typeof value === 'number') {
+    // Use BigInt for all numeric ids to avoid any precision loss,
+    // regardless of whether they currently fit in a safe integer.
     return BigInt(value);
   }
+  // Strings are preserved as-is so the callback mirrors the upstream type.
   return value;
 }
 
