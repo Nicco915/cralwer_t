@@ -175,16 +175,19 @@ class VevorCrawler {
 
   loadCheckpoint() {
     const { checkpointFile } = this.config;
-    if (fs.existsSync(checkpointFile)) {
-      return JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'));
-    }
-    return {
+    const defaults = {
       completed_skus: [],
       failed_skus: [],
       not_found_skus: [],
+      mismatched_skus: [],
       current_batch: 1,
       last_processed_index: -1,
     };
+    if (fs.existsSync(checkpointFile)) {
+      const saved = JSON.parse(fs.readFileSync(checkpointFile, 'utf-8'));
+      return { ...defaults, ...saved };
+    }
+    return defaults;
   }
 
   saveCheckpoint(checkpoint) {
@@ -416,6 +419,22 @@ ${result.product_specification || ''}`;
     return Promise.all(workers);
   }
 
+  classifyResult(checkpoint, result) {
+    if (result.status === 'success') checkpoint.completed_skus.push(result.sku);
+    else if (result.status === 'not_found') checkpoint.not_found_skus.push(result.sku);
+    else if (result.status === 'sku_mismatch') checkpoint.mismatched_skus.push(result.sku);
+    else checkpoint.failed_skus.push(result.sku);
+  }
+
+  processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint) {
+    this.appendResultRow(worksheet, r);
+    this.appendJsonl(jsonlPath, r);
+    pendingResults.push(r);
+    this.classifyResult(checkpoint, r);
+    checkpoint.last_processed_index = r.globalIndex;
+    this.saveCheckpoint(checkpoint);
+  }
+
   async writerTask(translatedQueue, worksheet, jsonlPath, pendingResults, workbook, excelPath, checkpoint) {
     const rowBuffer = new Map();
     let nextRowIndex = 0;
@@ -428,16 +447,7 @@ ${result.product_specification || ''}`;
 
       while (rowBuffer.has(nextRowIndex)) {
         const r = rowBuffer.get(nextRowIndex);
-        this.appendResultRow(worksheet, r);
-        this.appendJsonl(jsonlPath, r);
-        pendingResults.push(r);
-
-        if (r.status === 'success') checkpoint.completed_skus.push(r.sku);
-        else if (r.status === 'not_found') checkpoint.not_found_skus.push(r.sku);
-        else checkpoint.failed_skus.push(r.sku);
-
-        checkpoint.last_processed_index = r.globalIndex;
-        this.saveCheckpoint(checkpoint);
+        this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
 
         rowBuffer.delete(nextRowIndex);
         nextRowIndex++;
@@ -455,19 +465,41 @@ ${result.product_specification || ''}`;
 
     while (rowBuffer.size > 0 && rowBuffer.has(nextRowIndex)) {
       const r = rowBuffer.get(nextRowIndex);
-      this.appendResultRow(worksheet, r);
-      this.appendJsonl(jsonlPath, r);
-      pendingResults.push(r);
-
-      if (r.status === 'success') checkpoint.completed_skus.push(r.sku);
-      else if (r.status === 'not_found') checkpoint.not_found_skus.push(r.sku);
-      else checkpoint.failed_skus.push(r.sku);
-
-      checkpoint.last_processed_index = r.globalIndex;
-      this.saveCheckpoint(checkpoint);
-
+      this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
       rowBuffer.delete(nextRowIndex);
       nextRowIndex++;
+
+      if (pendingResults.length >= this.config.flushInterval || this.interrupted) {
+        await this.flushExcel(workbook, excelPath, pendingResults);
+        pendingResults.length = 0;
+        if (this.interrupted) {
+          this.log('[EXIT] Interrupted, writer stopping after current flush.');
+          return;
+        }
+      }
+    }
+
+    // 处理 rowBuffer 中剩余的非连续数据，避免数据丢失
+    if (rowBuffer.size > 0) {
+      this.log(`[WRITER] Processing ${rowBuffer.size} remaining out-of-order rows`);
+      for (const [rowIndex, r] of rowBuffer) {
+        await this.processBufferedResult(r, worksheet, jsonlPath, pendingResults, checkpoint);
+        rowBuffer.delete(rowIndex);
+
+        if (pendingResults.length >= this.config.flushInterval || this.interrupted) {
+          await this.flushExcel(workbook, excelPath, pendingResults);
+          pendingResults.length = 0;
+          if (this.interrupted) {
+            this.log('[EXIT] Interrupted, writer stopping after current flush.');
+            return;
+          }
+        }
+      }
+    }
+
+    if (pendingResults.length > 0) {
+      await this.flushExcel(workbook, excelPath, pendingResults);
+      pendingResults.length = 0;
     }
   }
 
