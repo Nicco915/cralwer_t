@@ -26,6 +26,8 @@ class Channel {
     });
     this.tasksSincePageRefresh = 0;
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
+    this.headedBrowserLauncher = options.headedBrowserLauncher || null;
+    this.headedFallback = options.config && options.config.headedFallback !== false;
   }
 
   _buildContextOptions() {
@@ -103,6 +105,27 @@ class Channel {
     this.log(`[Channel ${this.id}] initialized`);
   }
 
+  async runHeadedFallback(task) {
+    if (!this.headedBrowserLauncher) {
+      throw new Error('headedBrowserLauncher not configured');
+    }
+    const headedBrowser = await this.headedBrowserLauncher();
+    try {
+      const headedContext = await headedBrowser.newContext(this._buildContextOptions());
+      await headedContext.addInitScript(this.getStealthScript());
+      const headedPage = await headedContext.newPage();
+      const recreateContext = async () => {
+        await headedContext.close();
+        const newContext = await headedBrowser.newContext(this._buildContextOptions());
+        await newContext.addInitScript(this.getStealthScript());
+        return newContext.newPage();
+      };
+      return await this.pageCrawler.crawlSingleSku(task.sku, headedPage, recreateContext);
+    } finally {
+      await headedBrowser.close();
+    }
+  }
+
   async crawl(task) {
     if (this.busy) {
       throw new Error(`Channel ${this.id} is busy`);
@@ -112,12 +135,23 @@ class Channel {
 
     try {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
-      const recreateContext = async () => {
-        const browser = this.browserContext ? this.browserContext.browser() : null;
-        if (!browser) throw new Error('Browser context not available');
-        return this.recreateContext(browser);
-      };
-      const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
+      let result;
+      try {
+        const recreateContext = async () => {
+          const browser = this.browserContext ? this.browserContext.browser() : null;
+          if (!browser) throw new Error('Browser context not available');
+          return this.recreateContext(browser);
+        };
+        result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
+      } catch (e) {
+        const isTimeout = e.message && (e.message.includes('Timeout') || e.message.includes('timeout'));
+        if (isTimeout && this.headedFallback && this.headedBrowserLauncher) {
+          this.log(`[Channel ${this.id}] Headless timeout, trying headed fallback for task ${task.crawlerTaskId}`);
+          result = await this.runHeadedFallback(task);
+        } else {
+          throw e;
+        }
+      }
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,
@@ -134,6 +168,10 @@ class Channel {
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
+      const isTimeout = e.message && (e.message.includes('Timeout') || e.message.includes('timeout'));
+      if (isTimeout) {
+        e.status = 'timeout';
+      }
       throw e;
     } finally {
       this.busy = false;
