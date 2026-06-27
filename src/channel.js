@@ -110,18 +110,34 @@ class Channel {
       throw new Error('headedBrowserLauncher not configured');
     }
     const headedBrowser = await this.headedBrowserLauncher();
+    let headedContext;
+    let headedPage;
     try {
-      const headedContext = await headedBrowser.newContext(this._buildContextOptions());
+      headedContext = await headedBrowser.newContext(this._buildContextOptions());
       await headedContext.addInitScript(this.getStealthScript());
-      const headedPage = await headedContext.newPage();
+      headedPage = await headedContext.newPage();
       const recreateContext = async () => {
-        await headedContext.close();
-        const newContext = await headedBrowser.newContext(this._buildContextOptions());
-        await newContext.addInitScript(this.getStealthScript());
-        return newContext.newPage();
+        if (headedContext) {
+          try {
+            await headedContext.close();
+          } catch (e) {
+            // ignore
+          }
+        }
+        headedContext = await headedBrowser.newContext(this._buildContextOptions());
+        await headedContext.addInitScript(this.getStealthScript());
+        headedPage = await headedContext.newPage();
+        return headedPage;
       };
       return await this.pageCrawler.crawlSingleSku(task.sku, headedPage, recreateContext);
     } finally {
+      if (headedContext) {
+        try {
+          await headedContext.close();
+        } catch (e) {
+          // ignore
+        }
+      }
       await headedBrowser.close();
     }
   }
@@ -144,7 +160,7 @@ class Channel {
         };
         result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
       } catch (e) {
-        const isTimeout = e.message && (e.message.includes('Timeout') || e.message.includes('timeout'));
+        const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         if (isTimeout && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless timeout, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
@@ -168,7 +184,7 @@ class Channel {
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
-      const isTimeout = e.message && (e.message.includes('Timeout') || e.message.includes('timeout'));
+      const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
       if (isTimeout) {
         e.status = 'timeout';
       }
