@@ -8,6 +8,19 @@ const { MockProductionServer } = require('./mock-server');
 
 const execAsync = promisify(exec);
 
+// Pin PM2_HOME to a project-local directory so the PM2 daemon and its logs/
+// named pipes are created in a writable location on Windows, instead of trying
+// to use a system directory like C:\ProgramData\pm2.
+const DEFAULT_PM2_HOME = path.join(process.cwd(), '.pm2');
+if (!process.env.PM2_HOME) {
+  process.env.PM2_HOME = DEFAULT_PM2_HOME;
+}
+try {
+  fs.mkdirSync(process.env.PM2_HOME, { recursive: true });
+} catch (e) {
+  // Best-effort; PM2 will report its own error if it cannot write here.
+}
+
 function formatTimestamp(d = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -234,6 +247,17 @@ class DashboardServer {
     const taskUrl = `${this.mockInfo.url}/renren-api/classify/open/crawler/tasks`;
     const callbackUrl = `${this.mockInfo.url}/renren-api/classify/open/crawler/callback`;
 
+    // On Windows a stale PM2 daemon from a different user/context can hold the
+    // named pipe and cause EPERM. Try to kill any existing daemon first.
+    try {
+      await this.execAsync('pm2 kill', {
+        timeout: 5000,
+        env: this.pm2Env(),
+      });
+    } catch (e) {
+      // ignore: if the daemon is owned by another user we cannot kill it here.
+    }
+
     try {
       // Stop existing crawler if any; ignore errors when it does not exist.
       await this.execAsync(`pm2 stop ${this.pm2AppName}`, {
@@ -269,13 +293,27 @@ class DashboardServer {
     // is not valid on Windows.
     this.ensurePm2Home();
     const cmd = `pm2 start ./bin/run.js --name ${this.pm2AppName}`;
-    const { stderr } = await this.execAsync(cmd, {
-      cwd: process.cwd(),
-      env: this.pm2Env(env),
-      timeout: 10000,
-    });
-    if (stderr && !stderr.includes('[PM2]')) {
-      console.error('[DASHBOARD] PM2 start stderr:', stderr);
+    try {
+      const { stderr } = await this.execAsync(cmd, {
+        cwd: process.cwd(),
+        env: this.pm2Env(env),
+        timeout: 10000,
+      });
+      if (stderr && !stderr.includes('[PM2]')) {
+        console.error('[DASHBOARD] PM2 start stderr:', stderr);
+      }
+    } catch (e) {
+      const msg = e.message || '';
+      const isPermError = msg.includes('EPERM') || msg.includes('rpc.sock') || msg.toLowerCase().includes('permission');
+      if (isPermError) {
+        throw new Error(
+          `PM2 daemon permission error: ${msg}. ` +
+          `Current PM2_HOME is ${this.pm2Home}. ` +
+          'If another PM2 daemon is already running under a different Windows user or as Administrator, ' +
+          'please run "pm2 kill" in an elevated PowerShell and then restart this dashboard.'
+        );
+      }
+      throw e;
     }
 
     return { success: true, taskUrl, callbackUrl };
