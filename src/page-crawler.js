@@ -18,8 +18,11 @@ function resolveConfig(config) {
 }
 
 class PageCrawler {
-  constructor(config) {
-    this.config = resolveConfig(config);
+  constructor(options) {
+    this.config = resolveConfig(options);
+    this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
+    this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
+    this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
   }
 
   log(...args) {
@@ -212,7 +215,7 @@ class PageCrawler {
     return Object.values(bestUrls);
   }
 
-  async crawlSingleSku(sku, page) {
+  async crawlSingleSku(sku, page, recreateContext) {
     const { baseUrl, imageDir, maxImages } = this.config;
     const result = {
       sku,
@@ -228,7 +231,14 @@ class PageCrawler {
     try {
       const searchUrl = `${baseUrl}/s/${sku}`;
       this.log(`[${sku}] Searching: ${searchUrl}`);
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await gotoWithRetry(page, searchUrl, {
+        sku,
+        gotoMaxRetries: this.gotoMaxRetries,
+        gotoTimeout: this.gotoTimeout,
+        gotoRetryDelays: this.gotoRetryDelays,
+        recreateContext,
+        log: this.log.bind(this),
+      });
 
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
@@ -269,7 +279,14 @@ class PageCrawler {
       }
 
       result.product_url = productUrl;
-      await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await gotoWithRetry(page, productUrl, {
+        sku,
+        gotoMaxRetries: this.gotoMaxRetries,
+        gotoTimeout: this.gotoTimeout,
+        gotoRetryDelays: this.gotoRetryDelays,
+        recreateContext,
+        log: this.log.bind(this),
+      });
 
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
