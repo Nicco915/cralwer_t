@@ -72,7 +72,7 @@ class Worker {
         result = {
           crawlerTaskId: task.crawlerTaskId,
           sku: task.sku,
-          status: e.status || 'error',
+          status: e.status ?? 'error',
           product_name: '',
           features_details: '',
           product_specification: '',
