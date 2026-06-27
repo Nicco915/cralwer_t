@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+IMAGE_TAG="${1:?请提供镜像 tag，例如 ./deploy.sh abc1234}"
+export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE:?未设置 CRAWLER_IMAGE_BASE 环境变量}:${IMAGE_TAG}"
+
+if [ ! -f .env ]; then
+  echo "错误：当前目录缺少 .env 文件" >&2
+  exit 1
+fi
+
+mkdir -p logs output images
+
+docker compose pull
+docker compose up -d
+
+echo "部署完成：${CRAWLER_IMAGE}"
+docker compose ps
