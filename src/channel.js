@@ -28,6 +28,18 @@ class Channel {
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
   }
 
+  _buildContextOptions() {
+    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
+    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
+    const locale = this.config.locale || 'en-GB';
+    const timezone = this.config.timezone || 'Europe/London';
+    const contextOptions = { userAgent, viewport, locale, timezoneId: timezone };
+    if (this.config.proxy) {
+      contextOptions.proxy = { server: this.config.proxy };
+    }
+    return contextOptions;
+  }
+
   async recreateContext(browser) {
     if (this.browserContext) {
       try {
@@ -37,21 +49,7 @@ class Channel {
       }
     }
 
-    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
-    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
-    const locale = this.config.locale || 'en-GB';
-    const timezone = this.config.timezone || 'Europe/London';
-
-    const contextOptions = {
-      userAgent,
-      viewport,
-      locale,
-      timezoneId: timezone,
-    };
-
-    if (this.config.proxy) {
-      contextOptions.proxy = { server: this.config.proxy };
-    }
+    const contextOptions = this._buildContextOptions();
 
     this.browserContext = await browser.newContext(contextOptions);
     await this.browserContext.addInitScript(this.getStealthScript());
@@ -97,21 +95,7 @@ class Channel {
     if (proxyOverride !== undefined) {
       this.config.proxy = proxyOverride;
     }
-    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
-    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
-    const locale = this.config.locale || 'en-GB';
-    const timezone = this.config.timezone || 'Europe/London';
-
-    const contextOptions = {
-      userAgent,
-      viewport,
-      locale,
-      timezoneId: timezone,
-    };
-
-    if (this.config.proxy) {
-      contextOptions.proxy = { server: this.config.proxy };
-    }
+    const contextOptions = this._buildContextOptions();
 
     this.browserContext = await browser.newContext(contextOptions);
     await this.browserContext.addInitScript(this.getStealthScript());
@@ -155,7 +139,11 @@ class Channel {
       this.busy = false;
       this.currentTask = null;
       this.tasksSincePageRefresh++;
-      await this.refreshPageIfNeeded();
+      try {
+        await this.refreshPageIfNeeded();
+      } catch (refreshErr) {
+        this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
+      }
     }
   }
 
