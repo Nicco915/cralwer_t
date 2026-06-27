@@ -399,8 +399,7 @@ function classifyGotoError(error) {
   }
   if (
     msg.includes('ERR_HTTP_RESPONSE_CODE_FAILURE') ||
-    /\b4\d{2}\b/.test(msg) ||
-    /\b5\d{2}\b/.test(msg) ||
+    /(?:status\s+code\s+|\s)([45]\d{2})(?:\s|$|:)/i.test(msg) ||
     msg.includes('status code')
   ) {
     return 'non-retryable';
@@ -409,7 +408,12 @@ function classifyGotoError(error) {
     msg.includes('Timeout') ||
     msg.includes('timeout') ||
     msg.includes('ERR_NAME_NOT_RESOLVED') ||
-    msg.includes('net::ERR') ||
+    (
+      msg.includes('net::ERR') &&
+      !msg.includes('ERR_TUNNEL_CONNECTION_FAILED') &&
+      !msg.includes('ERR_PROXY_CONNECTION_FAILED') &&
+      !msg.includes('ERR_CONNECTION_RESET')
+    ) ||
     msg.includes('Navigation failed')
   ) {
     return 'retryable';
@@ -431,10 +435,15 @@ async function gotoWithRetry(page, url, options) {
     log = console.log,
   } = options || {};
 
+  if (gotoMaxRetries <= 0) {
+    throw new Error(`gotoMaxRetries must be > 0, got ${gotoMaxRetries}`);
+  }
+
+  let currentPage = page;
   let lastError;
   for (let attempt = 0; attempt < gotoMaxRetries; attempt++) {
     try {
-      return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
+      return await currentPage.goto(url, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
     } catch (e) {
       lastError = e;
       const category = classifyGotoError(e);
@@ -443,12 +452,12 @@ async function gotoWithRetry(page, url, options) {
       }
       log(`[${sku}] goto attempt ${attempt + 1}/${gotoMaxRetries} failed for ${url}: ${e.message}`);
       if (attempt < gotoMaxRetries - 1) {
-        const delay = gotoRetryDelays[attempt] || 5000;
+        const delay = gotoRetryDelays[attempt] ?? 5000;
         log(`[${sku}] Retrying goto in ${delay / 1000}s...`);
         await sleep(delay);
         if (attempt === gotoMaxRetries - 2 && typeof recreateContext === 'function') {
           log(`[${sku}] Recreating context for final goto attempt...`);
-          page = await recreateContext();
+          currentPage = await recreateContext();
         }
       }
     }
