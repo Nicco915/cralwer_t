@@ -23,6 +23,9 @@ class Channel {
       cloudflareMaxWait: this.config.cloudflareMaxWait,
       minDelay: this.config.minDelay,
       maxDelay: this.config.maxDelay,
+      gotoMaxRetries: this.config.gotoMaxRetries,
+      gotoTimeout: this.config.gotoTimeout,
+      gotoRetryDelays: this.config.gotoRetryDelays,
     });
     this.tasksSincePageRefresh = 0;
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;

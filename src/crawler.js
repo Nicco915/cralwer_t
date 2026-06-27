@@ -517,7 +517,7 @@ ${result.product_specification || ''}`;
     }`;
   }
 
-  async crawlSingleSku(sku, page) {
+  async crawlSingleSku(sku, page, recreateContext) {
     const pageCrawler = new PageCrawler({
       baseUrl: this.config.baseUrl,
       imageDir: this.config.imageDir,
@@ -530,7 +530,7 @@ ${result.product_specification || ''}`;
       gotoTimeout: this.config.gotoTimeout,
       gotoRetryDelays: this.config.gotoRetryDelays,
     });
-    return pageCrawler.crawlSingleSku(sku, page, null);
+    return pageCrawler.crawlSingleSku(sku, page, recreateContext);
   }
 
   registerSignalHandlers() {
@@ -700,7 +700,7 @@ ${result.product_specification || ''}`;
         this.log(`[${globalIndex + 1}/${allSkus.length}] SKU: ${sku}`);
         this.log(`${'='.repeat(60)}`);
 
-        const result = await this.crawlSingleSku(sku, page, context);
+        const result = await this.crawlSingleSku(sku, page, null);
         result.globalIndex = globalIndex;
 
         await translationQueue.push({ rowIndex: i, result });
