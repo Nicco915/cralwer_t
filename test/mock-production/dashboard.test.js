@@ -231,4 +231,45 @@ describe('Dashboard Server', { timeout: 60000 }, () => {
     const record = await ssePromise;
     assert.strictEqual(record.callback.sku, 'SSE-TEST');
   });
+
+  it('passes crawler env vars via exec options instead of inline shell syntax', async () => {
+    const calls = [];
+    const fakeExec = async (cmd, options) => {
+      calls.push({ cmd, options });
+      return { stdout: '[PM2] Done', stderr: '' };
+    };
+
+    const dash = new DashboardServer({ port: 0, host: '127.0.0.1', execAsync: fakeExec });
+    const info = await dash.start();
+
+    const upstream = await request({
+      hostname: '127.0.0.1',
+      port: info.port,
+      path: '/api/upstream/start',
+      method: 'POST',
+    });
+    const mockUrl = upstream.data.data.url;
+
+    const res = await request({
+      hostname: '127.0.0.1',
+      port: info.port,
+      path: '/api/crawler/start',
+      method: 'POST',
+    });
+    assert.strictEqual(res.status, 200);
+
+    const startCall = calls.find(c => c.cmd.startsWith('pm2 start'));
+    assert.ok(startCall, 'expected a pm2 start call');
+    assert.ok(
+      !startCall.cmd.includes('CRAWLER_MODE='),
+      'command must not use inline env var syntax, which fails on Windows cmd'
+    );
+    assert.strictEqual(startCall.options.env.CRAWLER_MODE, 'service');
+    assert.strictEqual(startCall.options.env.CRAWLER_NODE_CODE, 'crawler-dashboard-test');
+    assert.strictEqual(startCall.options.env.CRAWLER_TASK_URL, `${mockUrl}/renren-api/classify/open/crawler/tasks`);
+    assert.strictEqual(startCall.options.env.CRAWLER_CALLBACK_URL, `${mockUrl}/renren-api/classify/open/crawler/callback`);
+
+    await dash.stopUpstream();
+    await dash.close();
+  });
 });

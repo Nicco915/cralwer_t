@@ -81,7 +81,7 @@ function errorResponse(res, message, status = 500) {
 
 class DashboardServer {
   constructor(options = {}) {
-    this.port = options.port || 8080;
+    this.port = options.port !== undefined ? options.port : 8080;
     this.host = options.host || '127.0.0.1';
     this.mockPort = options.mockPort || 0;
     this.mockHost = options.mockHost || '127.0.0.1';
@@ -93,6 +93,8 @@ class DashboardServer {
     this.maxCallbacks = options.maxCallbacks || 500;
     this.recentCallbacks = [];
     this.pm2AppName = options.pm2AppName || 'crawler-dashboard-test';
+    // Allow tests and callers to inject a custom exec implementation (cross-platform stubbing).
+    this.execAsync = options.execAsync || execAsync;
     this.server = null;
     this.connections = new Set();
   }
@@ -212,9 +214,13 @@ class DashboardServer {
     const callbackUrl = `${this.mockInfo.url}/renren-api/classify/open/crawler/callback`;
 
     try {
-      // Stop existing crawler if any
-      await execAsync(`pm2 stop ${this.pm2AppName} 2>/dev/null || true`, { timeout: 5000 });
-      await execAsync(`pm2 delete ${this.pm2AppName} 2>/dev/null || true`, { timeout: 5000 });
+      // Stop existing crawler if any; ignore errors when it does not exist.
+      await this.execAsync(`pm2 stop ${this.pm2AppName}`, { timeout: 5000 });
+    } catch (e) {
+      // ignore cleanup errors
+    }
+    try {
+      await this.execAsync(`pm2 delete ${this.pm2AppName}`, { timeout: 5000 });
     } catch (e) {
       // ignore cleanup errors
     }
@@ -231,12 +237,15 @@ class DashboardServer {
       CRAWLER_HEADLESS: 'true',
     };
 
-    const envString = Object.entries(env)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(' ');
-
-    const cmd = `${envString} pm2 start ./bin/run.js --name ${this.pm2AppName}`;
-    const { stderr } = await execAsync(cmd, { cwd: process.cwd(), timeout: 10000 });
+    // Pass environment variables through exec options so this works on both
+    // Unix shells and Windows cmd/PowerShell. Inline syntax like KEY=val pm2 ...
+    // is not valid on Windows.
+    const cmd = `pm2 start ./bin/run.js --name ${this.pm2AppName}`;
+    const { stderr } = await this.execAsync(cmd, {
+      cwd: process.cwd(),
+      env: { ...process.env, ...env },
+      timeout: 10000,
+    });
     if (stderr && !stderr.includes('[PM2]')) {
       console.error('[DASHBOARD] PM2 start stderr:', stderr);
     }
@@ -246,7 +255,7 @@ class DashboardServer {
 
   async stopCrawler() {
     try {
-      await execAsync(`pm2 stop ${this.pm2AppName} 2>/dev/null || true`, { timeout: 5000 });
+      await this.execAsync(`pm2 stop ${this.pm2AppName}`, { timeout: 5000 });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -255,7 +264,7 @@ class DashboardServer {
 
   async getCrawlerStatus() {
     try {
-      const { stdout } = await execAsync('pm2 jlist --json', { timeout: 3000 });
+      const { stdout } = await this.execAsync('pm2 jlist --json', { timeout: 3000 });
       const list = JSON.parse(stdout || '[]');
       const app = list.find(p => p.name === this.pm2AppName);
       if (!app) return { running: false, status: 'not found' };
@@ -273,7 +282,7 @@ class DashboardServer {
 
   async getCrawlerLogs(lines = 50) {
     try {
-      const { stdout } = await execAsync(`pm2 logs ${this.pm2AppName} --lines ${lines} --nostream`, { timeout: 5000 });
+      const { stdout } = await this.execAsync(`pm2 logs ${this.pm2AppName} --lines ${lines} --nostream`, { timeout: 5000 });
       return stdout || '';
     } catch (e) {
       return '';
