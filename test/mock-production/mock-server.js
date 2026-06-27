@@ -33,6 +33,7 @@ class MockProductionServer {
     this.headerRow = options.headerRow || 1;
     this.dataRowStart = options.dataRowStart || this.headerRow + 1;
     this.nodeCode = options.nodeCode || null;
+    this.maxTasks = options.maxTasks || null;
     this.failureRate = Math.min(1, Math.max(0, options.failureRate || 0));
     this.taskIdOffset = options.taskIdOffset || DEFAULT_TASK_ID_OFFSET;
     this.importTaskIdOffset = options.importTaskIdOffset || DEFAULT_IMPORT_TASK_ID_OFFSET;
@@ -77,8 +78,9 @@ class MockProductionServer {
       }
     }
 
-    this.skus = skus;
-    this.tasks = this.buildTasks(skus);
+    const limitedSkus = this.maxTasks ? skus.slice(0, this.maxTasks) : skus;
+    this.skus = limitedSkus;
+    this.tasks = this.buildTasks(limitedSkus);
     return this.skus;
   }
 
@@ -197,8 +199,11 @@ class MockProductionServer {
             this.callbackIds.add(callbackId);
           }
 
-          // A task is only considered completed when a callback is received.
-          // This mirrors production: failed crawls can re-poll the same task.
+          // A task is considered completed as soon as a callback is received,
+          // regardless of whether success is true or false. The upstream system
+          // treats any callback response as the final result for that task.
+          // Re-polling only happens when the crawler fails to deliver a callback
+          // (e.g. network error or crawler crash before pushing).
           const completedTaskId = callback.crawlerTaskId !== undefined
             ? String(callback.crawlerTaskId)
             : null;
@@ -281,6 +286,9 @@ async function main() {
     } else if (args[i] === '--excel' && i + 1 < args.length) {
       options.excelPath = args[i + 1];
       i++;
+    } else if (args[i] === '--max-tasks' && i + 1 < args.length) {
+      options.maxTasks = Number(args[i + 1]);
+      i++;
     } else if (args[i] === '--failure-rate' && i + 1 < args.length) {
       options.failureRate = Number(args[i + 1]);
       i++;
@@ -288,8 +296,9 @@ async function main() {
   }
 
   const server = await startMockProductionServer(options);
+  const stats = server.getStats();
   console.log(`[MOCK-PRODUCTION] Server running at ${server.url}`);
-  console.log(`[MOCK-PRODUCTION] Total SKUs loaded: ${server.getStats().totalTasks}`);
+  console.log(`[MOCK-PRODUCTION] Total SKUs loaded: ${stats.totalTasks}${options.maxTasks ? ` (limited from mock_test by --max-tasks)` : ''}`);
   console.log(`[MOCK-PRODUCTION] Endpoints:`);
   console.log(`  POST ${server.url}/renren-api/classify/open/crawler/tasks`);
   console.log(`  POST ${server.url}/renren-api/classify/open/crawler/callback`);

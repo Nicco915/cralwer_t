@@ -264,6 +264,45 @@ describe('Mock Production Server', { timeout: 30000 }, () => {
     assert.ok(stats.duplicateCallbacks >= 1);
   });
 
+  it('completes a task even when the callback reports failure', async () => {
+    const tasks = await request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/renren-api/classify/open/crawler/tasks',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { nodeCode: 'crawler-04', limit: 1 },
+    });
+    const taskId = tasks.data.data[0].id;
+
+    await request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/renren-api/classify/open/crawler/callback',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        crawlerTaskId: taskId,
+        sku: tasks.data.data[0].sku,
+        nodeCode: 'crawler-04',
+        success: false,
+        errorMessage: 'crawl failed',
+      },
+    });
+
+    const next = await request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/renren-api/classify/open/crawler/tasks',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { nodeCode: 'crawler-04', limit: 1 },
+    });
+
+    const returnedIds = next.data.data.map(t => t.id);
+    assert.ok(!returnedIds.includes(taskId), 'failed callback should still complete the task');
+  });
+
   it('exposes stats endpoint with task and callback counts', async () => {
     const res = await request({
       hostname: '127.0.0.1',
