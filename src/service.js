@@ -8,6 +8,7 @@ const { Pusher } = require('./pusher');
 const { resolveBrowserPath } = require('./crawler');
 const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
+const { CliproxyPool } = require('./cliproxy-pool');
 
 class CrawlerService {
   constructor(config) {
@@ -106,6 +107,48 @@ class CrawlerService {
     }
   }
 
+  async startProxyPool() {
+    if (this.config.proxy) {
+      return;
+    }
+
+    if (this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey) {
+      const client = new KuaidailiClient({
+        secretId: this.config.kuaidailiSecretId,
+        secretKey: this.config.kuaidailiSecretKey,
+        proxyType: this.config.kuaidailiProxyType,
+        proxyNum: this.config.kuaidailiProxyNum,
+        tokenCacheFile: this.config.kuaidailiTokenCacheFile,
+      });
+      this.proxyPool = new ProxyPool({
+        client,
+        machineIndex: this.config.proxyMachineIndex,
+        machineTotal: this.config.proxyMachineTotal,
+        channels: this.config.channels,
+        assignmentsFile: this.config.proxyAssignmentsFile,
+      });
+      await this.proxyPool.assign();
+      this.startProxyRefresh();
+      return;
+    }
+
+    if (this.config.cliproxyUsername && this.config.cliproxyPassword) {
+      this.proxyPool = new CliproxyPool({
+        host: this.config.cliproxyHost,
+        port: this.config.cliproxyPort,
+        username: this.config.cliproxyUsername,
+        password: this.config.cliproxyPassword,
+        region: this.config.cliproxyRegion,
+        stickyMinutes: this.config.cliproxyStickyMinutes,
+        sessionPrefix: this.config.cliproxySessionPrefix,
+        channels: this.config.channels,
+        assignmentsFile: this.config.cliproxyAssignmentsFile,
+      });
+      await this.proxyPool.assign();
+      this.startProxyRefresh();
+    }
+  }
+
   async start() {
     this.log('[SERVICE] Starting crawler service...');
     this.ensureImageDir();
@@ -136,24 +179,7 @@ class CrawlerService {
       shouldPoll: () => this.worker.hasCapacity(),
     });
 
-    if (!this.config.proxy && this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey) {
-      const client = new KuaidailiClient({
-        secretId: this.config.kuaidailiSecretId,
-        secretKey: this.config.kuaidailiSecretKey,
-        proxyType: this.config.kuaidailiProxyType,
-        proxyNum: this.config.kuaidailiProxyNum,
-        tokenCacheFile: this.config.kuaidailiTokenCacheFile,
-      });
-      this.proxyPool = new ProxyPool({
-        client,
-        machineIndex: this.config.proxyMachineIndex,
-        machineTotal: this.config.proxyMachineTotal,
-        channels: this.config.channels,
-        assignmentsFile: this.config.proxyAssignmentsFile,
-      });
-      await this.proxyPool.assign();
-      this.startProxyRefresh();
-    }
+    await this.startProxyPool();
 
     await this.initBrowser();
     await this.initChannels();

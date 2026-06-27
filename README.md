@@ -331,6 +331,38 @@ bash test/real/smoke-test.sh
 
 The script starts one service node, waits for it to process at least `SMOKE_MIN_SUCCESS` tasks, then gracefully shuts it down and prints a PASS/FAIL summary. See [`test/real/README.md`](test/real/README.md) for full configuration options.
 
+## 海外 VPS 部署（Linux + Docker + Cliproxy）
+
+用于将爬虫部署到欧洲 VPS，通过 Cliproxy 住宅代理访问 `eur.vevor.com`。
+
+### 准备
+
+1. 准备一台欧洲 VPS（推荐 Hetzner CPX31，4C8G）
+2. 安装 Docker 和 Docker Compose
+3. 准备 Cliproxy 账号
+
+### 部署步骤
+
+```bash
+cd deployment/linux
+cp .env.example .env
+# 编辑 .env，填入真实凭据和 CRAWLER_IMAGE_BASE
+export CRAWLER_IMAGE_BASE=ghcr.io/your-org/hs-sku-crawler
+./deploy.sh <git-commit-short-sha>
+```
+
+### 更新
+
+```bash
+./update.sh <new-git-commit-short-sha>
+```
+
+### 回滚
+
+```bash
+./rollback.sh
+```
+
 ## Output
 
 - `{output}/vevor_result.xlsx` — main results

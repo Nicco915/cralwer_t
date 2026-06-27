@@ -183,6 +183,14 @@ function parse(rawArgs, defaults = {}) {
     PROXY_REFRESH_INTERVAL_MS: 'proxyRefreshIntervalMs',
     PROXY_ASSIGNMENTS_FILE: 'proxyAssignmentsFile',
     CRAWLER_PROXY: 'proxy',
+    CLIPROXY_HOST: 'cliproxyHost',
+    CLIPROXY_PORT: 'cliproxyPort',
+    CLIPROXY_USERNAME: 'cliproxyUsername',
+    CLIPROXY_PASSWORD: 'cliproxyPassword',
+    CLIPROXY_REGION: 'cliproxyRegion',
+    CLIPROXY_STICKY_MINUTES: 'cliproxyStickyMinutes',
+    CLIPROXY_SESSION_PREFIX: 'cliproxySessionPrefix',
+    CLIPROXY_ASSIGNMENTS_FILE: 'cliproxyAssignmentsFile',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {

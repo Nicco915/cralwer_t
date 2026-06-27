@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  crawler:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - ./images:/app/images
+    working_dir: /app
