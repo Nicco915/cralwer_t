@@ -18,8 +18,11 @@ function resolveConfig(config) {
 }
 
 class PageCrawler {
-  constructor(config) {
-    this.config = resolveConfig(config);
+  constructor(options) {
+    this.config = resolveConfig(options);
+    this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
+    this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
+    this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
   }
 
   log(...args) {
@@ -212,7 +215,7 @@ class PageCrawler {
     return Object.values(bestUrls);
   }
 
-  async crawlSingleSku(sku, page) {
+  async crawlSingleSku(sku, page, recreateContext) {
     const { baseUrl, imageDir, maxImages } = this.config;
     const result = {
       sku,
@@ -228,7 +231,14 @@ class PageCrawler {
     try {
       const searchUrl = `${baseUrl}/s/${sku}`;
       this.log(`[${sku}] Searching: ${searchUrl}`);
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await gotoWithRetry(page, searchUrl, {
+        sku,
+        gotoMaxRetries: this.gotoMaxRetries,
+        gotoTimeout: this.gotoTimeout,
+        gotoRetryDelays: this.gotoRetryDelays,
+        recreateContext,
+        log: this.log.bind(this),
+      });
 
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
@@ -269,7 +279,14 @@ class PageCrawler {
       }
 
       result.product_url = productUrl;
-      await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await gotoWithRetry(page, productUrl, {
+        sku,
+        gotoMaxRetries: this.gotoMaxRetries,
+        gotoTimeout: this.gotoTimeout,
+        gotoRetryDelays: this.gotoRetryDelays,
+        recreateContext,
+        log: this.log.bind(this),
+      });
 
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
@@ -388,4 +405,81 @@ class PageCrawler {
   }
 }
 
-module.exports = { PageCrawler, resolveConfig };
+function classifyGotoError(error) {
+  const msg = (error && error.message) || '';
+  if (
+    msg.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+    msg.includes('ERR_PROXY_CONNECTION_FAILED') ||
+    msg.includes('ERR_CONNECTION_RESET')
+  ) {
+    return 'proxy';
+  }
+  if (
+    msg.includes('ERR_HTTP_RESPONSE_CODE_FAILURE') ||
+    /(?:status\s+code\s+|\s)([45]\d{2})(?:\s|$|:)/i.test(msg) ||
+    msg.includes('status code')
+  ) {
+    return 'non-retryable';
+  }
+  if (
+    msg.includes('Timeout') ||
+    msg.includes('timeout') ||
+    msg.includes('ERR_NAME_NOT_RESOLVED') ||
+    (
+      msg.includes('net::ERR') &&
+      !msg.includes('ERR_TUNNEL_CONNECTION_FAILED') &&
+      !msg.includes('ERR_PROXY_CONNECTION_FAILED') &&
+      !msg.includes('ERR_CONNECTION_RESET')
+    ) ||
+    msg.includes('Navigation failed')
+  ) {
+    return 'retryable';
+  }
+  return 'non-retryable';
+}
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function gotoWithRetry(page, url, options) {
+  const {
+    sku,
+    gotoMaxRetries = 3,
+    gotoTimeout = 30000,
+    gotoRetryDelays = [3000, 6000, 12000],
+    recreateContext,
+    log = console.log,
+  } = options || {};
+
+  if (gotoMaxRetries <= 0) {
+    throw new Error(`gotoMaxRetries must be > 0, got ${gotoMaxRetries}`);
+  }
+
+  let currentPage = page;
+  let lastError;
+  for (let attempt = 0; attempt < gotoMaxRetries; attempt++) {
+    try {
+      return await currentPage.goto(url, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
+    } catch (e) {
+      lastError = e;
+      const category = classifyGotoError(e);
+      if (category === 'proxy' || category === 'non-retryable') {
+        throw e;
+      }
+      log(`[${sku}] goto attempt ${attempt + 1}/${gotoMaxRetries} failed for ${url}: ${e.message}`);
+      if (attempt < gotoMaxRetries - 1) {
+        const delay = gotoRetryDelays[attempt] ?? 5000;
+        log(`[${sku}] Retrying goto in ${delay / 1000}s...`);
+        await sleep(delay);
+        if (attempt === gotoMaxRetries - 2 && typeof recreateContext === 'function') {
+          log(`[${sku}] Recreating context for final goto attempt...`);
+          currentPage = await recreateContext();
+        }
+      }
+    }
+  }
+  throw lastError;
+}
+
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry };

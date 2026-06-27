@@ -49,6 +49,11 @@ const FLAG_MAP = {
   'poll-interval': 'pollInterval',
   'poll-limit': 'pollLimit',
   'push-retries': 'pushRetries',
+  'goto-max-retries': 'gotoMaxRetries',
+  'goto-timeout': 'gotoTimeout',
+  'goto-retry-delays': 'gotoRetryDelays',
+  'headed-fallback': 'headedFallback',
+  'page-refresh-after-tasks': 'pageRefreshAfterTasks',
   'kuaidaili-secret-id': 'kuaidailiSecretId',
   'kuaidaili-secret-key': 'kuaidailiSecretKey',
   'kuaidaili-proxy-type': 'kuaidailiProxyType',
@@ -65,12 +70,14 @@ const BOOLEAN_FLAGS = new Set([
   'headless',
   'translate',
   'feishu',
+  'headed-fallback',
 ]);
 
 const BOOLEAN_CONFIG_KEYS = new Set([
   'headless',
   'enableTranslation',
   'enableFeishu',
+  'headedFallback',
 ]);
 
 function isBooleanFlag(key) {
@@ -79,7 +86,7 @@ function isBooleanFlag(key) {
 
 function coerceValue(raw, configKey) {
   if (BOOLEAN_CONFIG_KEYS.has(configKey)) {
-    return raw !== false && raw !== 'false' && raw !== '0';
+    return raw !== false && raw !== 'false' && raw !== '0' && raw !== '';
   }
   if (typeof raw === 'string' && /^\d+$/.test(raw)) {
     return Number(raw);
@@ -120,6 +127,16 @@ function parse(rawArgs, defaults = {}) {
     config[configKey] = coerceValue(rawValue, configKey);
   }
 
+  // Parse gotoRetryDelays if it's a string
+  if (typeof config.gotoRetryDelays === 'string') {
+    const trimmed = config.gotoRetryDelays.trim();
+    if (trimmed) {
+      config.gotoRetryDelays = trimmed.split(',').map(v => Number(v.trim())).filter(v => !isNaN(v));
+    } else {
+      config.gotoRetryDelays = [3000, 6000, 12000];
+    }
+  }
+
   // Environment variable fallbacks (lowest precedence after explicit defaults)
   const envMap = {
     CRAWLER_INPUT: 'inputExcel',
@@ -151,6 +168,11 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_POLL_INTERVAL: 'pollInterval',
     CRAWLER_POLL_LIMIT: 'pollLimit',
     CRAWLER_PUSH_RETRIES: 'pushRetries',
+    CRAWLER_GOTO_MAX_RETRIES: 'gotoMaxRetries',
+    CRAWLER_GOTO_TIMEOUT: 'gotoTimeout',
+    CRAWLER_GOTO_RETRY_DELAYS: 'gotoRetryDelays',
+    CRAWLER_HEADED_FALLBACK: 'headedFallback',
+    CRAWLER_PAGE_REFRESH_AFTER_TASKS: 'pageRefreshAfterTasks',
     KUAIDAILI_SECRET_ID: 'kuaidailiSecretId',
     KUAIDAILI_SECRET_KEY: 'kuaidailiSecretKey',
     KUAIDAILI_PROXY_TYPE: 'kuaidailiProxyType',

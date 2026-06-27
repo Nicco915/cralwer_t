@@ -23,7 +23,63 @@ class Channel {
       cloudflareMaxWait: this.config.cloudflareMaxWait,
       minDelay: this.config.minDelay,
       maxDelay: this.config.maxDelay,
+      gotoMaxRetries: this.config.gotoMaxRetries,
+      gotoTimeout: this.config.gotoTimeout,
+      gotoRetryDelays: this.config.gotoRetryDelays,
     });
+    this.tasksSincePageRefresh = 0;
+    this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
+    this.headedBrowserLauncher = options.headedBrowserLauncher || null;
+    this.headedFallback = options.config && options.config.headedFallback !== false;
+  }
+
+  _buildContextOptions() {
+    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
+    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
+    const locale = this.config.locale || 'en-GB';
+    const timezone = this.config.timezone || 'Europe/London';
+    const contextOptions = { userAgent, viewport, locale, timezoneId: timezone };
+    if (this.config.proxy) {
+      contextOptions.proxy = { server: this.config.proxy };
+    }
+    return contextOptions;
+  }
+
+  async recreateContext(browser) {
+    if (this.browserContext) {
+      try {
+        await this.browserContext.close();
+      } catch (e) {
+        // Ignore errors when context is already closed or browser is dead
+      }
+    }
+
+    const contextOptions = this._buildContextOptions();
+
+    this.browserContext = await browser.newContext(contextOptions);
+    await this.browserContext.addInitScript(this.getStealthScript());
+    this.page = await this.browserContext.newPage();
+    return this.page;
+  }
+
+  async refreshPage() {
+    if (this.page) {
+      try {
+        await this.page.close();
+      } catch (e) {
+        // Ignore errors when page is already closed
+      }
+    }
+    if (this.browserContext) {
+      this.page = await this.browserContext.newPage();
+    }
+    this.tasksSincePageRefresh = 0;
+  }
+
+  async refreshPageIfNeeded() {
+    if (this.pageRefreshAfterTasks > 0 && this.tasksSincePageRefresh >= this.pageRefreshAfterTasks) {
+      await this.refreshPage();
+    }
   }
 
   getStealthScript() {
@@ -44,26 +100,49 @@ class Channel {
     if (proxyOverride !== undefined) {
       this.config.proxy = proxyOverride;
     }
-    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
-    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
-    const locale = this.config.locale || 'en-GB';
-    const timezone = this.config.timezone || 'Europe/London';
-
-    const contextOptions = {
-      userAgent,
-      viewport,
-      locale,
-      timezoneId: timezone,
-    };
-
-    if (this.config.proxy) {
-      contextOptions.proxy = { server: this.config.proxy };
-    }
+    const contextOptions = this._buildContextOptions();
 
     this.browserContext = await browser.newContext(contextOptions);
     await this.browserContext.addInitScript(this.getStealthScript());
     this.page = await this.browserContext.newPage();
     this.log(`[Channel ${this.id}] initialized`);
+  }
+
+  async runHeadedFallback(task) {
+    if (!this.headedBrowserLauncher) {
+      throw new Error('headedBrowserLauncher not configured');
+    }
+    const headedBrowser = await this.headedBrowserLauncher();
+    let headedContext;
+    let headedPage;
+    try {
+      headedContext = await headedBrowser.newContext(this._buildContextOptions());
+      await headedContext.addInitScript(this.getStealthScript());
+      headedPage = await headedContext.newPage();
+      const recreateContext = async () => {
+        if (headedContext) {
+          try {
+            await headedContext.close();
+          } catch (e) {
+            // ignore
+          }
+        }
+        headedContext = await headedBrowser.newContext(this._buildContextOptions());
+        await headedContext.addInitScript(this.getStealthScript());
+        headedPage = await headedContext.newPage();
+        return headedPage;
+      };
+      return await this.pageCrawler.crawlSingleSku(task.sku, headedPage, recreateContext);
+    } finally {
+      if (headedContext) {
+        try {
+          await headedContext.close();
+        } catch (e) {
+          // ignore
+        }
+      }
+      await headedBrowser.close();
+    }
   }
 
   async crawl(task) {
@@ -75,7 +154,23 @@ class Channel {
 
     try {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
-      const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page);
+      let result;
+      try {
+        const recreateContext = async () => {
+          const browser = this.browserContext ? this.browserContext.browser() : null;
+          if (!browser) throw new Error('Browser context not available');
+          return this.recreateContext(browser);
+        };
+        result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
+      } catch (e) {
+        const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
+        if (isTimeout && this.headedFallback && this.headedBrowserLauncher) {
+          this.log(`[Channel ${this.id}] Headless timeout, trying headed fallback for task ${task.crawlerTaskId}`);
+          result = await this.runHeadedFallback(task);
+        } else {
+          throw e;
+        }
+      }
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,
@@ -92,10 +187,20 @@ class Channel {
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
+      const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
+      if (isTimeout) {
+        e.status = 'timeout';
+      }
       throw e;
     } finally {
       this.busy = false;
       this.currentTask = null;
+      this.tasksSincePageRefresh++;
+      try {
+        await this.refreshPageIfNeeded();
+      } catch (refreshErr) {
+        this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
+      }
     }
   }
 

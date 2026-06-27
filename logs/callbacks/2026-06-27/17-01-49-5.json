@@ -1,0 +1,12 @@
+{
+  "crawlerTaskId": 5,
+  "sku": "ABC-005",
+  "nodeCode": "node-1",
+  "nodeToken": "token-1",
+  "goodsName": "Name",
+  "goodsDesc": "Desc",
+  "sourceUrl": "",
+  "rawContent": "",
+  "success": true,
+  "errorMessage": ""
+}

@@ -1,0 +1,12 @@
+{
+  "crawlerTaskId": 3,
+  "sku": "ABC-003",
+  "nodeCode": "node-1",
+  "nodeToken": "token-1",
+  "goodsName": "",
+  "goodsDesc": "",
+  "sourceUrl": "",
+  "rawContent": "",
+  "success": false,
+  "errorMessage": "Page shows no result"
+}

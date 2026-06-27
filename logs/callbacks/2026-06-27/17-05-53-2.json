@@ -1,0 +1,12 @@
+{
+  "crawlerTaskId": 2,
+  "sku": "ABC-002",
+  "nodeCode": "node-1",
+  "nodeToken": "token-1",
+  "goodsName": "",
+  "goodsDesc": "",
+  "sourceUrl": "",
+  "rawContent": "",
+  "success": false,
+  "errorMessage": "Cloudflare challenge not resolved"
+}

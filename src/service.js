@@ -37,8 +37,9 @@ class CrawlerService {
     }
   }
 
-  async initBrowser() {
-    const { headless, browserPath, browserTempDir, userAgent, viewport, locale, timezone } = this.config;
+  async initBrowser(options = {}) {
+    const headless = options.headless !== undefined ? options.headless : this.config.headless;
+    const { browserPath, browserTempDir, userAgent, viewport, locale, timezone } = this.config;
     const resolvedBrowser = resolveBrowserPath(browserPath);
     if (resolvedBrowser) {
       this.log(`[BROWSER] Using: ${resolvedBrowser}`);
@@ -66,6 +67,7 @@ class CrawlerService {
         '--lang=en-GB',
       ],
     });
+    return this.browser;
   }
 
   async initChannels() {
@@ -89,7 +91,13 @@ class CrawlerService {
           minDelay: this.config.minDelay,
           maxDelay: this.config.maxDelay,
           proxy,
+          gotoMaxRetries: this.config.gotoMaxRetries,
+          gotoTimeout: this.config.gotoTimeout,
+          gotoRetryDelays: this.config.gotoRetryDelays,
+          headedFallback: this.config.headedFallback,
+          pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
         },
+        headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),
       });
       await channel.init(this.browser);
