@@ -8,7 +8,7 @@
     "vevor-crawler-test": "bin/run-test.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js test/fixtures/stub-server.test.js test/mock-production/mock-server.test.js",
+    "test": "node --test test/*.test.js test/fixtures/stub-server.test.js test/mock-production/*.test.js",
     "test:integration": "node --test test/service.integration.test.js",
     "test:load": "node --test test/load/load-test.js",
     "test:deployment:local": "bash test/deployment/run-local.sh",
@@ -16,6 +16,7 @@
     "cli:test": "node bin/run-test.js",
     "service": "CRAWLER_MODE=service node bin/run.js",
     "mock:production": "node test/mock-production/mock-server.js",
+    "mock:dashboard": "node test/mock-production/dashboard.js",
     "install-browsers": "npx playwright install chromium"
   },
   "dependencies": {

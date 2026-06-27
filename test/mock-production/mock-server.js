@@ -1,6 +1,5 @@
 const http = require('http');
 const path = require('path');
-const ExcelJS = require('exceljs');
 const JSONbig = require('json-bigint')({ useNativeBigInt: true });
 
 const DEFAULT_TASK_ID_OFFSET = 2070310839000000000n;
@@ -27,7 +26,10 @@ class MockProductionServer {
   constructor(options = {}) {
     this.port = options.port || 0;
     this.host = options.host || '127.0.0.1';
-    this.excelPath = options.excelPath || path.resolve(__dirname, '../../mock_test/mocktest.xlsx');
+    this.excelPath = options.excelPath !== undefined
+      ? options.excelPath
+      : path.resolve(__dirname, '../../mock_test/mocktest.xlsx');
+    this.autoLoad = options.autoLoad !== false;
     this.sheetName = options.sheetName || null;
     this.skuColumn = options.skuColumn || 1;
     this.headerRow = options.headerRow || 1;
@@ -35,6 +37,7 @@ class MockProductionServer {
     this.nodeCode = options.nodeCode || null;
     this.maxTasks = options.maxTasks || null;
     this.failureRate = Math.min(1, Math.max(0, options.failureRate || 0));
+    this.onCallback = options.onCallback || null;
     this.taskIdOffset = options.taskIdOffset || DEFAULT_TASK_ID_OFFSET;
     this.importTaskIdOffset = options.importTaskIdOffset || DEFAULT_IMPORT_TASK_ID_OFFSET;
     this.goodsItemIdOffset = options.goodsItemIdOffset || DEFAULT_GOODS_ITEM_ID_OFFSET;
@@ -52,10 +55,13 @@ class MockProductionServer {
     this.successCallbacks = 0;
     this.failedCallbacks = 0;
     this.server = null;
+    this.connections = new Set();
     this.startTime = new Date();
   }
 
   async loadSkus() {
+    // Lazy-load ExcelJS because it is heavy and only needed when reading Excel.
+    const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(this.excelPath);
     const worksheet = this.sheetName
@@ -116,6 +122,67 @@ class MockProductionServer {
         updater: this.updater,
       };
     });
+  }
+
+  setTasks(skus) {
+    this.skus = skus.slice();
+    this.tasks = this.buildTasks(this.skus);
+    this.completedTaskIds.clear();
+    this.issuedTaskIds.clear();
+    this.callbacks = [];
+    this.callbackIds.clear();
+    this.duplicateCallbacks = 0;
+    this.successCallbacks = 0;
+    this.failedCallbacks = 0;
+    return this.tasks;
+  }
+
+  addTasks(skus) {
+    const newSkus = Array.isArray(skus) ? skus : [skus];
+    const startIndex = this.skus.length;
+    this.skus.push(...newSkus);
+    const newTasks = this.buildTasksForRange(startIndex, newSkus);
+    this.tasks.push(...newTasks);
+    return newTasks;
+  }
+
+  buildTasksForRange(startIndex, skus) {
+    const now = new Date();
+    return skus.map((sku, offset) => {
+      const index = startIndex + offset;
+      const id = BigInt(this.taskIdOffset) + BigInt(index);
+      const importTaskId = BigInt(this.importTaskIdOffset) + BigInt(index);
+      const goodsItemId = BigInt(this.goodsItemIdOffset) + BigInt(index);
+      const createDate = formatTimestamp(now);
+      const assignTime = createDate;
+      const updateDate = createDate;
+      const startTime = offsetTimestamp(now, index);
+
+      return {
+        assignTime,
+        createDate,
+        creator: this.creator,
+        errorMessage: null,
+        finishTime: null,
+        goodsItemId: String(goodsItemId),
+        goodsNameCn: String(index + 1),
+        goodsNameEn: null,
+        id: String(id),
+        importTaskId: String(importTaskId),
+        nodeCode: this.nodeCode || 'crawler-04',
+        nodeId: this.nodeId,
+        retryCount: 0,
+        sku,
+        startTime,
+        status: 'CRAWLING',
+        updateDate,
+        updater: this.updater,
+      };
+    });
+  }
+
+  reset() {
+    return this.setTasks(this.skus);
   }
 
   getStats() {
@@ -211,14 +278,23 @@ class MockProductionServer {
             this.completedTaskIds.add(completedTaskId);
           }
 
-          if (this.failureRate > 0 && Math.random() < this.failureRate) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSONbig.stringify({ code: 500, error: 'simulated callback failure' }));
-            return;
+          const failedByRate = this.failureRate > 0 && Math.random() < this.failureRate;
+          const responseStatus = failedByRate ? 500 : 200;
+          const responseBody = failedByRate
+            ? { code: 500, error: 'simulated callback failure' }
+            : { code: 0 };
+
+          if (this.onCallback) {
+            try {
+              this.onCallback(callback, { status: responseStatus, body: responseBody });
+            } catch (e) {
+              // Hook errors should not break the callback response.
+              console.error('[MOCK-PRODUCTION] onCallback hook error:', e.message);
+            }
           }
 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSONbig.stringify({ code: 0 }));
+          res.writeHead(responseStatus, { 'Content-Type': 'application/json' });
+          res.end(JSONbig.stringify(responseBody));
           return;
         }
 
@@ -232,12 +308,16 @@ class MockProductionServer {
   }
 
   async start() {
-    if (this.skus.length === 0) {
+    if (this.skus.length === 0 && this.autoLoad) {
       await this.loadSkus();
     }
 
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => this.handleRequest(req, res));
+      this.server.on('connection', (socket) => {
+        this.connections.add(socket);
+        socket.on('close', () => this.connections.delete(socket));
+      });
       this.server.listen(this.port, this.host, () => {
         const address = this.server.address();
         this.port = address.port;
@@ -254,6 +334,10 @@ class MockProductionServer {
 
   close() {
     return new Promise((resolve) => {
+      for (const socket of this.connections) {
+        try { socket.destroy(); } catch (e) {}
+      }
+      this.connections.clear();
       if (this.server) {
         this.server.close(resolve);
       } else {
