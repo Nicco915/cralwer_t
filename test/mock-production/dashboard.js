@@ -286,6 +286,8 @@ class DashboardServer {
       CRAWLER_POLL_INTERVAL: '5000',
       CRAWLER_POLL_LIMIT: '10',
       CRAWLER_HEADLESS: 'true',
+      // Suppress deprecation warnings emitted by older PM2 internals.
+      NODE_NO_WARNINGS: '1',
     };
 
     // Pass environment variables through exec options so this works on both

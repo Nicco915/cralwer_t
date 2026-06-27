@@ -273,6 +273,7 @@ describe('Dashboard Server', { timeout: 60000 }, () => {
     assert.strictEqual(startCall.options.env.CRAWLER_NODE_CODE, 'crawler-dashboard-test');
     assert.strictEqual(startCall.options.env.CRAWLER_TASK_URL, `${mockUrl}/renren-api/classify/open/crawler/tasks`);
     assert.strictEqual(startCall.options.env.CRAWLER_CALLBACK_URL, `${mockUrl}/renren-api/classify/open/crawler/callback`);
+    assert.strictEqual(startCall.options.env.NODE_NO_WARNINGS, '1');
 
     // All PM2 commands should use the same PM2_HOME to avoid permission issues.
     for (const call of calls) {
