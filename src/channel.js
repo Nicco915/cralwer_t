@@ -154,6 +154,8 @@ class Channel {
     } finally {
       this.busy = false;
       this.currentTask = null;
+      this.tasksSincePageRefresh++;
+      await this.refreshPageIfNeeded();
     }
   }
 

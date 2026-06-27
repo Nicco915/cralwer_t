@@ -156,4 +156,60 @@ describe('Channel page refresh', () => {
 
     assert.strictEqual(channel.tasksSincePageRefresh, 2);
   });
+
+  it('crawl increments tasksSincePageRefresh and calls refreshPageIfNeeded', async () => {
+    const browser = createMockBrowser();
+    const channel = new Channel({ id: 1, config: { pageRefreshAfterTasks: 2 }, log: () => {} });
+
+    await channel.init(browser);
+    assert.strictEqual(channel.tasksSincePageRefresh, 0);
+
+    // Mock pageCrawler.crawlSingleSku to avoid real browser work
+    let callCount = 0;
+    channel.pageCrawler.crawlSingleSku = async (sku, page, recreateContext) => {
+      callCount++;
+      return {
+        sku,
+        status: 'ok',
+        product_name: 'Test',
+        product_url: 'http://example.com',
+        error: '',
+        images: [],
+      };
+    };
+
+    const task1 = { crawlerTaskId: 1, sku: 'SKU001' };
+    await channel.crawl(task1);
+    assert.strictEqual(channel.tasksSincePageRefresh, 1);
+    assert.strictEqual(callCount, 1);
+
+    // Second crawl should trigger refreshPageIfNeeded since threshold is 2
+    const task2 = { crawlerTaskId: 2, sku: 'SKU002' };
+    const originalPage = channel.page;
+    await channel.crawl(task2);
+    assert.strictEqual(channel.tasksSincePageRefresh, 0);
+    assert.notStrictEqual(channel.page, originalPage);
+    assert.strictEqual(callCount, 2);
+  });
+
+  it('crawl increments tasksSincePageRefresh even on failure', async () => {
+    const browser = createMockBrowser();
+    const channel = new Channel({ id: 1, config: { pageRefreshAfterTasks: 5 }, log: () => {} });
+
+    await channel.init(browser);
+    assert.strictEqual(channel.tasksSincePageRefresh, 0);
+
+    channel.pageCrawler.crawlSingleSku = async () => {
+      throw new Error('Simulated crawl failure');
+    };
+
+    const task = { crawlerTaskId: 1, sku: 'SKU001' };
+    try {
+      await channel.crawl(task);
+      assert.fail('Expected crawl to throw');
+    } catch (e) {
+      assert.strictEqual(e.message, 'Simulated crawl failure');
+    }
+    assert.strictEqual(channel.tasksSincePageRefresh, 1);
+  });
 });
