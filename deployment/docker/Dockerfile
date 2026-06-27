@@ -8,17 +8,21 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 libgtk-3-0 libpango-1.0-0 libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# 创建非 root 用户
+RUN groupadd -r crawler && useradd -r -g crawler -d /app crawler
 
-COPY package*.json ./
+WORKDIR /app
+RUN chown crawler:crawler /app
+USER crawler
+
+COPY --chown=crawler:crawler package*.json ./
 RUN npm ci --only=production
 
 # 安装 Playwright Chromium
 RUN npx playwright install chromium
 
-COPY . .
+COPY --chown=crawler:crawler . .
 
 ENV NODE_ENV=production
-ENV CRAWLER_MODE=service
 
-CMD ["node", "bin/run.js", "--mode=service"]
+CMD ["node", "bin/run.js"]
