@@ -234,4 +234,47 @@ describe('Channel headed fallback', () => {
     assert.strictEqual(headedFallbackCalled, true);
     assert.strictEqual(mockBrowser.closed, true);
   });
+
+  it('tracks consecutive dataLayer failures and logs warning at threshold', async () => {
+    const channel = new Channel({
+      id: 1,
+      config: { dataLayerFailureThreshold: 3 },
+      log: () => {},
+    });
+
+    channel.pageCrawler.crawlSingleSku = async () => ({ status: 'not_found', dataLayerFailed: true });
+
+    const logs = [];
+    channel.log = (...args) => logs.push(args.join(' '));
+
+    await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
+    await channel.crawl({ sku: 'B', crawlerTaskId: 2 });
+    assert.strictEqual(channel.dataLayerFailureCount, 2);
+    assert.strictEqual(logs.some(l => l.includes('WARNING')), false);
+
+    await channel.crawl({ sku: 'C', crawlerTaskId: 3 });
+    assert.strictEqual(channel.dataLayerFailureCount, 3);
+    assert.strictEqual(logs.some(l => l.includes('WARNING') && l.includes('dataLayer extraction failed')), true);
+  });
+
+  it('resets dataLayer failure count when dataLayer succeeds', async () => {
+    const channel = new Channel({
+      id: 1,
+      config: { dataLayerFailureThreshold: 3 },
+      log: () => {},
+    });
+
+    let callCount = 0;
+    channel.pageCrawler.crawlSingleSku = async () => {
+      callCount++;
+      return { status: callCount <= 2 ? 'not_found' : 'success', dataLayerFailed: callCount <= 2 };
+    };
+
+    await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
+    await channel.crawl({ sku: 'B', crawlerTaskId: 2 });
+    assert.strictEqual(channel.dataLayerFailureCount, 2);
+
+    await channel.crawl({ sku: 'C', crawlerTaskId: 3 });
+    assert.strictEqual(channel.dataLayerFailureCount, 0);
+  });
 });

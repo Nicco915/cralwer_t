@@ -44,4 +44,19 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
     assert.strictEqual(config.kuaidailiProxyNum, 1000);
   });
+
+  it('passes dataLayer retry config to service config', () => {
+    const config = buildServiceConfig({
+      dataLayerMaxRetries: '5',
+      dataLayerFailureThreshold: '10',
+    });
+    assert.strictEqual(config.dataLayerMaxRetries, 5);
+    assert.strictEqual(config.dataLayerFailureThreshold, 10);
+  });
+
+  it('uses dataLayer retry defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.dataLayerMaxRetries, 2);
+    assert.strictEqual(config.dataLayerFailureThreshold, 3);
+  });
 });

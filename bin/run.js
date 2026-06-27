@@ -34,6 +34,8 @@ function buildServiceConfig(config) {
     gotoRetryDelays: config.gotoRetryDelays || [3000, 6000, 12000],
     headedFallback: config.headedFallback !== false && config.headedFallback !== 'false' && config.headedFallback !== '',
     pageRefreshAfterTasks: config.pageRefreshAfterTasks !== undefined ? Number(config.pageRefreshAfterTasks) : 20,
+    dataLayerMaxRetries: config.dataLayerMaxRetries !== undefined ? Number(config.dataLayerMaxRetries) : 2,
+    dataLayerFailureThreshold: config.dataLayerFailureThreshold !== undefined ? Number(config.dataLayerFailureThreshold) : 3,
     proxy: config.proxy,
     kuaidailiSecretId: config.kuaidailiSecretId,
     kuaidailiSecretKey: config.kuaidailiSecretKey,

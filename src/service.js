@@ -97,6 +97,8 @@ class CrawlerService {
           gotoRetryDelays: this.config.gotoRetryDelays,
           headedFallback: this.config.headedFallback,
           pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
+          dataLayerMaxRetries: this.config.dataLayerMaxRetries,
+          dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),

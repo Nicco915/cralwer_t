@@ -26,11 +26,14 @@ class Channel {
       gotoMaxRetries: this.config.gotoMaxRetries,
       gotoTimeout: this.config.gotoTimeout,
       gotoRetryDelays: this.config.gotoRetryDelays,
+      dataLayerMaxRetries: this.config.dataLayerMaxRetries,
     });
     this.tasksSincePageRefresh = 0;
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
     this.headedBrowserLauncher = options.headedBrowserLauncher || null;
     this.headedFallback = options.config && options.config.headedFallback !== false;
+    this.dataLayerFailureCount = 0;
+    this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
   }
 
   _buildContextOptions() {
@@ -162,6 +165,14 @@ class Channel {
           return this.recreateContext(browser);
         };
         result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
+        if (result.dataLayerFailed) {
+          this.dataLayerFailureCount++;
+          if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
+            this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+          }
+        } else {
+          this.dataLayerFailureCount = 0;
+        }
       } catch (e) {
         const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         if (isTimeout && this.headedFallback && this.headedBrowserLauncher) {

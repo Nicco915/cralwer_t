@@ -23,6 +23,7 @@ class PageCrawler {
     this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
     this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
     this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
+    this.dataLayerMaxRetries = options?.dataLayerMaxRetries !== undefined ? options.dataLayerMaxRetries : 2;
   }
 
   log(...args) {
@@ -147,6 +148,23 @@ class PageCrawler {
     return ['', ''];
   }
 
+  async extractProductUrlWithRetry(page, sku) {
+    const maxAttempts = this.dataLayerMaxRetries + 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const [productUrl, productName] = await this.extractProductUrlFromDataLayer(page, sku);
+      if (productUrl) {
+        return { productUrl, productName, dataLayerFailed: false };
+      }
+
+      const [htmlUrl, htmlName] = await this.extractFromHtml(page, sku);
+      if (htmlUrl) {
+        this.log(`[${sku}] Found from HTML regex: ${htmlUrl}`);
+        return { productUrl: htmlUrl, productName: htmlName, dataLayerFailed: true };
+      }
+    }
+    return { productUrl: '', productName: '', dataLayerFailed: true };
+  }
+
   async extractPageSku(page) {
     try {
       const dlSku = await page.evaluate(() => {
@@ -254,11 +272,11 @@ class PageCrawler {
       const currentUrl = page.url();
       this.log(`[${sku}] Current URL: ${currentUrl}`);
 
-      let [productUrl, productName] = await this.extractProductUrlFromDataLayer(page, sku);
-      if (!productUrl) {
-        [productUrl, productName] = await this.extractFromHtml(page, sku);
-        if (productUrl) this.log(`[${sku}] Found from HTML regex: ${productUrl}`);
-      }
+      const extractResult = await this.extractProductUrlWithRetry(page, sku);
+      let productUrl = extractResult.productUrl;
+      let productName = extractResult.productName;
+      result.dataLayerFailed = extractResult.dataLayerFailed;
+      if (productUrl) this.log(`[${sku}] Final product URL: ${productUrl}`);
 
       if (productUrl) {
         result.product_name = productName;

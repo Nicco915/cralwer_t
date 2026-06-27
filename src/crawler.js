@@ -40,6 +40,8 @@ const DEFAULT_CONFIG = {
   feishuTo: 'feishu',
   maxImages: 5,
   cloudflareMaxWait: 45,
+  dataLayerMaxRetries: 2,
+  dataLayerFailureThreshold: 3,
   handleSignals: true,
   testCount: 0,
 };
@@ -529,6 +531,7 @@ ${result.product_specification || ''}`;
       gotoMaxRetries: this.config.gotoMaxRetries,
       gotoTimeout: this.config.gotoTimeout,
       gotoRetryDelays: this.config.gotoRetryDelays,
+      dataLayerMaxRetries: this.config.dataLayerMaxRetries,
     });
     return pageCrawler.crawlSingleSku(sku, page, recreateContext);
   }
