@@ -75,7 +75,12 @@ class Channel {
 
     try {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
-      const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page);
+      const recreateContext = async () => {
+        const browser = this.browserContext ? this.browserContext.browser() : null;
+        if (!browser) throw new Error('Browser context not available');
+        return this.recreateContext(browser);
+      };
+      const result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,

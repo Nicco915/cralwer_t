@@ -526,8 +526,11 @@ ${result.product_specification || ''}`;
       cloudflareMaxWait: this.config.cloudflareMaxWait,
       minDelay: this.config.minDelay,
       maxDelay: this.config.maxDelay,
+      gotoMaxRetries: this.config.gotoMaxRetries,
+      gotoTimeout: this.config.gotoTimeout,
+      gotoRetryDelays: this.config.gotoRetryDelays,
     });
-    return pageCrawler.crawlSingleSku(sku, page);
+    return pageCrawler.crawlSingleSku(sku, page, null);
   }
 
   registerSignalHandlers() {
