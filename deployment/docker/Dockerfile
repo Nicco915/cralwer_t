@@ -12,17 +12,20 @@ RUN apt-get update && apt-get install -y \
 RUN groupadd -r crawler && useradd -r -g crawler -d /app crawler
 
 WORKDIR /app
-RUN chown crawler:crawler /app
-USER crawler
 
-COPY --chown=crawler:crawler package*.json ./
+COPY package*.json ./
 RUN npm ci --only=production
 
-# 安装 Playwright Chromium
+# 以 root 安装 Playwright Chromium 到项目目录
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 RUN npx playwright install chromium
+RUN chown -R crawler:crawler /app
+
+USER crawler
 
 COPY --chown=crawler:crawler . .
 
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 
 CMD ["node", "bin/run.js"]
