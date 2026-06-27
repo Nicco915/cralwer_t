@@ -22,3 +22,24 @@ describe('Linux rollback.sh', () => {
     assert.ok(content.includes('.env'), 'rollback.sh should check for .env file');
   });
 });
+
+describe('rollback.sh behavior', () => {
+  it('exits with error when .last_image is missing', () => {
+    const scriptPath = path.resolve('deployment/linux/rollback.sh');
+    const tmpDir = require('os').tmpdir();
+    const testDir = path.join(tmpDir, `rollback-test-${Date.now()}`);
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(path.join(testDir, '.env'), 'CRAWLER_IMAGE_BASE=test\n');
+    fs.copyFileSync(scriptPath, path.join(testDir, 'rollback.sh'));
+    try {
+      const result = require('child_process').spawnSync('bash', [path.join(testDir, 'rollback.sh')], {
+        cwd: testDir,
+        encoding: 'utf-8',
+      });
+      assert.notStrictEqual(result.status, 0);
+      assert.ok(result.stderr.includes('.last_image'));
+    } finally {
+      try { fs.rmSync(testDir, { recursive: true }); } catch (e) {}
+    }
+  });
+});

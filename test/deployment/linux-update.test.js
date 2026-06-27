@@ -22,3 +22,15 @@ describe('Linux update.sh', () => {
     assert.ok(content.includes('${1:?'), 'update.sh should require image tag argument');
   });
 });
+
+describe('update.sh behavior', () => {
+  it('exits with error when image tag is missing', () => {
+    const scriptPath = path.resolve('deployment/linux/update.sh');
+    const result = require('child_process').spawnSync('bash', [scriptPath], {
+      cwd: path.resolve('deployment/linux'),
+      encoding: 'utf-8',
+    });
+    assert.notStrictEqual(result.status, 0);
+    assert.ok(result.stderr.includes('镜像 tag'));
+  });
+});

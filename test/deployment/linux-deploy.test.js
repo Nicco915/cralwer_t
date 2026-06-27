@@ -27,3 +27,34 @@ describe('Linux deploy.sh', () => {
     assert.ok(content.includes('CRAWLER_IMAGE_BASE') && content.includes('*/'), 'deploy.sh should validate CRAWLER_IMAGE_BASE');
   });
 });
+
+describe('deploy.sh behavior', () => {
+  it('exits with error when image tag is missing', () => {
+    const scriptPath = path.resolve('deployment/linux/deploy.sh');
+    const result = require('child_process').spawnSync('bash', [scriptPath], {
+      cwd: path.resolve('deployment/linux'),
+      encoding: 'utf-8',
+    });
+    assert.notStrictEqual(result.status, 0);
+    assert.ok(result.stderr.includes('镜像 tag'));
+  });
+
+  it('exits with error when .env is missing', () => {
+    const scriptPath = path.resolve('deployment/linux/deploy.sh');
+    const tmpDir = require('os').tmpdir();
+    const testDir = path.join(tmpDir, `deploy-test-${Date.now()}`);
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.copyFileSync(scriptPath, path.join(testDir, 'deploy.sh'));
+    try {
+      const result = require('child_process').spawnSync('bash', [path.join(testDir, 'deploy.sh'), 'abc123'], {
+        cwd: testDir,
+        encoding: 'utf-8',
+        env: { ...process.env, CRAWLER_IMAGE_BASE: 'test' },
+      });
+      assert.notStrictEqual(result.status, 0);
+      assert.ok(result.stderr.includes('.env'));
+    } finally {
+      try { fs.rmSync(testDir, { recursive: true }); } catch (e) {}
+    }
+  });
+});
