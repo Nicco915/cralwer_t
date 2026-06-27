@@ -168,6 +168,38 @@ describe('Poller.fetchTasks', () => {
 });
 
 describe('Poller.start/stop', () => {
+  it('skips fetch when shouldPoll returns false', async () => {
+    let callCount = 0;
+    const fakeFetch = async () => {
+      callCount++;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ code: 0, data: [] }),
+      };
+    };
+
+    let shouldPollCount = 0;
+    const poller = new Poller({
+      taskUrl: 'http://example.com/tasks',
+      nodeCode: 'node-1',
+      nodeToken: 'token-1',
+      pollInterval: 50,
+      fetch: fakeFetch,
+      shouldPoll: () => {
+        shouldPollCount++;
+        return false;
+      },
+    });
+
+    poller.start(() => {});
+    await new Promise(resolve => setTimeout(resolve, 120));
+    poller.stop();
+
+    assert.strictEqual(callCount, 0, 'should not call fetch when shouldPoll returns false');
+    assert.ok(shouldPollCount >= 2, `expected at least 2 shouldPoll calls, got ${shouldPollCount}`);
+  });
+
   it('polls periodically and stops', async () => {
     let callCount = 0;
     const fakeFetch = async () => {

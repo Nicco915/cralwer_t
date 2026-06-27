@@ -125,6 +125,7 @@ class CrawlerService {
       nodeToken: this.config.nodeToken,
       limit: this.config.pollLimit,
       pollInterval: this.config.pollInterval,
+      shouldPoll: () => this.worker.hasCapacity(),
     });
 
     if (!this.config.proxy && this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey) {

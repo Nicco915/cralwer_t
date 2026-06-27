@@ -21,6 +21,7 @@ class Poller {
     this.limit = options.limit || 10;
     this.pollInterval = options.pollInterval || 5000;
     this.fetch = options.fetch || globalThis.fetch;
+    this.shouldPoll = options.shouldPoll || null;
     this.running = false;
     this.timer = null;
   }
@@ -73,6 +74,15 @@ class Poller {
 
     const tick = async () => {
       if (!this.running) return;
+
+      if (this.shouldPoll && !this.shouldPoll()) {
+        console.log('[Poller] worker busy, skipping poll');
+        if (this.running) {
+          this.timer = setTimeout(tick, this.pollInterval);
+        }
+        return;
+      }
+
       try {
         const tasks = await this.fetchTasks();
         console.log(`[Poller] fetched ${tasks.length} task(s)`);

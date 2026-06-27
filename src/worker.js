@@ -8,6 +8,16 @@ class Worker {
     this.pendingPushes = new Set();
     this.loopPromise = null;
     this.maxQueueSize = options.maxQueueSize || 50;
+    this.inFlightTaskIds = new Set();
+  }
+
+  getTaskIdKey(task) {
+    const taskId = task.crawlerTaskId ?? task.id;
+    return taskId !== undefined ? String(taskId) : null;
+  }
+
+  hasCapacity() {
+    return this.taskQueue.length === 0 && this.channels.some(c => !c.busy);
   }
 
   addChannel(channel) {
@@ -24,7 +34,20 @@ class Worker {
       this.log(`[Worker] queue full, dropped ${tasks.length} task(s)`);
       return;
     }
-    const toAdd = tasks.slice(0, available);
+
+    const toAdd = [];
+    for (const task of tasks.slice(0, available)) {
+      const taskIdKey = this.getTaskIdKey(task);
+      if (taskIdKey !== null && this.inFlightTaskIds.has(taskIdKey)) {
+        this.log(`[Worker] skipping duplicate task ${task.crawlerTaskId ?? task.id}`);
+        continue;
+      }
+      toAdd.push(task);
+      if (taskIdKey !== null) {
+        this.inFlightTaskIds.add(taskIdKey);
+      }
+    }
+
     for (const task of toAdd) {
       this.taskQueue.push(task);
     }
@@ -36,6 +59,8 @@ class Worker {
   }
 
   async runTask(task, channel) {
+    const taskIdKey = this.getTaskIdKey(task);
+
     const pushPromise = (async () => {
       let result = null;
       try {
@@ -81,7 +106,12 @@ class Worker {
     })();
 
     this.pendingPushes.add(pushPromise);
-    pushPromise.finally(() => this.pendingPushes.delete(pushPromise));
+    pushPromise.finally(() => {
+      this.pendingPushes.delete(pushPromise);
+      if (taskIdKey !== null) {
+        this.inFlightTaskIds.delete(taskIdKey);
+      }
+    });
   }
 
   async loop() {
