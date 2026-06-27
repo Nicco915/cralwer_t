@@ -1,0 +1,12 @@
+{
+  "crawlerTaskId": 999,
+  "sku": "DEFINITELY-NOT-A-REAL-SKU-12345",
+  "nodeCode": "test-node",
+  "nodeToken": "test-token",
+  "goodsName": "",
+  "goodsDesc": "",
+  "sourceUrl": "",
+  "rawContent": "",
+  "success": false,
+  "errorMessage": "Page shows no result"
+}
