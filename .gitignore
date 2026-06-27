@@ -8,3 +8,4 @@ output/
 *.xlsx
 !test/*.xlsx
 说明.md
+.pm2/

@@ -264,10 +264,25 @@ describe('Dashboard Server', { timeout: 60000 }, () => {
       !startCall.cmd.includes('CRAWLER_MODE='),
       'command must not use inline env var syntax, which fails on Windows cmd'
     );
+    assert.ok(startCall.options.env.PM2_HOME, 'expected PM2_HOME to be set');
+    assert.ok(
+      startCall.options.env.PM2_HOME.includes('.pm2'),
+      'PM2_HOME should point to a local .pm2 directory'
+    );
     assert.strictEqual(startCall.options.env.CRAWLER_MODE, 'service');
     assert.strictEqual(startCall.options.env.CRAWLER_NODE_CODE, 'crawler-dashboard-test');
     assert.strictEqual(startCall.options.env.CRAWLER_TASK_URL, `${mockUrl}/renren-api/classify/open/crawler/tasks`);
     assert.strictEqual(startCall.options.env.CRAWLER_CALLBACK_URL, `${mockUrl}/renren-api/classify/open/crawler/callback`);
+
+    // All PM2 commands should use the same PM2_HOME to avoid permission issues.
+    for (const call of calls) {
+      if (call.cmd.startsWith('pm2 ')) {
+        assert.ok(
+          call.options.env.PM2_HOME,
+          `PM2_HOME should be set for ${call.cmd}`
+        );
+      }
+    }
 
     await dash.stopUpstream();
     await dash.close();

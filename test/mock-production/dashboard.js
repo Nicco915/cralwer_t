@@ -1,4 +1,6 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const JSONbig = require('json-bigint')({ useNativeBigInt: true });
@@ -93,10 +95,29 @@ class DashboardServer {
     this.maxCallbacks = options.maxCallbacks || 500;
     this.recentCallbacks = [];
     this.pm2AppName = options.pm2AppName || 'crawler-dashboard-test';
+    // Use a project-local PM2 home so the PM2 daemon/logs are writable on Windows
+    // without requiring elevated permissions for C:\ProgramData\pm2.
+    this.pm2Home = options.pm2Home || path.join(process.cwd(), '.pm2');
     // Allow tests and callers to inject a custom exec implementation (cross-platform stubbing).
     this.execAsync = options.execAsync || execAsync;
     this.server = null;
     this.connections = new Set();
+  }
+
+  ensurePm2Home() {
+    try {
+      fs.mkdirSync(this.pm2Home, { recursive: true });
+    } catch (e) {
+      // Best-effort: if the directory cannot be created, PM2 will report its own error.
+    }
+  }
+
+  pm2Env(extraEnv = {}) {
+    return {
+      ...process.env,
+      PM2_HOME: this.pm2Home,
+      ...extraEnv,
+    };
   }
 
   async startUpstream() {
@@ -215,12 +236,18 @@ class DashboardServer {
 
     try {
       // Stop existing crawler if any; ignore errors when it does not exist.
-      await this.execAsync(`pm2 stop ${this.pm2AppName}`, { timeout: 5000 });
+      await this.execAsync(`pm2 stop ${this.pm2AppName}`, {
+        timeout: 5000,
+        env: this.pm2Env(),
+      });
     } catch (e) {
       // ignore cleanup errors
     }
     try {
-      await this.execAsync(`pm2 delete ${this.pm2AppName}`, { timeout: 5000 });
+      await this.execAsync(`pm2 delete ${this.pm2AppName}`, {
+        timeout: 5000,
+        env: this.pm2Env(),
+      });
     } catch (e) {
       // ignore cleanup errors
     }
@@ -240,10 +267,11 @@ class DashboardServer {
     // Pass environment variables through exec options so this works on both
     // Unix shells and Windows cmd/PowerShell. Inline syntax like KEY=val pm2 ...
     // is not valid on Windows.
+    this.ensurePm2Home();
     const cmd = `pm2 start ./bin/run.js --name ${this.pm2AppName}`;
     const { stderr } = await this.execAsync(cmd, {
       cwd: process.cwd(),
-      env: { ...process.env, ...env },
+      env: this.pm2Env(env),
       timeout: 10000,
     });
     if (stderr && !stderr.includes('[PM2]')) {
@@ -255,7 +283,10 @@ class DashboardServer {
 
   async stopCrawler() {
     try {
-      await this.execAsync(`pm2 stop ${this.pm2AppName}`, { timeout: 5000 });
+      await this.execAsync(`pm2 stop ${this.pm2AppName}`, {
+        timeout: 5000,
+        env: this.pm2Env(),
+      });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -264,7 +295,10 @@ class DashboardServer {
 
   async getCrawlerStatus() {
     try {
-      const { stdout } = await this.execAsync('pm2 jlist --json', { timeout: 3000 });
+      const { stdout } = await this.execAsync('pm2 jlist --json', {
+        timeout: 3000,
+        env: this.pm2Env(),
+      });
       const list = JSON.parse(stdout || '[]');
       const app = list.find(p => p.name === this.pm2AppName);
       if (!app) return { running: false, status: 'not found' };
@@ -282,7 +316,10 @@ class DashboardServer {
 
   async getCrawlerLogs(lines = 50) {
     try {
-      const { stdout } = await this.execAsync(`pm2 logs ${this.pm2AppName} --lines ${lines} --nostream`, { timeout: 5000 });
+      const { stdout } = await this.execAsync(`pm2 logs ${this.pm2AppName} --lines ${lines} --nostream`, {
+        timeout: 5000,
+        env: this.pm2Env(),
+      });
       return stdout || '';
     } catch (e) {
       return '';
