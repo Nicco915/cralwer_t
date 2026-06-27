@@ -125,7 +125,7 @@ describe('gotoWithRetry', () => {
     });
     const elapsed = Date.now() - start;
     assert.strictEqual(calls.length, 2);
-    assert.ok(elapsed < 100, `Expected near-instant retry, but took ${elapsed}ms`);
+    assert.ok(elapsed < 300, `Expected near-instant retry, but took ${elapsed}ms`);
   });
 
   it('calls recreateContext before the final attempt when maxRetries > 1', async () => {

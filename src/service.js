@@ -67,6 +67,7 @@ class CrawlerService {
         '--lang=en-GB',
       ],
     });
+    return this.browser;
   }
 
   async initChannels() {
@@ -96,7 +97,7 @@ class CrawlerService {
           headedFallback: this.config.headedFallback,
           pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
         },
-        headedBrowserLauncher: () => this.launchBrowser({ headless: false }),
+        headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),
       });
       await channel.init(this.browser);
