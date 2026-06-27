@@ -24,3 +24,32 @@ test('parses Kuaidaili proxy pool flags', () => {
   assert.strictEqual(config.proxyRefreshIntervalMs, 60000);
   assert.strictEqual(config.proxyAssignmentsFile, './pool.json');
 });
+
+test('maps CLIPROXY_* environment variables to config', () => {
+  process.env.CLIPROXY_HOST = 'eu.cliproxy.io';
+  process.env.CLIPROXY_PORT = '1080';
+  process.env.CLIPROXY_USERNAME = 'user';
+  process.env.CLIPROXY_PASSWORD = 'pass';
+  process.env.CLIPROXY_REGION = 'EU';
+  process.env.CLIPROXY_STICKY_MINUTES = '30';
+  process.env.CLIPROXY_SESSION_PREFIX = 'crawler-eu-01';
+
+  try {
+    const config = parse([]);
+    assert.strictEqual(config.cliproxyHost, 'eu.cliproxy.io');
+    assert.strictEqual(config.cliproxyPort, 1080);
+    assert.strictEqual(config.cliproxyUsername, 'user');
+    assert.strictEqual(config.cliproxyPassword, 'pass');
+    assert.strictEqual(config.cliproxyRegion, 'EU');
+    assert.strictEqual(config.cliproxyStickyMinutes, 30);
+    assert.strictEqual(config.cliproxySessionPrefix, 'crawler-eu-01');
+  } finally {
+    delete process.env.CLIPROXY_HOST;
+    delete process.env.CLIPROXY_PORT;
+    delete process.env.CLIPROXY_USERNAME;
+    delete process.env.CLIPROXY_PASSWORD;
+    delete process.env.CLIPROXY_REGION;
+    delete process.env.CLIPROXY_STICKY_MINUTES;
+    delete process.env.CLIPROXY_SESSION_PREFIX;
+  }
+});
