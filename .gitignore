@@ -9,3 +9,15 @@ output/
 !test/*.xlsx
 说明.md
 .pm2/
+
+# 运行时状态与产物（不应入库）
+# Windows 生产模式部署状态
+.deployment-state.json
+# Linux 部署模式回滚锚点
+.last_image
+# Cliproxy 代理分配
+cliproxy-assignments.json
+# 测试产物
+mock_test/
+# 回调日志（按日分包）
+logs/callbacks/
