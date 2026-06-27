@@ -33,6 +33,7 @@ test('maps CLIPROXY_* environment variables to config', () => {
   process.env.CLIPROXY_REGION = 'EU';
   process.env.CLIPROXY_STICKY_MINUTES = '30';
   process.env.CLIPROXY_SESSION_PREFIX = 'crawler-eu-01';
+  process.env.CLIPROXY_ASSIGNMENTS_FILE = '/tmp/cliproxy.json';
 
   try {
     const config = parse([]);
@@ -43,6 +44,7 @@ test('maps CLIPROXY_* environment variables to config', () => {
     assert.strictEqual(config.cliproxyRegion, 'EU');
     assert.strictEqual(config.cliproxyStickyMinutes, 30);
     assert.strictEqual(config.cliproxySessionPrefix, 'crawler-eu-01');
+    assert.strictEqual(config.cliproxyAssignmentsFile, '/tmp/cliproxy.json');
   } finally {
     delete process.env.CLIPROXY_HOST;
     delete process.env.CLIPROXY_PORT;
@@ -51,5 +53,6 @@ test('maps CLIPROXY_* environment variables to config', () => {
     delete process.env.CLIPROXY_REGION;
     delete process.env.CLIPROXY_STICKY_MINUTES;
     delete process.env.CLIPROXY_SESSION_PREFIX;
+    delete process.env.CLIPROXY_ASSIGNMENTS_FILE;
   }
 });
