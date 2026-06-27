@@ -565,7 +565,49 @@ npm run test:load
    node bin/run.js --mode service
    ```
 
-### 4.2 浏览器启动失败 / Chromium 找不到
+### 4.2 PM2 服务启动循环（Start Pending → Stopped）
+
+如果 `deploy.ps1` 执行到 PM2 服务安装步骤后，服务状态在 `Start Pending` 和 `Stopped` 之间循环，最终停在 `Stopped`，通常由以下原因导致：
+
+1. **npm 全局前缀位于用户目录**：`NT AUTHORITY\LOCAL SERVICE` 无法访问 `C:\Users\<用户名>\AppData\Roaming\npm`。
+2. **项目目录权限不足**：`LOCAL SERVICE` 对安装目录没有读取/执行/修改权限。
+3. **PM2_HOME 权限不足**：`C:\ProgramData\pm2\home` 对 `LOCAL SERVICE` 不可写。
+
+`deploy.ps1` 和 `setup-pm2-service.ps1` 现在会自动检测并修复上述问题。如果仍失败，脚本会输出诊断信息，可手动执行以下命令排查：
+
+```powershell
+# 检查服务状态
+Get-Service PM2
+
+# 检查 npm 前缀
+npm config get prefix
+
+# 检查 PM2 日志
+Get-Content C:\ProgramData\pm2\home\logs\pm2.log -Tail 50
+
+# 检查 Windows 事件日志
+Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2} -MaxEvents 50 |
+    Where-Object { $_.Message -like '*pm2*' }
+
+# 手动修复 npm 前缀
+$installerDir = Join-Path (npm root -g) "pm2-installer"
+cd $installerDir
+npm run configure
+
+# 手动修复目录权限
+icacls "C:\hs-sku-crawler" /grant "NT AUTHORITY\LOCAL SERVICE:(OI)(CI)M" /T
+icacls "C:\ProgramData\pm2\home" /grant "NT AUTHORITY\LOCAL SERVICE:(OI)(CI)F" /T
+
+# 重新注册服务
+$Env:PM2_HOME = "C:\ProgramData\pm2\home"
+pm2 delete all
+pm2 uninstall
+pm2 start "C:\hs-sku-crawler\deployment\windows\ecosystem.config.js"
+pm2 save
+C:\hs-sku-crawler\deployment\windows\setup-pm2-service.ps1
+```
+
+### 4.3 浏览器启动失败 / Chromium 找不到
 
 1. 安装 Playwright 浏览器：
    ```powershell
@@ -577,19 +619,19 @@ npm run test:load
    CRAWLER_BROWSER_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
    ```
 
-### 4.3 上游 API 拉不到任务
+### 4.4 上游 API 拉不到任务
 
 1. 检查 `.env` 中的 `CRAWLER_TASK_URL`、`CRAWLER_NODE_CODE`、`CRAWLER_NODE_TOKEN`。
 2. 使用 `Invoke-WebRequest` 测试连通性（见 1.6）。
 3. 确认上游任务队列中有待处理任务。
 
-### 4.4 Callback 推送失败
+### 4.5 Callback 推送失败
 
 1. 检查 `CRAWLER_CALLBACK_URL` 是否正确。
 2. 查看日志中 `Pusher` 相关错误与重试记录。
 3. 确认网络可以访问回调地址，无防火墙拦截。
 
-### 4.5 升级后健康检查失败
+### 4.6 升级后健康检查失败
 
 1. `update.ps1` 会自动回滚到上一个版本，观察日志确认回滚是否成功。
 2. 若自动回滚失败，手动执行：
@@ -597,7 +639,7 @@ npm run test:load
    .\rollback.ps1 -InstallDir "C:\hs-sku-crawler"
    ```
 
-### 4.6 代理池 IP 失效或分配异常
+### 4.7 代理池 IP 失效或分配异常
 
 1. 检查 `proxy-assignments.json` 是否生成：
    ```powershell
@@ -612,7 +654,7 @@ npm run test:load
 4. 使用 `Invoke-WebRequest -Proxy` 测试单个代理是否可用（见 3.4.2）。
 5. 如果问题持续，参考 3.4.7「代理池常见问题」逐项排查。
 
-### 4.7 回滚失败
+### 4.8 回滚失败
 
 1. 确认 `.deployment-state.json` 存在：
    ```powershell

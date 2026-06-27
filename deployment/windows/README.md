@@ -47,6 +47,13 @@ C:\hs-sku-crawler\deployment\windows\deploy.ps1 `
 - 如果 PM2 中没有 crawler 进程，`setup-pm2-service.ps1` 会报错
 - 服务注册后，系统重启会自动启动 crawler
 
+`setup-pm2-service.ps1` 现在会自动完成以下前置检查与修复（需要管理员权限）：
+
+- 检测 npm 全局前缀是否位于用户目录；如果是，自动运行 `npm run configure` 迁移到 `C:\ProgramData\npm`
+- 为 `NT AUTHORITY\LOCAL SERVICE` 授予项目目录 `ReadAndExecute, Modify` 权限
+- 确保 `C:\ProgramData\pm2\home` 存在且对 `LOCAL SERVICE` 可写
+- 安装服务后等待 PM2 服务进入 `Running` 状态，失败时输出诊断信息
+
 ## PM2 Windows 服务注册
 
 如果首次部署时未成功注册服务，或需要重新注册：
@@ -119,14 +126,16 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
 `pm2-installer` 可能会提示当前 npm 全局前缀是用户目录（如 `C:\Users\<用户名>\AppData\Roaming\npm`），而 Windows 服务通常以 `LocalService` 等系统账户运行，无法访问用户目录。
 
-这会导致 PM2 服务开机自启失败。建议在安装服务前先配置 npm 全局位置为系统级目录：
+这会导致 PM2 服务开机自启失败。`setup-pm2-service.ps1` 现在会自动检测并修复该问题：如果前缀在用户目录，会自动运行 `npm run configure` 将 npm 全局位置改为 `C:\ProgramData\npm`，系统账户也能访问。
+
+如果自动修复失败，可手动执行：
 
 ```powershell
 cd "$env:APPDATA\npm\node_modules\pm2-installer"
 npm run configure
 ```
 
-配置完成后，再重新运行 `deploy.ps1`。`npm run configure` 会把 npm 全局位置改为 `C:\ProgramData\npm`，系统账户也能访问。
+配置完成后，再重新运行 `deploy.ps1`。
 
 ### 3. PM2 服务注册后当前会话找不到进程
 

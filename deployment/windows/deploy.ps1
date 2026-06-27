@@ -47,6 +47,39 @@ if ($LASTEXITCODE -ne 0) {
 $setupServiceScript = Join-Path $PSScriptRoot "setup-pm2-service.ps1"
 if (Test-Path $setupServiceScript) {
     & $setupServiceScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "setup-pm2-service.ps1 failed. See diagnostics above."
+        Write-Host ""
+        Write-Host "=== Post-failure diagnostics ==="
+        Write-Host "Check Windows Event Log for PM2 errors:"
+        Write-Host "  Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2} -MaxEvents 50 | Where-Object { `$_.Message -like '*pm2*' }"
+        Write-Host "Check PM2 process list:"
+        Write-Host "  `$Env:PM2_HOME = 'C:\ProgramData\pm2\home'"
+        Write-Host "  pm2 list"
+        Write-Host "Check PM2 logs:"
+        Write-Host "  pm2 logs"
+        Write-Host "Check service status:"
+        Write-Host "  Get-Service pm2.exe"
+        Write-Host "  Get-Service -DisplayName 'PM2'"
+        Write-Host ""
+        Write-Host "=== Common fixes ==="
+        Write-Host "  1. Run 'npm run configure' in the pm2-installer directory"
+        Write-Host "  2. Ensure NT AUTHORITY\LOCAL SERVICE has read/execute/modify permission to $InstallDir"
+        Write-Host "  3. Ensure PM2_HOME (C:\ProgramData\pm2\home) is writable by NT AUTHORITY\LOCAL SERVICE"
+        exit 1
+    }
+    Write-Host ""
+    Write-Host "=== Deployment Summary ==="
+    try {
+        $svc = Get-Service -Name "pm2.exe" -ErrorAction SilentlyContinue
+        if ($svc) {
+            Write-Host "PM2 Service Status: $($svc.Status)"
+        } else {
+            Write-Warning "PM2 service not found."
+        }
+    } catch {
+        Write-Warning "Could not query PM2 service status: $_"
+    }
 } else {
     Write-Warning "setup-pm2-service.ps1 not found. Skipping service setup."
 }
