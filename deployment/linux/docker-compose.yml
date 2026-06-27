@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   crawler:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}

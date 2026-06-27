@@ -6,12 +6,22 @@ cd "$SCRIPT_DIR"
 
 IMAGE_TAG="${1:?请提供镜像 tag，例如 ./update.sh abc1234}"
 
+if [ -z "${CRAWLER_IMAGE_BASE:-}" ]; then
+  echo "错误：未设置 CRAWLER_IMAGE_BASE 环境变量" >&2
+  exit 1
+fi
+
+if [[ "${CRAWLER_IMAGE_BASE}" == */ ]]; then
+  echo "错误：CRAWLER_IMAGE_BASE 末尾不应包含斜杠" >&2
+  exit 1
+fi
+
 CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' hs-sku-crawler 2>/dev/null || true)
 if [ -n "$CURRENT_IMAGE" ]; then
   echo "$CURRENT_IMAGE" > .last_image
 fi
 
-export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE:?未设置 CRAWLER_IMAGE_BASE 环境变量}:${IMAGE_TAG}"
+export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE}:${IMAGE_TAG}"
 
 docker compose pull
 docker compose up -d --no-deps crawler
