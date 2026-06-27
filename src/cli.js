@@ -86,7 +86,7 @@ function isBooleanFlag(key) {
 
 function coerceValue(raw, configKey) {
   if (BOOLEAN_CONFIG_KEYS.has(configKey)) {
-    return raw !== false && raw !== 'false' && raw !== '0';
+    return raw !== false && raw !== 'false' && raw !== '0' && raw !== '';
   }
   if (typeof raw === 'string' && /^\d+$/.test(raw)) {
     return Number(raw);
