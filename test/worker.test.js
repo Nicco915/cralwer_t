@@ -80,6 +80,33 @@ describe('Worker', () => {
     });
   });
 
+  describe('timeout status propagation', () => {
+    it('propagates timeout status from channel crawl error', async () => {
+      const pushed = [];
+      const worker = createWorker({
+        pusher: {
+          push: async (result) => {
+            pushed.push(result);
+          },
+        },
+      });
+      const channel = createChannel({
+        crawl: async () => {
+          const err = new Error('Timeout 30000ms exceeded');
+          err.status = 'timeout';
+          throw err;
+        },
+      });
+      worker.addChannel(channel);
+      worker.pushTasks([{ crawlerTaskId: 1n, sku: 'TIMEOUT-SKU' }]);
+      worker.start();
+      await worker.drain();
+      assert.strictEqual(pushed.length, 1);
+      assert.strictEqual(pushed[0].status, 'timeout');
+      assert.strictEqual(pushed[0].error, 'Timeout 30000ms exceeded');
+    });
+  });
+
   describe('inFlightTaskIds lifecycle', () => {
     it('removes task id from in-flight set after task completes', async () => {
       const worker = createWorker();
