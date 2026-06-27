@@ -24,6 +24,59 @@ class Channel {
       minDelay: this.config.minDelay,
       maxDelay: this.config.maxDelay,
     });
+    this.tasksSincePageRefresh = 0;
+    this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
+  }
+
+  async recreateContext(browser) {
+    if (this.browserContext) {
+      try {
+        await this.browserContext.close();
+      } catch (e) {
+        // Ignore errors when context is already closed or browser is dead
+      }
+    }
+
+    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
+    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
+    const locale = this.config.locale || 'en-GB';
+    const timezone = this.config.timezone || 'Europe/London';
+
+    const contextOptions = {
+      userAgent,
+      viewport,
+      locale,
+      timezoneId: timezone,
+    };
+
+    if (this.config.proxy) {
+      contextOptions.proxy = { server: this.config.proxy };
+    }
+
+    this.browserContext = await browser.newContext(contextOptions);
+    await this.browserContext.addInitScript(this.getStealthScript());
+    this.page = await this.browserContext.newPage();
+    return this.page;
+  }
+
+  async refreshPage() {
+    if (this.page) {
+      try {
+        await this.page.close();
+      } catch (e) {
+        // Ignore errors when page is already closed
+      }
+    }
+    if (this.browserContext) {
+      this.page = await this.browserContext.newPage();
+    }
+    this.tasksSincePageRefresh = 0;
+  }
+
+  async refreshPageIfNeeded() {
+    if (this.pageRefreshAfterTasks > 0 && this.tasksSincePageRefresh >= this.pageRefreshAfterTasks) {
+      await this.refreshPage();
+    }
   }
 
   getStealthScript() {
