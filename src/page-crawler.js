@@ -388,4 +388,72 @@ class PageCrawler {
   }
 }
 
-module.exports = { PageCrawler, resolveConfig };
+function classifyGotoError(error) {
+  const msg = (error && error.message) || '';
+  if (
+    msg.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+    msg.includes('ERR_PROXY_CONNECTION_FAILED') ||
+    msg.includes('ERR_CONNECTION_RESET')
+  ) {
+    return 'proxy';
+  }
+  if (
+    msg.includes('ERR_HTTP_RESPONSE_CODE_FAILURE') ||
+    /\b4\d{2}\b/.test(msg) ||
+    /\b5\d{2}\b/.test(msg) ||
+    msg.includes('status code')
+  ) {
+    return 'non-retryable';
+  }
+  if (
+    msg.includes('Timeout') ||
+    msg.includes('timeout') ||
+    msg.includes('ERR_NAME_NOT_RESOLVED') ||
+    msg.includes('net::ERR') ||
+    msg.includes('Navigation failed')
+  ) {
+    return 'retryable';
+  }
+  return 'non-retryable';
+}
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function gotoWithRetry(page, url, options) {
+  const {
+    sku,
+    gotoMaxRetries = 3,
+    gotoTimeout = 30000,
+    gotoRetryDelays = [3000, 6000, 12000],
+    recreateContext,
+    log = console.log,
+  } = options || {};
+
+  let lastError;
+  for (let attempt = 0; attempt < gotoMaxRetries; attempt++) {
+    try {
+      return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
+    } catch (e) {
+      lastError = e;
+      const category = classifyGotoError(e);
+      if (category === 'proxy' || category === 'non-retryable') {
+        throw e;
+      }
+      log(`[${sku}] goto attempt ${attempt + 1}/${gotoMaxRetries} failed for ${url}: ${e.message}`);
+      if (attempt < gotoMaxRetries - 1) {
+        const delay = gotoRetryDelays[attempt] || 5000;
+        log(`[${sku}] Retrying goto in ${delay / 1000}s...`);
+        await sleep(delay);
+        if (attempt === gotoMaxRetries - 2 && typeof recreateContext === 'function') {
+          log(`[${sku}] Recreating context for final goto attempt...`);
+          page = await recreateContext();
+        }
+      }
+    }
+  }
+  throw lastError;
+}
+
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry };
