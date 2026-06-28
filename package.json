@@ -17,7 +17,7 @@
     "service": "CRAWLER_MODE=service node bin/run.js",
     "mock:production": "node test/mock-production/mock-server.js",
     "mock:dashboard": "node test/mock-production/dashboard.js",
-    "install-browsers": "npx playwright install chromium"
+    "install-browsers": "npx playwright install chromium chromium-headless-shell"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
