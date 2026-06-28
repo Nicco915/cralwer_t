@@ -45,3 +45,14 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.kuaidailiProxyNum, 1000);
   });
 });
+
+describe('loadEnvFile', () => {
+  const { loadEnvFile } = require('../src/cli');
+
+  it('throws clear error when .env is missing', () => {
+    assert.throws(
+      () => loadEnvFile('/nonexistent/crawler/dir'),
+      /\.env file not found/
+    );
+  });
+});
