@@ -4,6 +4,11 @@
 # Windows 服务实际注册名是 pm2.exe，显示名为 PM2
 $script:Pm2ServiceName = 'pm2.exe'
 
+# 刷新 PATH，确保 npm/pm2 可被本脚本找到（即使刚刚安装）
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+$script:UseNssmFallback = $false
+
 # ==================== Helper Functions ====================
 
 function Test-NpmPrefixInUserProfile {
@@ -237,6 +242,67 @@ function Write-Pm2ServiceDiagnostics {
     Write-Host "  - pm2 process list is empty or crawler process is missing"
 }
 
+function Register-Pm2ServiceWithNssm {
+    param([string]$ProjectDir)
+
+    if (-not $ProjectDir) {
+        Write-Error "ProjectDir is empty. Cannot register NSSM service without a project directory."
+        exit 1
+    }
+
+    $nssm = Get-Command nssm -ErrorAction SilentlyContinue
+    if (-not $nssm) {
+        Write-Error "nssm.exe not found in PATH. Please download NSSM from https://nssm.cc/download, place nssm.exe in PATH, or install WMIC manually."
+        exit 1
+    }
+
+    $npmPrefix = & npm config get prefix 2>$null
+    if (-not $npmPrefix) {
+        Write-Error "Could not determine npm prefix."
+        exit 1
+    }
+    $pm2Cmd = Join-Path $npmPrefix "pm2.cmd"
+    if (-not (Test-Path $pm2Cmd)) {
+        Write-Error "pm2.cmd not found at $pm2Cmd."
+        exit 1
+    }
+
+    Write-Host "Registering PM2 Windows service via NSSM..."
+    & nssm install PM2 "$pm2Cmd"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "nssm install failed."
+        exit 1
+    }
+
+    & nssm set PM2 AppDirectory "$ProjectDir"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "nssm set AppDirectory failed."
+        & nssm remove PM2 confirm 2>$null
+        exit 1
+    }
+
+    & nssm set PM2 AppParameters "start `"$ProjectDir\deployment\windows\ecosystem.config.js`""
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "nssm set AppParameters failed."
+        & nssm remove PM2 confirm 2>$null
+        exit 1
+    }
+
+    & nssm set PM2 ObjectName "NT AUTHORITY\LOCAL SERVICE"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "nssm set ObjectName failed."
+        & nssm remove PM2 confirm 2>$null
+        exit 1
+    }
+
+    & nssm start PM2
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "nssm start failed."
+        & nssm remove PM2 confirm 2>$null
+        exit 1
+    }
+}
+
 function Test-WmicAvailable {
     $wmic = Get-Command wmic -ErrorAction SilentlyContinue
     if ($wmic) {
@@ -271,9 +337,8 @@ Write-Host "=== PM2 Windows Service Pre-flight Checks ==="
 if (-not (Test-WmicAvailable)) {
     $installed = Install-WmicCapability
     if (-not $installed) {
-        Write-Warning "Please install WMIC manually and reboot if necessary:"
-        Write-Warning "  DISM /Online /Add-Capability /CapabilityName:WMIC~~~~"
-        Write-Warning "Then re-run this script."
+        Write-Warning "WMIC could not be installed automatically. Will fall back to NSSM for service registration."
+        $script:UseNssmFallback = $true
     }
 } else {
     Write-Host "WMIC check passed."
@@ -347,18 +412,26 @@ if (-not (Test-Path $installScript)) {
     exit 1
 }
 
-Write-Host "Running pm2-installer Windows service setup..."
-$originalDir = Get-Location
-Set-Location $installerDir
-try {
-    & $installScript
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "pm2-installer failed with exit code $LASTEXITCODE"
-        Write-Pm2ServiceDiagnostics
+if ($script:UseNssmFallback) {
+    if (-not $projectDir) {
+        Write-Error "Could not locate project root. Cannot register NSSM service."
         exit 1
     }
-} finally {
-    Set-Location $originalDir
+    Register-Pm2ServiceWithNssm -ProjectDir $projectDir
+} else {
+    Write-Host "Running pm2-installer Windows service setup..."
+    $originalDir = Get-Location
+    Set-Location $installerDir
+    try {
+        & $installScript
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "pm2-installer failed with exit code $LASTEXITCODE"
+            Write-Pm2ServiceDiagnostics
+            exit 1
+        }
+    } finally {
+        Set-Location $originalDir
+    }
 }
 
 # pm2-installer 将 PM2_HOME 设置为 C:\ProgramData\pm2\home，当前会话需要同步
@@ -397,6 +470,9 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Verifying PM2 Windows service status..."
 $serviceOk = Wait-ServiceStatus -ServiceName $script:Pm2ServiceName -TargetStatus "Running" -TimeoutSeconds 60
+if (-not $serviceOk) {
+    $serviceOk = Wait-ServiceStatus -ServiceName "PM2" -TargetStatus "Running" -TimeoutSeconds 30
+}
 if ($serviceOk) {
     Write-Host "PM2 Windows service is Running."
 } else {
