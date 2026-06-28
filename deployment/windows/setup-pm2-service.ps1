@@ -133,7 +133,7 @@ function Repair-Pm2HomePermissions {
     }
 
     # 授予当前用户完全控制（当前会话执行 pm2 命令所需）
-    $currentUser = "$env:USERDOMAIN\$env:USERNAME"
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
     if ($currentUser -and ($currentUser -ne '\')) {
         & icacls "$pm2Home" /grant "${currentUser}:(OI)(CI)F" /T /C /Q
         if ($LASTEXITCODE -ne 0) {
@@ -188,8 +188,8 @@ function Get-Pm2EventLogErrors {
 function Get-Pm2ServiceLog {
     $pm2Home = "C:\ProgramData\pm2\home"
     $logPaths = @(
-        Join-Path $pm2Home "logs\pm2.log",
-        Join-Path $pm2Home "pm2.log",
+        (Join-Path $pm2Home "logs\pm2.log"),
+        (Join-Path $pm2Home "pm2.log"),
         "C:\ProgramData\pm2\pm2.log"
     )
     foreach ($logPath in $logPaths) {

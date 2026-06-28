@@ -37,4 +37,9 @@ describe('setup-pm2-service.ps1 functions', () => {
     const result = output.trim();
     assert.ok(result.length > 0, `Unexpected output: ${result}`);
   });
+
+  it('Get-Pm2ServiceLog does not throw', { skip: os.platform() !== 'win32' }, () => {
+    const output = invokePwshFunction('Get-Pm2ServiceLog');
+    assert.strictEqual(typeof output, 'string');
+  });
 });
