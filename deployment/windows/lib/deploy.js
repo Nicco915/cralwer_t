@@ -57,6 +57,12 @@ async function deploy({ installDir, repoUrl, branch = 'main' }) {
     throw new Error(`[deploy] npm ci failed: ${err.message}`);
   }
 
+  try {
+    execSync('npm run install-browsers', { cwd: installDir, encoding: 'utf-8', stdio: 'inherit' });
+  } catch (err) {
+    throw new Error(`[deploy] install-browsers failed: ${err.message}`);
+  }
+
   startPm2(installDir);
 
   const commit = getCurrentCommit(installDir);
