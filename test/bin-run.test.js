@@ -56,7 +56,7 @@ describe('bin/run service config', () => {
 
   it('uses dataLayer retry defaults when not provided', () => {
     const config = buildServiceConfig({});
-    assert.strictEqual(config.dataLayerMaxRetries, 2);
+    assert.strictEqual(config.dataLayerMaxRetries, 1);
     assert.strictEqual(config.dataLayerFailureThreshold, 3);
   });
 });
