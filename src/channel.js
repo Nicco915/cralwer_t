@@ -158,6 +158,7 @@ class Channel {
     try {
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
       let result;
+      let usedHeadedFallback = false;
       try {
         const recreateContext = async () => {
           const browser = this.browserContext ? this.browserContext.browser() : null;
@@ -179,9 +180,23 @@ class Channel {
         if ((isTimeout || isRetryableNetwork) && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless request failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
+          usedHeadedFallback = true;
         } else {
           throw e;
         }
+      }
+
+      if (!usedHeadedFallback && result && result.status === 'error' && result.error) {
+        const errMsg = result.error;
+        const isNetworkError = errMsg.includes('net::ERR') || /Timeout \d+ms exceeded/.test(errMsg) || errMsg.includes('Navigation failed');
+        if (isNetworkError && this.headedFallback && this.headedBrowserLauncher) {
+          this.log(`[Channel ${this.id}] Headless page load failed, trying headed fallback for task ${task.crawlerTaskId}`);
+          result = await this.runHeadedFallback(task);
+        }
+      }
+
+      if (result && result.status === 'success') {
+        this.dataLayerFailureCount = 0;
       }
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
