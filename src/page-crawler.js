@@ -23,7 +23,7 @@ class PageCrawler {
     this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
     this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
     this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
-    this.dataLayerMaxRetries = options?.dataLayerMaxRetries !== undefined ? options.dataLayerMaxRetries : 2;
+    this.dataLayerMaxRetries = options?.dataLayerMaxRetries !== undefined ? options.dataLayerMaxRetries : 1;
   }
 
   log(...args) {

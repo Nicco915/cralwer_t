@@ -40,7 +40,7 @@ const DEFAULT_CONFIG = {
   feishuTo: 'feishu',
   maxImages: 5,
   cloudflareMaxWait: 45,
-  dataLayerMaxRetries: 2,
+  dataLayerMaxRetries: 1,
   dataLayerFailureThreshold: 3,
   handleSignals: true,
   testCount: 0,
