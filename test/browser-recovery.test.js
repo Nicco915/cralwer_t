@@ -57,7 +57,8 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
 
     try {
       service = await runService({
-        baseUrl: 'https://eur.vevor.com',
+        // 使用一个不可达的地址，让 crawl 立即报错并回调，避免依赖真实网络和 Vevor 页面
+        baseUrl: 'http://127.0.0.1:1',
         imageDir: './output/test-service-images',
         headless: true,
         headedFallback: false,
@@ -72,8 +73,8 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
         browserHealthCheckInterval: 2000,
         dataLayerMaxRetries: 0,
         gotoMaxRetries: 1,
-        gotoTimeout: 5000,
-        gotoRetryDelays: [1000],
+        gotoTimeout: 3000,
+        gotoRetryDelays: [500],
         pageRefreshAfterTasks: 0,
       });
 
