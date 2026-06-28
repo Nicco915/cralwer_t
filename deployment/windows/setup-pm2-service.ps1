@@ -434,6 +434,11 @@ if ($script:UseNssmFallback) {
     }
 }
 
+# pm2-installer 可能会重置 ACL；确保 LOCAL SERVICE 仍然可写
+if (-not (Test-Pm2HomePermissions)) {
+    Repair-Pm2HomePermissions
+}
+
 # pm2-installer 将 PM2_HOME 设置为 C:\ProgramData\pm2\home，当前会话需要同步
 $Env:PM2_HOME = "C:\ProgramData\pm2\home"
 
