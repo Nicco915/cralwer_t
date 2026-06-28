@@ -99,7 +99,9 @@ git commit -m "feat(cli): .env 缺失时给出明确报错"
 
 ```powershell
 function Update-EnvironmentPath {
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = ($machinePath, $userPath | Where-Object { $_ }) -join ';'
 }
 ```
 
@@ -107,10 +109,15 @@ function Update-EnvironmentPath {
 
 ```powershell
 # PowerShell 执行策略会阻止运行 npm.ps1 等脚本；部署脚本需要 RemoteSigned
-$execPolicy = Get-ExecutionPolicy -Scope LocalMachine
+$execPolicy = Get-ExecutionPolicy
 if ($execPolicy -in @('Restricted', 'AllSigned')) {
-    Write-Host "Setting PowerShell execution policy to RemoteSigned..."
-    Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+    Write-Host "Setting PowerShell execution policy to RemoteSigned for current process..."
+    Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+    $newPolicy = Get-ExecutionPolicy -Scope Process
+    if ($newPolicy -notin @('RemoteSigned', 'Unrestricted', 'Bypass')) {
+        Write-Error "Failed to set execution policy to RemoteSigned for current process. Current effective policy: $newPolicy. Please adjust manually or contact your administrator."
+        exit 1
+    }
 }
 ```
 
@@ -140,8 +147,11 @@ if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
     Write-Host "Installing pm2..."
     npm install -g pm2
     Update-EnvironmentPath
-    if ($env:Path -notlike "*C:\ProgramData\npm*") {
-        [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\ProgramData\npm", "Machine")
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $npmPath = "C:\ProgramData\npm"
+    $paths = $machinePath -split ';' | Where-Object { $_ -and $_ -ne $npmPath }
+    if ($paths -notcontains $npmPath) {
+        [Environment]::SetEnvironmentVariable("Path", ($paths + $npmPath) -join ';', "Machine")
         Update-EnvironmentPath
     }
 }

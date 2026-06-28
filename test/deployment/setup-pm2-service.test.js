@@ -37,4 +37,21 @@ describe('setup-pm2-service.ps1 functions', () => {
     const result = output.trim();
     assert.ok(result.length > 0, `Unexpected output: ${result}`);
   });
+
+  it('Get-Pm2ServiceLog does not throw', { skip: os.platform() !== 'win32' }, () => {
+    const output = invokePwshFunction('Get-Pm2ServiceLog');
+    assert.strictEqual(typeof output, 'string');
+  });
+
+  it('Test-WmicAvailable returns True or False', { skip: os.platform() !== 'win32' }, () => {
+    const output = invokePwshFunction('Test-WmicAvailable');
+    const result = output.trim();
+    assert.ok(result === 'True' || result === 'False', `Unexpected output: ${result}`);
+  });
+
+  it('Test-Pm2HomePermissions returns True or False', { skip: os.platform() !== 'win32' }, () => {
+    const output = invokePwshFunction('Test-Pm2HomePermissions');
+    const result = output.trim();
+    assert.ok(result === 'True' || result === 'False', `Unexpected output: ${result}`);
+  });
 });

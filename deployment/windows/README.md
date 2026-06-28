@@ -41,6 +41,15 @@ C:\hs-sku-crawler\deployment\windows\deploy.ps1 `
 - 更新/克隆仓库并安装依赖
 - 调用 `setup-pm2-service.ps1` 将 PM2 注册为 Windows 服务
 
+### 异地/内网部署说明
+
+在无法连接 Windows Update 的 Windows 11 24H2+ 机器上，`deploy.ps1` 会自动尝试以下兜底：
+
+1. 检测并安装 WMIC 可选组件
+2. 如果 WMIC 安装失败，且 `nssm.exe` 在 PATH 中，则使用 NSSM 注册 PM2 服务
+
+如果两个条件都不满足，脚本会输出明确的下载/手动命令，不会静默失败。
+
 ### 服务注册前置条件
 
 - `setup-pm2-service.ps1` 必须在 `deploy.ps1` 成功运行之后执行

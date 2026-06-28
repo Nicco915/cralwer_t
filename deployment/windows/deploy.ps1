@@ -21,6 +21,13 @@ function Install-IfMissing {
     }
 }
 
+function Update-EnvironmentPath {
+    # 从注册表重新加载 Machine + User PATH 到当前进程
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = ($machinePath, $userPath | Where-Object { $_ }) -join ';'
+}
+
 # Check administrator privileges
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -28,13 +35,37 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit 1
 }
 
+# PowerShell 执行策略会阻止运行 npm.ps1 等脚本；部署脚本需要 RemoteSigned
+$execPolicy = Get-ExecutionPolicy
+if ($execPolicy -in @('Restricted', 'AllSigned')) {
+    Write-Host "Setting PowerShell execution policy to RemoteSigned for current process..."
+    Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+    $newPolicy = Get-ExecutionPolicy -Scope Process
+    if ($newPolicy -notin @('RemoteSigned', 'Unrestricted', 'Bypass')) {
+        Write-Error "Failed to set execution policy to RemoteSigned for current process. Current effective policy: $newPolicy. Please adjust manually or contact your administrator."
+        exit 1
+    }
+}
+
 Install-IfMissing -Command "node" -Name "OpenJS.NodeJS.LTS"
+Update-EnvironmentPath
+
 Install-IfMissing -Command "git" -Name "Git.Git"
+Update-EnvironmentPath
 
 # Ensure pm2 is installed globally
 if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
     Write-Host "Installing pm2..."
     npm install -g pm2
+    Update-EnvironmentPath
+    # 使用 C:\ProgramData\npm 作为全局 npm 路径，确保系统账户（如 LOCAL SERVICE）也能访问
+    $npmPath = "C:\ProgramData\npm"
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $paths = $machinePath -split ';' | Where-Object { $_ -and $_ -ne $npmPath }
+    if ($paths -notcontains $npmPath) {
+        [Environment]::SetEnvironmentVariable("Path", ($paths + $npmPath) -join ';', "Machine")
+        Update-EnvironmentPath
+    }
 }
 
 $deployScript = Join-Path $PSScriptRoot "lib\deploy.js"

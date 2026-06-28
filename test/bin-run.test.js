@@ -71,3 +71,14 @@ describe('loadEnvFile', () => {
     );
   });
 });
+
+describe('loadEnvFile', () => {
+  const { loadEnvFile } = require('../src/cli');
+
+  it('throws clear error when .env is missing', () => {
+    assert.throws(
+      () => loadEnvFile('/nonexistent/crawler/dir'),
+      /\.env file not found/
+    );
+  });
+});
