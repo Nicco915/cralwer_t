@@ -15,6 +15,8 @@ module.exports = {
         NODE_ENV: 'production',
         // 强制使用 Playwright 自带的 Chromium，避免 Edge/Microsoft Family Safety 干扰
         CRAWLER_BROWSER_PATH: '',
+        // 浏览器安装到项目目录下，避免 Windows 服务账户无法访问用户 profile
+        PLAYWRIGHT_BROWSERS_PATH: path.join(cwd, 'playwright-browsers'),
       },
       log_file: path.join(cwd, 'logs', 'crawler-combined.log'),
       out_file: path.join(cwd, 'logs', 'crawler-out.log'),
