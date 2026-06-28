@@ -19,5 +19,9 @@ output/
 cliproxy-assignments.json
 # 测试产物
 mock_test/
+!mock_test/
+mock_test/*
+!mock_test/mocktest.xlsx
 # 回调日志（按日分包）
 logs/callbacks/
+部署新windows.md
