@@ -3,7 +3,9 @@ const path = require('path');
 
 function loadEnvFile(cwd) {
   const envPath = path.join(cwd || process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) return;
+  if (!fs.existsSync(envPath)) {
+    throw new Error(`.env file not found at ${envPath}. Please create it before starting the crawler.`);
+  }
   const content = fs.readFileSync(envPath, 'utf-8');
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
