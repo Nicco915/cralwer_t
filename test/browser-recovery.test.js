@@ -60,6 +60,7 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
         baseUrl: 'https://eur.vevor.com',
         imageDir: './output/test-service-images',
         headless: true,
+        headedFallback: false,
         nodeCode: 'test-node',
         nodeToken: 'test-token',
         taskUrl: `${baseUrl}/tasks`,
@@ -70,6 +71,10 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
         pushRetries: 1,
         browserHealthCheckInterval: 2000,
         dataLayerMaxRetries: 0,
+        gotoMaxRetries: 1,
+        gotoTimeout: 5000,
+        gotoRetryDelays: [1000],
+        pageRefreshAfterTasks: 0,
       });
 
       // Wait for first callback or timeout
