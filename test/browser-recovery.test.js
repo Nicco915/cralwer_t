@@ -69,6 +69,7 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
         pollLimit: 1,
         pushRetries: 1,
         browserHealthCheckInterval: 2000,
+        dataLayerMaxRetries: 0,
       });
 
       // Wait for first callback or timeout
