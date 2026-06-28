@@ -12,9 +12,17 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = browsersDir;
 
 console.log(`[install-browsers] Installing Playwright browsers to ${browsersDir}`);
 
+let cliPath;
+try {
+  cliPath = require.resolve('playwright/cli.js');
+} catch (e) {
+  console.error('[install-browsers] Could not find playwright/cli.js. Did you run npm ci?');
+  process.exit(1);
+}
+
 const result = spawnSync(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
-  ['playwright', 'install', 'chromium', 'chromium-headless-shell'],
+  process.execPath,
+  [cliPath, 'install', 'chromium', 'chromium-headless-shell'],
   {
     stdio: 'inherit',
     shell: false,
