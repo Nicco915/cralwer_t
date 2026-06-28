@@ -1,11 +1,15 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { PageCrawler } = require('../src/page-crawler');
+const { PageCrawler, encodeSkuForSearchPath } = require('../src/page-crawler');
 
 function createMockPage(opts = {}) {
   let currentUrl = opts.url || '';
+  const customGoto = opts.goto;
   return {
-    goto: async (url) => { currentUrl = url; },
+    goto: async (url) => {
+      if (customGoto) await customGoto(url);
+      currentUrl = url;
+    },
     url: () => currentUrl,
     evaluate: async (fn) => {
       if (opts.evaluate) return opts.evaluate(fn);
@@ -202,5 +206,43 @@ describe('PageCrawler.crawlSingleSku SKU mismatch interception', () => {
     const result = await crawler.crawlSingleSku('A-123', page);
 
     assert.strictEqual(result.status, 'success');
+  });
+});
+
+describe('PageCrawler.encodeSkuForSearchPath', () => {
+  it('encodes hyphens as %2D to avoid Vevor tokenizing the SKU', () => {
+    assert.strictEqual(
+      encodeSkuForSearchPath('PQFJYNF-250-2T001V7'),
+      'PQFJYNF%2D250%2D2T001V7'
+    );
+  });
+
+  it('leaves SKUs without hyphens unchanged', () => {
+    assert.strictEqual(encodeSkuForSearchPath('ABC123'), 'ABC123');
+  });
+});
+
+describe('PageCrawler.crawlSingleSku search URL encoding', () => {
+  it('uses encoded SKU path for the initial search', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['https://eur.vevor.com/p/A-123', ''];
+    crawler.extractFromHtml = async () => ['', ''];
+    crawler.extractPageSku = async () => 'A-123';
+    crawler.extractAllProductImages = async () => [];
+
+    const visitedUrls = [];
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/p/A-123',
+      goto: async (url) => { visitedUrls.push(url); },
+      elements: { 'h1': { innerText: async () => 'Product A' } },
+    });
+
+    await crawler.crawlSingleSku('A-123', page);
+
+    assert.strictEqual(visitedUrls.length, 2);
+    assert.strictEqual(visitedUrls[0], 'https://eur.vevor.com/s/A%2D123');
+    assert.strictEqual(visitedUrls[1], 'https://eur.vevor.com/p/A-123');
   });
 });

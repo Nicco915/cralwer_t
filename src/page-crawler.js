@@ -17,6 +17,12 @@ function resolveConfig(config) {
   return { ...DEFAULT_CONFIG, ...(config || {}) };
 }
 
+function encodeSkuForSearchPath(sku) {
+  // Vevor 将搜索路径中的连字符（-）视为分词符，会把 PQFJYNF-250-2T001V7
+  // 拆成多个词返回泛匹配结果。将连字符编码为 %2D 后服务端会按完整 SKU 精确搜索。
+  return sku.replace(/-/g, '%2D');
+}
+
 class PageCrawler {
   constructor(options) {
     this.config = resolveConfig(options);
@@ -247,7 +253,7 @@ class PageCrawler {
     };
 
     try {
-      const searchUrl = `${baseUrl}/s/${sku}`;
+      const searchUrl = `${baseUrl}/s/${encodeSkuForSearchPath(sku)}`;
       this.log(`[${sku}] Searching: ${searchUrl}`);
       await gotoWithRetry(page, searchUrl, {
         sku,
@@ -500,4 +506,4 @@ async function gotoWithRetry(page, url, options) {
   throw lastError;
 }
 
-module.exports = { PageCrawler, classifyGotoError, gotoWithRetry };
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath };
