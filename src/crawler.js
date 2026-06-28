@@ -674,9 +674,8 @@ ${result.product_specification || ''}`;
       this.log('[BROWSER] Edge not found, falling back to Playwright bundled Chromium');
     }
 
-    const browser = await chromium.launch({
+    const launchOptions = {
       headless,
-      executablePath: resolvedBrowser,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',
@@ -686,7 +685,17 @@ ${result.product_specification || ''}`;
         '--no-sandbox',
         '--lang=en-GB',
       ],
-    });
+    };
+
+    if (resolvedBrowser) {
+      launchOptions.executablePath = resolvedBrowser;
+    } else {
+      // Playwright 1.60+ 默认使用 chromium-headless-shell，但该二进制在某些安装环境下会缺失。
+      // 指定 channel: 'chromium' 使用完整 Chromium 的 new headless 模式，部署更稳定。
+      launchOptions.channel = 'chromium';
+    }
+
+    const browser = await chromium.launch(launchOptions);
 
     const context = await browser.newContext({
       userAgent,

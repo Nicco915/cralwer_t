@@ -53,9 +53,8 @@ class CrawlerService {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    this.browser = await chromium.launch({
+    const launchOptions = {
       headless,
-      executablePath: resolvedBrowser,
       tracesDir: tempDir,
       downloadsPath: tempDir,
       args: [
@@ -67,7 +66,17 @@ class CrawlerService {
         '--no-sandbox',
         '--lang=en-GB',
       ],
-    });
+    };
+
+    if (resolvedBrowser) {
+      launchOptions.executablePath = resolvedBrowser;
+    } else {
+      // Playwright 1.60+ 默认使用 chromium-headless-shell，但该二进制在某些安装环境下会缺失。
+      // 指定 channel: 'chromium' 使用完整 Chromium 的 new headless 模式，部署更稳定。
+      launchOptions.channel = 'chromium';
+    }
+
+    this.browser = await chromium.launch(launchOptions);
     return this.browser;
   }
 
