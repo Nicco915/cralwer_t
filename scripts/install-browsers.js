@@ -14,9 +14,14 @@ console.log(`[install-browsers] Installing Playwright browsers to ${browsersDir}
 
 let cliPath;
 try {
-  cliPath = require.resolve('playwright/cli.js');
+  const pkgJson = require.resolve('playwright/package.json');
+  cliPath = path.join(path.dirname(pkgJson), 'cli.js');
+  if (!fs.existsSync(cliPath)) {
+    throw new Error(`playwright/cli.js not found at ${cliPath}`);
+  }
 } catch (e) {
   console.error('[install-browsers] Could not find playwright/cli.js. Did you run npm ci?');
+  console.error(e.message);
   process.exit(1);
 }
 
