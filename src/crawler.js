@@ -91,6 +91,20 @@ function resolveBrowserPath(configuredPath) {
     return configuredPath;
   }
 
+  // 允许通过环境变量强制使用 Playwright 自带的 Chromium
+  // 设置 CRAWLER_BROWSER_PATH= 空字符串时跳过 Edge 检测
+  if (Object.prototype.hasOwnProperty.call(process.env, 'CRAWLER_BROWSER_PATH')) {
+    const envPath = process.env.CRAWLER_BROWSER_PATH;
+    if (!envPath) {
+      return undefined;
+    }
+    if (fs.existsSync(envPath)) {
+      return envPath;
+    }
+    console.warn(`[BROWSER] CRAWLER_BROWSER_PATH=${envPath} not found, falling back to bundled Chromium`);
+    return undefined;
+  }
+
   const platform = os.platform();
   const candidates = {
     win32: [
