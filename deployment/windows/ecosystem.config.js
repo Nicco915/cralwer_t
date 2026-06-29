@@ -13,6 +13,8 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
+        // 强制使用 Playwright 自带的 Chromium，避免 Edge/Microsoft Family Safety 干扰
+        CRAWLER_BROWSER_PATH: '',
       },
       log_file: path.join(installDir, 'logs', 'crawler-combined.log'),
       out_file: path.join(installDir, 'logs', 'crawler-out.log'),
