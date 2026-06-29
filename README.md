@@ -102,6 +102,19 @@ Content-Type: application/json
 }
 ```
 
+**Callback field mapping**
+
+| Crawled field | Callback field | Notes |
+|---------------|----------------|-------|
+| `product_name` | `goodsName` | Product name from the product page |
+| `features_details` | `goodsDesc` | Product features / selling points |
+| `product_specification` | `rawContent` | Product specifications |
+| `product_url` | `sourceUrl` | Canonical product page URL |
+| `status` | `success` | `true` when `status === 'success'` |
+| `error` | `errorMessage` | Error message on failure |
+
+See `src/pusher.js` for the exact implementation.
+
 ### Service Configuration
 
 | CLI Flag | Environment Variable | Default | Description |
@@ -204,6 +217,23 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 See [`scripts/deploy/windows/native/README.md`](scripts/deploy/windows/native/README.md) for details.
 
+## SKU Handling
+
+### SKUs containing hyphens (`-`)
+
+VEVOR's search path treats `-` as a word separator. Searching `https://eur.vevor.com/s/PQFJYNF-250-2T001V7` returns broad matches instead of the exact SKU. To force an exact search, the crawler encodes each `-` as `%2D` in the search URL.
+
+| Step | Handling |
+|------|----------|
+| Search URL | `PQFJYNF-250-2T001V7` → `https://eur.vevor.com/s/PQFJYNF%2D250%2D2T001V7` |
+| dataLayer lookup | Raw SKU with `-` preserved |
+| HTML regex extraction | `-` escaped as a literal character |
+| Page SKU validation | Case-insensitive comparison with raw SKU |
+| Image filenames | Raw SKU with `-` preserved, e.g. `PQFJYNF-250-2T001V7_1.jpg` |
+| Callback payload | Raw SKU with `-` preserved in the `sku` field |
+
+Implementation: `src/page-crawler.js` (`encodeSkuForSearchPath`).
+
 ## Use as a Node.js Module
 
 ```js
@@ -274,6 +304,34 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 
 Secrets:
 - `DASHSCOPE_API_KEY` — required only if translation is enabled.
+
+## Project Structure
+
+### Crawling code
+
+| File | Responsibility |
+|------|----------------|
+| `src/page-crawler.js` | Single-SKU page crawl: URL encoding, dataLayer/HTML extraction, SKU validation, image download |
+| `src/channel.js` | Browser context lifecycle, headed fallback, health checks |
+| `src/service.js` | Service-mode orchestrator: browser, proxy pools, channels, crash recovery |
+| `src/worker.js` | Task dispatch to channels and result pushing |
+| `src/poller.js` | Upstream task polling |
+| `src/pusher.js` | Upstream callback pushing |
+| `src/crawler.js` | Batch Excel-mode orchestrator |
+| `bin/run.js` | Production entry point |
+| `test-sku.js` | Single-SKU ad-hoc debug script |
+
+### Translation code
+
+Translation is implemented entirely in **`src/crawler.js`** and is used **only in batch Excel mode**. It is **not** invoked in service mode.
+
+| Config | Default | How to disable |
+|--------|---------|----------------|
+| `enableTranslation` | `true` | `--no-translate`, `CRAWLER_TRANSLATE=false`, or `enableTranslation: false` |
+| `dashscopeApiKey` | `DASHSCOPE_API_KEY` | — |
+| `dashscopeModel` | `qwen3.6-flash-2026-04-16` | `--translate-model` / `DASHSCOPE_MODEL` |
+
+If translation is enabled but `DASHSCOPE_API_KEY` is not set, translation is skipped with a warning.
 
 ## Testing
 
