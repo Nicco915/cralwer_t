@@ -1,3 +1,7 @@
+const fs = require('fs');
+const path = require('path');
+const JSONbig = require('json-bigint')({ useNativeBigInt: true });
+
 const MAGIC_BYTES = {
   JPEG: [0xFF, 0xD8, 0xFF],
   PNG: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
@@ -14,9 +18,6 @@ const EXT_TO_MIME = {
   '.bmp': 'image/bmp',
 };
 
-const fs = require('fs');
-const path = require('path');
-
 function matchesMagicBytes(buffer, bytes) {
   if (!buffer || buffer.length < bytes.length) return false;
   for (let i = 0; i < bytes.length; i++) {
@@ -31,13 +32,22 @@ function detectWebp(buffer) {
   return matchesMagicBytes(buffer.slice(8, 12), MAGIC_BYTES.WEBP);
 }
 
+function isNonRetryableError(error) {
+  const message = (error && error.message) || '';
+  if (/\b4\d{2}\b/.test(message)) {
+    // 400, 401, 403, 404, etc. are client errors; do not retry
+    return true;
+  }
+  return false;
+}
+
 class ImageUploader {
   constructor(options = {}) {
     this.uploadUrl = options.uploadUrl || '';
     this.nodeCode = options.nodeCode || '';
     this.nodeToken = options.nodeToken || '';
     this.concurrency = options.concurrency || 2;
-    this.maxRetries = options.maxRetries || 3;
+    this.maxRetries = options.maxRetries !== undefined ? options.maxRetries : 3;
     this.retryDelays = options.retryDelays || [1000, 2000, 4000];
     this.fetch = options.fetch || globalThis.fetch;
   }
@@ -56,7 +66,7 @@ class ImageUploader {
     const byExt = ext ? EXT_TO_MIME[ext.toLowerCase()] || null : null;
 
     if (byMagic && byExt && byMagic !== byExt) {
-      console.warn(`Content-Type mismatch: magic bytes indicate ${byMagic}, but extension ${ext} indicates ${byExt}. Using magic bytes.`);
+      console.warn(`[IMAGE_UPLOAD] Content-Type mismatch: magic bytes indicate ${byMagic}, but extension ${ext} indicates ${byExt}. Using magic bytes.`);
     }
 
     return byMagic || byExt || null;
@@ -66,9 +76,7 @@ class ImageUploader {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  buildPayload(sku, filePath, contentType) {
-    const buffer = fs.readFileSync(filePath);
-    const fileName = path.basename(filePath);
+  buildPayload(sku, fileName, buffer, contentType) {
     return {
       nodeCode: this.nodeCode,
       nodeToken: this.nodeToken,
@@ -81,26 +89,30 @@ class ImageUploader {
 
   async uploadSingle(payload) {
     let lastError = null;
-    const attempts = Math.max(1, this.maxRetries);
-    for (let attempt = 0; attempt < attempts; attempt++) {
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      if (attempt > 0) {
+        console.log(`[IMAGE_UPLOAD] Retrying ${payload.fileName}, attempt ${attempt}/${this.maxRetries}`);
+        await this.sleep(this.retryDelays[attempt - 1] || 4000);
+      }
       try {
         const response = await this.fetch(this.uploadUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSONbig.stringify(payload),
         });
+
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          const text = await response.text().catch(() => '');
+          throw new Error(`Upload failed: ${response.status} ${text}`);
         }
-        const result = await response.json();
-        if (result.code !== 0) {
-          throw new Error(`API error: ${result.code}`);
-        }
-        return result.data;
+
+        const data = await response.json().catch(() => ({}));
+        return { id: data.data?.id, fileName: payload.fileName };
       } catch (error) {
         lastError = error;
-        if (attempt < attempts - 1 && this.retryDelays[attempt]) {
-          await this.sleep(this.retryDelays[attempt]);
+        console.error(`[IMAGE_UPLOAD] Failed ${payload.fileName} attempt ${attempt}: ${error.message}`);
+        if (isNonRetryableError(error)) {
+          break;
         }
       }
     }
@@ -108,41 +120,31 @@ class ImageUploader {
   }
 
   async limitConcurrency(items, fn, limit) {
-    const results = [];
-    const executing = [];
-    for (const [index, item] of items.entries()) {
-      const promise = fn(item).then((value) => ({ index, value }));
-      results.push(promise);
-      if (results.length >= limit) {
-        executing.push(promise);
-        if (executing.length >= limit) {
-          await Promise.race(executing);
-        }
+    const results = new Array(items.length);
+    let index = 0;
+
+    async function worker() {
+      while (index < items.length) {
+        const currentIndex = index++;
+        results[currentIndex] = await fn(items[currentIndex]);
       }
-      promise.finally(() => {
-        const i = executing.indexOf(promise);
-        if (i !== -1) executing.splice(i, 1);
-      });
     }
-    const settled = await Promise.all(results);
-    settled.sort((a, b) => a.index - b.index);
-    return settled.map((s) => s.value);
+
+    const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+    await Promise.all(workers);
+    return results;
   }
 
-  upload(result) {
-    return new Promise((resolve) => {
-      resolve(this._upload(result));
-    });
-  }
-
-  async _upload(result) {
-    const sku = result.sku;
-    const uploaded = [];
-    const failed = [];
-    const skipped = [];
+  async upload(result) {
+    const summary = {
+      sku: result.sku,
+      uploaded: [],
+      failed: [],
+      skipped: [],
+    };
 
     if (result.status !== 'success' || !result.image_paths) {
-      return { sku, uploaded, failed, skipped };
+      return summary;
     }
 
     const paths = String(result.image_paths)
@@ -152,37 +154,45 @@ class ImageUploader {
 
     const uploadItems = [];
     for (const filePath of paths) {
+      const fileName = path.basename(filePath);
       if (!fs.existsSync(filePath)) {
-        skipped.push({ path: filePath, reason: 'not_found' });
+        summary.skipped.push({ fileName, reason: 'file not found' });
         continue;
       }
       const stats = fs.statSync(filePath);
       if (stats.size === 0) {
-        skipped.push({ path: filePath, reason: 'empty_file' });
+        summary.failed.push({ fileName, error: 'empty file' });
         continue;
       }
       const ext = path.extname(filePath);
-      const contentType = this.detectContentType(null, ext);
-      if (!contentType) {
-        skipped.push({ path: filePath, reason: 'unknown_content_type' });
+      let buffer;
+      try {
+        buffer = fs.readFileSync(filePath);
+      } catch (e) {
+        summary.failed.push({ fileName, error: `read failed: ${e.message}` });
         continue;
       }
-      uploadItems.push({ filePath, contentType });
+      const contentType = this.detectContentType(buffer, ext);
+      if (!contentType) {
+        summary.failed.push({ fileName, error: 'unknown content type' });
+        continue;
+      }
+      uploadItems.push({ fileName, buffer, contentType });
     }
 
     if (uploadItems.length === 0) {
-      return { sku, uploaded, failed, skipped };
+      return summary;
     }
 
     const outputs = await this.limitConcurrency(
       uploadItems,
       async (item) => {
         try {
-          const payload = this.buildPayload(sku, item.filePath, item.contentType);
+          const payload = this.buildPayload(result.sku, item.fileName, item.buffer, item.contentType);
           const data = await this.uploadSingle(payload);
           return { status: 'uploaded', data };
         } catch (error) {
-          return { status: 'failed', path: item.filePath, error: error.message };
+          return { status: 'failed', fileName: item.fileName, error: error.message };
         }
       },
       Math.max(1, this.concurrency)
@@ -190,13 +200,13 @@ class ImageUploader {
 
     for (const output of outputs) {
       if (output.status === 'uploaded') {
-        uploaded.push(output.data);
+        summary.uploaded.push(output.data);
       } else {
-        failed.push({ path: output.path, error: output.error });
+        summary.failed.push({ fileName: output.fileName, error: output.error });
       }
     }
 
-    return { sku, uploaded, failed, skipped };
+    return summary;
   }
 }
 
