@@ -59,6 +59,24 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.dataLayerMaxRetries, 1);
     assert.strictEqual(config.dataLayerFailureThreshold, 3);
   });
+
+  it('passes image upload config to service config', () => {
+    const config = buildServiceConfig({
+      imageUploadUrl: 'http://example.com/upload',
+      imageUploadConcurrency: '3',
+      imageUploadRetries: '5',
+    });
+    assert.strictEqual(config.imageUploadUrl, 'http://example.com/upload');
+    assert.strictEqual(config.imageUploadConcurrency, 3);
+    assert.strictEqual(config.imageUploadRetries, 5);
+  });
+
+  it('uses image upload defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.imageUploadUrl, '');
+    assert.strictEqual(config.imageUploadConcurrency, 2);
+    assert.strictEqual(config.imageUploadRetries, 3);
+  });
 });
 
 describe('loadEnvFile', () => {

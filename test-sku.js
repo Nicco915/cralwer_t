@@ -87,12 +87,16 @@ async function main() {
     }, null, 2));
 
     if (result.status === 'success' && result.image_paths) {
-      const uploadUrl = process.env.CRAWLER_IMAGE_UPLOAD_URL;
+      const uploadUrl = config.imageUploadUrl || process.env.CRAWLER_IMAGE_UPLOAD_URL;
       if (uploadUrl) {
-        const concurrency = Number(process.env.CRAWLER_IMAGE_UPLOAD_CONCURRENCY) || 2;
-        const maxRetries = process.env.CRAWLER_IMAGE_UPLOAD_RETRIES !== undefined
-          ? Number(process.env.CRAWLER_IMAGE_UPLOAD_RETRIES)
-          : 3;
+        const concurrency = config.imageUploadConcurrency !== undefined
+          ? config.imageUploadConcurrency
+          : (Number(process.env.CRAWLER_IMAGE_UPLOAD_CONCURRENCY) || 2);
+        const maxRetries = config.imageUploadRetries !== undefined
+          ? config.imageUploadRetries
+          : (process.env.CRAWLER_IMAGE_UPLOAD_RETRIES !== undefined
+            ? Number(process.env.CRAWLER_IMAGE_UPLOAD_RETRIES)
+            : 3);
         const uploader = new ImageUploader({
           uploadUrl,
           nodeCode: config.nodeCode,

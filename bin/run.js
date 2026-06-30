@@ -46,6 +46,9 @@ function buildServiceConfig(config) {
     proxyMachineTotal: config.proxyMachineTotal !== undefined ? Number(config.proxyMachineTotal) : 1,
     proxyRefreshIntervalMs: config.proxyRefreshIntervalMs !== undefined ? Number(config.proxyRefreshIntervalMs) : 300000,
     proxyAssignmentsFile: config.proxyAssignmentsFile || path.resolve('./proxy-assignments.json'),
+    imageUploadUrl: config.imageUploadUrl || '',
+    imageUploadConcurrency: config.imageUploadConcurrency !== undefined ? Number(config.imageUploadConcurrency) : 2,
+    imageUploadRetries: config.imageUploadRetries !== undefined ? Number(config.imageUploadRetries) : 3,
   };
 }
 
