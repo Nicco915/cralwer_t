@@ -256,6 +256,31 @@ VEVOR's search path treats `-` as a word separator. Searching `https://eur.vevor
 
 Implementation: `src/page-crawler.js` (`encodeSkuForSearchPath`).
 
+## 独立图片传输脚本
+
+不启动爬虫，直接把已有图片文件上传到 `/classify/open/image/upload`（支持多张并发）。
+
+```bash
+# 默认从 .env 中 CRAWLER_IMAGE_UPLOAD_URL 读取真实接口
+node bin/transfer-images.js ./output/ABC-001_1.jpg ./output/ABC-001_2.jpg
+
+# 命令行覆盖接口地址 / 并发 / 重试
+node bin/transfer-images.js \
+  --upload-url=http://47.92.233.36:8003/renren-api/classify/open/image/upload \
+  --upload-concurrency=4 \
+  --upload-retries=5 \
+  ./img/*.jpg
+
+# 启用内置 mock 服务（覆盖真实接口，便于 CI / 离线）
+node bin/transfer-images.js --mock-upload ./img/foo.jpg ./img/bar.jpg
+```
+
+SKU 由 fileName 去扩展名推断（`ABC-001_1.jpg` → `ABC-001_1`）。退出码：`0` = 至少一张成功；`1` = 全部失败或启动错误；`2` = 配置错误。
+
+终态输出单块 JSON：`{ total, success, failed, results: [{path, sku, fileName, contentType, fileSize, ok, response|error}] }`，便于管道消费。
+
+详见规格 `docs/superpowers/specs/2026-06-30-standalone-image-transfer-design.md`。
+
 ## Use as a Node.js Module
 
 ```js
