@@ -68,6 +68,10 @@ const FLAG_MAP = {
   'proxy-refresh-interval-ms': 'proxyRefreshIntervalMs',
   'proxy-assignments-file': 'proxyAssignmentsFile',
   proxy: 'proxy',
+  'image-upload-url': 'imageUploadUrl',
+  'image-upload-concurrency': 'imageUploadConcurrency',
+  'image-upload-retries': 'imageUploadRetries',
+  'image-upload': 'enableImageUpload',
 };
 
 const BOOLEAN_FLAGS = new Set([
@@ -75,6 +79,7 @@ const BOOLEAN_FLAGS = new Set([
   'translate',
   'feishu',
   'headed-fallback',
+  'image-upload',
 ]);
 
 const BOOLEAN_CONFIG_KEYS = new Set([
@@ -82,6 +87,7 @@ const BOOLEAN_CONFIG_KEYS = new Set([
   'enableTranslation',
   'enableFeishu',
   'headedFallback',
+  'enableImageUpload',
 ]);
 
 function isBooleanFlag(key) {
@@ -197,6 +203,10 @@ function parse(rawArgs, defaults = {}) {
     CLIPROXY_STICKY_MINUTES: 'cliproxyStickyMinutes',
     CLIPROXY_SESSION_PREFIX: 'cliproxySessionPrefix',
     CLIPROXY_ASSIGNMENTS_FILE: 'cliproxyAssignmentsFile',
+    CRAWLER_IMAGE_UPLOAD_URL: 'imageUploadUrl',
+    CRAWLER_IMAGE_UPLOAD_CONCURRENCY: 'imageUploadConcurrency',
+    CRAWLER_IMAGE_UPLOAD_RETRIES: 'imageUploadRetries',
+    CRAWLER_IMAGE_UPLOAD: 'enableImageUpload',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {
