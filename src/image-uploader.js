@@ -33,13 +33,13 @@ class ImageUploader {
     this.uploadUrl = options.uploadUrl || '';
     this.nodeCode = options.nodeCode || '';
     this.nodeToken = options.nodeToken || '';
-    this.concurrency = options.concurrency || 5;
+    this.concurrency = options.concurrency || 2;
     this.maxRetries = options.maxRetries || 3;
     this.retryDelays = options.retryDelays || [1000, 2000, 4000];
     this.fetch = options.fetch || globalThis.fetch;
   }
 
-  static detectContentType(buffer, ext) {
+  detectContentType(buffer, ext) {
     let byMagic = null;
 
     if (matchesMagicBytes(buffer, MAGIC_BYTES.JPEG)) {
