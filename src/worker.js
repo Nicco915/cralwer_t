@@ -3,6 +3,7 @@ class Worker {
     this.channels = [];
     this.taskQueue = [];
     this.pusher = options.pusher;
+    this.imageUploader = options.imageUploader || null;
     this.log = options.log || console.log;
     this.running = false;
     this.pendingPushes = new Set();
@@ -85,6 +86,15 @@ class Worker {
         this.log(`[Worker] Starting push task ${task.crawlerTaskId} sku ${task.sku} status=${result.status}`);
         await this.pusher.push(result);
         this.log(`[Worker] Push completed task ${task.crawlerTaskId} status ${result.status}`);
+
+        if (this.imageUploader && result.status === 'success') {
+          try {
+            await this.imageUploader.upload(result);
+            this.log(`[Worker] Image upload completed task ${task.crawlerTaskId} sku ${task.sku}`);
+          } catch (uploadErr) {
+            this.log(`[Worker] Image upload failed task ${task.crawlerTaskId} sku ${task.sku}: ${uploadErr.message}`);
+          }
+        }
       } catch (e) {
         this.log(`[Worker] Push failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
         try {
