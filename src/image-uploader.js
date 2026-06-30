@@ -119,6 +119,15 @@ class ImageUploader {
         }
 
         const data = await response.json().catch(() => ({}));
+        // HTTP 200 does not guarantee business success: many upstream APIs use
+        // { code: 0, data } for success and { code: <non-zero>, msg } for failure.
+        // Treat any non-zero business code as a retryable upload error so that
+        // transfers surface upstream problems (e.g. 七牛图片上传失败) instead of
+        // silently reporting success.
+        if (data && typeof data.code === 'number' && data.code !== 0) {
+          const msg = data.msg || `business code ${data.code}`;
+          throw new Error(`Upload business failure: ${msg}`);
+        }
         return { id: data.data?.id, response: data.data, fileName: payload.fileName };
       } catch (error) {
         lastError = error;

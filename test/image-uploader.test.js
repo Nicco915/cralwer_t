@@ -290,6 +290,32 @@ describe('ImageUploader.upload', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('treats upstream business code != 0 as upload failure', async () => {
+    const { dir, filePath } = createTempImage('biz.jpg', jpegBuffer);
+    let attempts = 0;
+    const fakeFetch = async () => {
+      attempts++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 500, data: null, msg: '七牛图片上传失败' }),
+      };
+    };
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      maxRetries: 1,
+      fetch: fakeFetch,
+    });
+    try {
+      const result = await uploader.upload({ sku: 'X', status: 'success', image_paths: filePath });
+      assert.equal(result.failed.length, 1);
+      assert.match(result.failed[0].error, /七牛图片上传失败/);
+      assert.equal(attempts, 2); // initial + 1 retry
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('ImageUploader skuForImage hook', () => {
