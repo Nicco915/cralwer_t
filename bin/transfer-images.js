@@ -18,17 +18,28 @@ function parseTransferArgs(argv) {
     progress: true,
   };
 
-  for (let i = 0; i < args.length; i++) {
+  const BOOLEAN_FLAGS = new Set(['mock-upload', 'no-progress']);
+
+for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (typeof arg !== 'string') continue;
     if (arg.startsWith('--')) {
       const eqIndex = arg.indexOf('=');
       const rawKey = eqIndex !== -1 ? arg.slice(2, eqIndex) : arg.slice(2);
-      const rawVal = eqIndex !== -1 ? arg.slice(eqIndex + 1) : (() => {
+      let rawVal;
+      if (eqIndex !== -1) {
+        rawVal = arg.slice(eqIndex + 1);
+      } else if (BOOLEAN_FLAGS.has(rawKey)) {
+        rawVal = true;
+      } else {
         const next = args[i + 1];
-        if (next !== undefined && !String(next).startsWith('--')) { i++; return next; }
-        return true;
-      })();
+        if (next !== undefined && !String(next).startsWith('--')) {
+          i++;
+          rawVal = next;
+        } else {
+          rawVal = true;
+        }
+      }
       switch (rawKey) {
         case 'upload-url': options.uploadUrl = rawVal; break;
         case 'upload-concurrency': options.uploadConcurrency = Number(rawVal); break;
@@ -171,4 +182,27 @@ async function transferImages({ paths, options, deps = {} }) {
   return { total: results.length, success, failed, results };
 }
 
-module.exports = { parseTransferArgs, transferImages, ConfigError, main: () => Promise.resolve(0) };
+async function main(argv) {
+  try {
+    const { paths, options } = parseTransferArgs(argv || process.argv.slice(2));
+    const report = await transferImages({ paths, options });
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    return report.success > 0 ? 0 : 1;
+  } catch (err) {
+    const code = err.name === 'ConfigError' ? 2 : 1;
+    process.stderr.write(`[transfer-images] ${err.message}\n`);
+    process.stdout.write(JSON.stringify({
+      total: 0, success: 0, failed: 0, results: [], error: err.message,
+    }, null, 2) + '\n');
+    return code;
+  }
+}
+
+module.exports = { parseTransferArgs, transferImages, ConfigError, main };
+
+if (require.main === module) {
+  main().then((code) => process.exit(code)).catch((e) => {
+    process.stderr.write(String(e.stack || e) + '\n');
+    process.exit(1);
+  });
+}
