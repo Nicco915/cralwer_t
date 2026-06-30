@@ -291,3 +291,64 @@ describe('ImageUploader.upload', () => {
     }
   });
 });
+
+describe('ImageUploader skuForImage hook', () => {
+  const jpegBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);
+
+  it('uses skuForImage hook for payload.sku when provided', async () => {
+    const seen = [];
+    const fakeFetch = async (url, init) => {
+      const body = JSON.parse(init.body);
+      seen.push(body.sku);
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) };
+    };
+
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      fetch: fakeFetch,
+      skuForImage: (buf, index, img) => `HOOK_${index}_${img.fileName}`,
+    });
+
+    const summary = await uploader.upload({
+      crawlerTaskId: 't1',
+      status: 'success',
+      sku: '',
+      image_paths: '',
+      _preloadedItems: [
+        { fileName: 'a.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+        { fileName: 'b.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+      ],
+    });
+
+    assert.equal(summary.uploaded.length, 2);
+    assert.equal(summary.failed.length, 0);
+    assert.deepEqual(seen, ['HOOK_0_a.jpg', 'HOOK_1_b.jpg']);
+  });
+
+  it('falls back to legacy sku assembly when skuForImage not provided', async () => {
+    const seen = [];
+    const fakeFetch = async (url, init) => {
+      const body = JSON.parse(init.body);
+      seen.push(body.sku);
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) };
+    };
+
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      nodeCode: 'NODE42',
+      fetch: fakeFetch,
+    });
+
+    await uploader.upload({
+      crawlerTaskId: 't1',
+      status: 'success',
+      sku: 'GLOBAL',
+      image_paths: '',
+      _preloadedItems: [
+        { fileName: 'a.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+      ],
+    });
+
+    assert.deepEqual(seen, ['NODE42_0']);
+  });
+});

@@ -41,6 +41,15 @@ function isNonRetryableError(error) {
   return false;
 }
 
+function resolveImageSku(uploader, buf, index, imageRecord, result) {
+  if (typeof uploader.skuForImage === 'function') {
+    return uploader.skuForImage(buf, index, imageRecord);
+  }
+  if (uploader.nodeCode) return `${uploader.nodeCode}_${index}`;
+  if (result && result.crawlerTaskId) return `${result.crawlerTaskId}_${index}`;
+  return '';
+}
+
 class ImageUploader {
   constructor(options = {}) {
     this.uploadUrl = options.uploadUrl || '';
@@ -50,6 +59,9 @@ class ImageUploader {
     this.maxRetries = options.maxRetries !== undefined ? options.maxRetries : 3;
     this.retryDelays = options.retryDelays || [1000, 2000, 4000];
     this.fetch = options.fetch || globalThis.fetch;
+    this.skuForImage = typeof options.skuForImage === 'function'
+      ? options.skuForImage
+      : null;
   }
 
   detectContentType(buffer, ext) {
@@ -143,16 +155,49 @@ class ImageUploader {
       skipped: [],
     };
 
-    if (result.status !== 'success' || !result.image_paths) {
-      return summary;
+    if (result.status !== 'success') return summary;
+    if (!Array.isArray(result._preloadedItems) && !result.image_paths) return summary;
+
+    const usePreloaded = Array.isArray(result._preloadedItems);
+    const uploadItems = usePreloaded
+      ? result._preloadedItems
+      : this._resolveFromPaths(result.image_paths, summary);
+
+    if (uploadItems.length === 0) return summary;
+
+    const indexed = uploadItems.map((item, index) => ({ item, index }));
+
+    const outputs = await this.limitConcurrency(
+      indexed,
+      async ({ item, index }) => {
+        try {
+          const sku = usePreloaded
+            ? resolveImageSku(this, item.buffer, index, item, result)
+            : result.sku;
+          const payload = this.buildPayload(sku, item.fileName, item.buffer, item.contentType);
+          const data = await this.uploadSingle(payload);
+          return { status: 'uploaded', data };
+        } catch (error) {
+          return { status: 'failed', fileName: item.fileName, error: error.message };
+        }
+      },
+      Math.max(1, this.concurrency)
+    );
+
+    for (const output of outputs) {
+      if (output.status === 'uploaded') {
+        summary.uploaded.push(output.data);
+      } else {
+        summary.failed.push({ fileName: output.fileName, error: output.error });
+      }
     }
 
-    const paths = String(result.image_paths)
-      .split(/[,;]/)
-      .map((p) => p.trim())
-      .filter(Boolean);
+    return summary;
+  }
 
+  _resolveFromPaths(imagePaths, summary) {
     const uploadItems = [];
+    const paths = String(imagePaths).split(/[,;]/).map((p) => p.trim()).filter(Boolean);
     for (const filePath of paths) {
       const fileName = path.basename(filePath);
       if (!fs.existsSync(filePath)) {
@@ -179,34 +224,7 @@ class ImageUploader {
       }
       uploadItems.push({ fileName, buffer, contentType });
     }
-
-    if (uploadItems.length === 0) {
-      return summary;
-    }
-
-    const outputs = await this.limitConcurrency(
-      uploadItems,
-      async (item) => {
-        try {
-          const payload = this.buildPayload(result.sku, item.fileName, item.buffer, item.contentType);
-          const data = await this.uploadSingle(payload);
-          return { status: 'uploaded', data };
-        } catch (error) {
-          return { status: 'failed', fileName: item.fileName, error: error.message };
-        }
-      },
-      Math.max(1, this.concurrency)
-    );
-
-    for (const output of outputs) {
-      if (output.status === 'uploaded') {
-        summary.uploaded.push(output.data);
-      } else {
-        summary.failed.push({ fileName: output.fileName, error: output.error });
-      }
-    }
-
-    return summary;
+    return uploadItems;
   }
 }
 
