@@ -128,7 +128,10 @@ PROXY_PROVIDER_FIELD_PORT=port
 | - | `PROXY_PROVIDER_API_KEY` | `proxyProviderApiKey` | | - | 认证值 |
 | - | `PROXY_PROVIDER_HEADER_NAME` | `proxyProviderHeaderName` | | `Authorization` | 认证 Header 名 |
 | - | `PROXY_PROVIDER_HEADER_VALUE_PREFIX` | `proxyProviderHeaderValuePrefix` | | - | Header 值前缀，如 `Bearer ` |
-| - | `PROXY_PROVIDER_BODY` | `proxyProviderBody` | | - | POST body（JSON 字符串） |
+| - | `PROXY_PROVIDER_CONTENT_TYPE` | `proxyProviderContentType` | | `application/json` | POST 请求 Content-Type |
+| - | `PROXY_PROVIDER_BODY` | `proxyProviderBody` | | - | POST body（字符串） |
+| - | `PROXY_PROVIDER_PRESET` | `proxyProviderPreset` | | - | 预设名称（`cliproxy` 等） |
+| - | `PROXY_PROVIDER_STRICT_BUSINESS_CODE` | `proxyProviderStrictBusinessCode` | | `true` | 是否将 `code != 0` 视为错误 |
 | - | `PROXY_PROVIDER_RESPONSE_PATH` | `proxyProviderResponsePath` | | `$` | JSONPath，定位代理数组 |
 | - | `PROXY_PROVIDER_FIELD_HOST` | `proxyProviderFieldHost` | | `host` | host 字段名 |
 | - | `PROXY_PROVIDER_FIELD_PORT` | `proxyProviderFieldPort` | | `port` | port 字段名 |
@@ -151,8 +154,9 @@ PROXY_PROVIDER_FIELD_PORT=port
 
 | 文件 | 说明 |
 |------|------|
-| `src/http-proxy-provider.js` | 通用 HTTP 适配器 |
+| `src/http-proxy-provider.js` | 通用 HTTP 适配器（含 preset 机制） |
 | `test/http-proxy-provider.test.js` | HTTP Provider 测试 |
+| `bin/run-test-proxy-provider.js`（或集成到 `bin/run-test.js`） | dry-run 工具 |
 
 ### 修改
 
@@ -166,28 +170,67 @@ PROXY_PROVIDER_FIELD_PORT=port
 | `test/proxy-pool.test.js` | mock 改为 `{ getProxies: async () => [...] }` |
 | `test/service-proxy-pool.test.js` | 移除 `kuaidailiSecretId/Key` 配置，改用 `proxyProvider*` |
 | `test/proxy-config.test.js` | 新增 HttpProxyProvider + Channel 集成测试 |
+| `package.json` | 新增 `jsonpath-plus` 依赖 |
 
 ## 关键实现细节
 
 ### `HttpProxyProvider` 核心逻辑
 
+#### Preset 模板机制
+
+减少配置项，cliproxy 等常见服务商只需 1 行 preset + 1 行 token：
+
 ```js
+const PRESETS = {
+  cliproxy: {
+    method: 'GET',
+    headerName: 'Authorization',
+    headerValuePrefix: 'Bearer ',
+    responsePath: 'data.proxies',
+    fieldHost: 'ip',
+    fieldPort: 'port',
+    fieldUsername: 'user',
+    fieldPassword: 'pass',
+    fieldProtocol: 'type',
+  },
+  // 未来扩展：kuaidaili, abcproxy...
+};
+```
+
+用户配置：
+```env
+PROXY_PROVIDER_PRESET=cliproxy
+PROXY_PROVIDER_URL=https://api.cliproxy.com/extract
+PROXY_PROVIDER_API_KEY=xxx
+```
+
+显式传入的 `PROXY_PROVIDER_FIELD_*` 等可覆盖 preset 默认值。
+
+#### 核心实现（含加固）
+
+```js
+const { JSONPath } = require('jsonpath-plus');
+
 class HttpProxyProvider {
   constructor(options) {
-    this.url = options.url;
-    this.method = options.method || 'GET';
-    this.apiKey = options.apiKey;
-    this.headerName = options.headerName || 'Authorization';
-    this.headerValuePrefix = options.headerValuePrefix || '';
-    this.body = options.body;
-    this.responsePath = options.responsePath || '$';
-    this.fieldHost = options.fieldHost || 'host';
-    this.fieldPort = options.fieldPort || 'port';
-    this.fieldUsername = options.fieldUsername;
-    this.fieldPassword = options.fieldPassword;
-    this.fieldProtocol = options.fieldProtocol;
-    this.filterProtocol = options.filterProtocol;
-    this.fetch = options.fetch || globalThis.fetch;
+    const preset = PRESETS[options.preset] || {};
+    const merged = { ...preset, ...options };
+    this.url = merged.url;
+    this.method = merged.method || 'GET';
+    this.apiKey = merged.apiKey;
+    this.headerName = merged.headerName || 'Authorization';
+    this.headerValuePrefix = merged.headerValuePrefix || '';
+    this.body = merged.body;
+    this.contentType = merged.contentType;
+    this.responsePath = merged.responsePath || '$';
+    this.fieldHost = merged.fieldHost || 'host';
+    this.fieldPort = merged.fieldPort || 'port';
+    this.fieldUsername = merged.fieldUsername;
+    this.fieldPassword = merged.fieldPassword;
+    this.fieldProtocol = merged.fieldProtocol;
+    this.filterProtocol = merged.filterProtocol;
+    this.strictBusinessCode = merged.strictBusinessCode !== false;
+    this.fetch = merged.fetch || globalThis.fetch;
   }
 
   async getProxies() {
@@ -200,34 +243,67 @@ class HttpProxyProvider {
 
     const init = { method: this.method, headers };
     if (this.body && this.method !== 'GET') {
-      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
       init.body = this.body;
+      if (!headers['Content-Type']) {
+        headers['Content-Type'] = this.contentType || 'application/json';
+      }
     }
 
     const res = await this.fetch(this.url, init);
     if (!res.ok) {
-      throw new Error(`Proxy provider fetch failed: ${res.status}`);
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `Proxy provider fetch failed: ${res.status} ${res.statusText}\n` +
+        `Response body: ${text.slice(0, 200)}`
+      );
     }
 
     const data = await res.json();
+
+    // 业务错误码检测（默认开启）
+    if (this.strictBusinessCode && data && typeof data === 'object'
+        && data.code !== undefined && data.code !== 0) {
+      throw new Error(
+        `Proxy provider business error: code=${data.code}, msg=${data.msg || 'unknown'}`
+      );
+    }
+
     const list = extractByPath(data, this.responsePath);
     if (!Array.isArray(list)) {
-      throw new Error(`Proxy provider response path "${this.responsePath}" did not return array`);
+      throw new Error(
+        `Proxy provider response path "${this.responsePath}" did not return array.\n` +
+        `Got: ${typeof list} (${JSON.stringify(list).slice(0, 200)})\n` +
+        `Full response: ${JSON.stringify(data).slice(0, 500)}`
+      );
     }
 
     return list
       .map(item => this.toProxyEntry(item))
       .filter(entry => entry !== null)
-      .filter(entry => !this.filterProtocol || entry.protocol === this.filterProtocol)
+      .filter(entry => !this.filterProtocol ||
+        this.normalizeProtocol(entry.protocol) === this.normalizeProtocol(this.filterProtocol))
       .map(entry => this.toProxyString(entry));
+  }
+
+  normalizeProtocol(p) {
+    return (p || '').toLowerCase();
   }
 
   toProxyEntry(item) {
     if (typeof item === 'string') {
-      // "host:port" 格式
-      const m = item.match(/^([^:]+):(\d+)$/);
-      if (!m) return null;
-      return { host: m[1], port: Number(m[2]) };
+      // 支持 "host:port" / "http://host:port" / "http://user:pass@host:port" / IPv6
+      try {
+        const u = new URL(item.startsWith('http') ? item : `http://${item}`);
+        return {
+          host: u.hostname,
+          port: Number(u.port),
+          username: u.username || undefined,
+          password: u.password || undefined,
+          protocol: u.protocol.replace(':', ''),
+        };
+      } catch {
+        return null;
+      }
     }
     if (typeof item !== 'object' || item === null) return null;
 
@@ -235,12 +311,19 @@ class HttpProxyProvider {
     const port = item[this.fieldPort];
     if (!host || !port) return null;
 
+    const portNum = Number(port);
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      return null; // 静默丢弃无效端口
+    }
+
     return {
       host: String(host),
-      port: Number(port),
+      port: portNum,
       username: this.fieldUsername ? item[this.fieldUsername] : undefined,
       password: this.fieldPassword ? item[this.fieldPassword] : undefined,
-      protocol: this.fieldProtocol ? item[this.fieldProtocol] : undefined,
+      protocol: this.fieldProtocol
+        ? this.normalizeProtocol(item[this.fieldProtocol])
+        : undefined,
     };
   }
 
@@ -254,10 +337,7 @@ class HttpProxyProvider {
 
 function extractByPath(obj, path) {
   if (!path || path === '$') return obj;
-  return path.split('.').reduce((acc, key) => {
-    if (acc == null) return undefined;
-    return acc[key];
-  }, obj);
+  return JSONPath({ path, json: obj });
 }
 ```
 
@@ -320,18 +400,38 @@ if (!this.config.proxy && this.config.proxyProviderUrl) {
 
 ### `test/http-proxy-provider.test.js`（新建）
 
+**基础功能：**
 1. GET 请求带 `Authorization: Bearer xxx` Header
 2. 自定义 Header 名（如 `X-API-Key`）
-3. POST 请求带 body
+3. POST 请求带 body（自动加 Content-Type）
 4. JSONPath `data.proxies` 提取
 5. JSONPath `$` 提取根数组
-6. 字符串数组 `"host:port"` 解析
-7. 对象数组 + 字段映射
-8. 字段映射 username/password
-9. 协议过滤
-10. 非 200 响应报错
-11. 路径不指向数组报错
-12. 输出统一为 `http://user:pass@host:port` 格式
+6. JSONPath 数组下标 `data.proxies[0]`
+7. 字符串数组 `"host:port"` 解析
+8. 对象数组 + 字段映射
+9. 字段映射 username/password
+10. 协议过滤
+11. 输出统一为 `http://user:pass@host:port` 格式
+
+**Preset 机制：**
+12. preset 正确填充默认值
+13. 显式传入的字段覆盖 preset 默认值
+14. 未命中 preset 时使用内置默认值
+
+**错误处理：**
+15. 非 200 响应报错并附 response body
+16. 路径不指向数组报错并附原始响应
+17. API 返回业务错误码 (`code != 0`) 时抛出明确错误
+18. `strictBusinessCode=false` 时业务错误不抛错
+
+**容错：**
+19. 字段映射指向不存在字段时丢弃该项
+20. 端口超出 1-65535 范围时丢弃该项
+21. 协议过滤大小写不敏感（`HTTP` 也能匹配 `http`）
+22. IPv6 地址解析 `[::1]:8080`
+23. 带 `http://` 前缀的字符串解析
+24. 含认证信息的字符串解析 `http://u:p@host:port`
+25. IP 数量 < channels 时抛清晰错误（在 ProxyPool 层）
 
 ### `test/proxy-pool.test.js`（修改）
 
@@ -353,19 +453,87 @@ if (!this.config.proxy && this.config.proxyProviderUrl) {
 
 - `npm test` 全部通过
 
+## Dry-Run 工具
+
+### `bin/run-test.js proxy-provider`
+
+启动前独立验证代理配置，**不启动浏览器，不分配 channel**：
+
+```bash
+node bin/run-test.js proxy-provider
+```
+
+输出示例：
+
+```
+[DRY-RUN] Proxy provider config:
+  preset:   cliproxy
+  url:      https://api.cliproxy.com/extract
+  method:   GET
+  response: data.proxies
+[DRY-RUN] Fetching...
+[DRY-RUN] Got 42 proxies
+[DRY-RUN] First 3 sample:
+  http://u:p@1.2.3.4:8080
+  http://u:p@5.6.7.8:3128
+  http://u:p@9.10.11.12:8888
+[DRY-RUN] After partition (machine=0/1): 21 proxies available
+[DRY-RUN] OK
+```
+
+错误时：
+
+```
+[DRY-RUN] Proxy provider config:
+  ...
+[DRY-RUN] Fetching...
+[DRY-RUN] FAILED: Proxy provider business error: code=401, msg=invalid token
+[DRY-RUN] Exit 1
+```
+
+## 加固项总结
+
+| 漏洞 | 加固方案 | 投入 |
+|------|---------|------|
+| 1. 配置项过多 | Preset 模板机制 | 加 30 行 |
+| 2. JSONPath 太简陋 | 引入 `jsonpath-plus` | 加 1 个依赖 |
+| 3. 协议大小写 | 归一化 lowercase | 1 行 |
+| 4. host:port 解析 | 用 `URL` 解析 | 重构 10 行 |
+| 5. 错误信息缺上下文 | 附 response body / 业务错误码检测 | 加 10 行 |
+| 6. 端口无校验 | 范围检查 + 静默丢弃 | 加 5 行 |
+| 8. 缺 dry-run | 新增 `bin/run-test.js proxy-provider` 子命令 | 加 1 个文件 |
+| 9. Content-Type 硬编码 | 可配置 `PROXY_PROVIDER_CONTENT_TYPE` | 加 1 个 config |
+| 10. 测试盲区 | 新增 14 个 case | 加测试 |
+| 7. 并发互斥锁 | **延后**（当前调度场景不致命） | - |
+
 ## 验收标准
 
+**删除：**
 - [ ] `src/kuaidaili-client.js` 已删除
 - [ ] `src/proxy-provider.js` 已删除
 - [ ] `test/kuaidaili-client.test.js` 已删除
 - [ ] `.env` 不再含 `KUAIDAILI_*` 配置
 - [ ] `.env` 包含 cliproxy 的 `PROXY_PROVIDER_*` 示例配置
+
+**核心功能：**
 - [ ] `npm test` 全部通过
 - [ ] 切换代理 API 时**只改 `.env`**，零代码改动
 - [ ] `HttpProxyProvider` 支持字符串数组和对象数组两种格式
-- [ ] `HttpProxyProvider` 支持 JSONPath 任意层级提取
+- [ ] `HttpProxyProvider` 支持 JSONPath 任意层级提取（含数组下标）
 - [ ] `HttpProxyProvider` 支持字段映射标准化
 - [ ] `ProxyPool` 机器分区、按 Channel 分配、定时刷新、失败轮换功能保持
+
+**加固项：**
+- [ ] `HttpProxyProvider` 内置 `cliproxy` preset，cliproxy 接入只需 2 行 `.env`
+- [ ] 引入 `jsonpath-plus` 依赖
+- [ ] 协议过滤大小写不敏感
+- [ ] 字符串解析支持 `host:port` / `http://host:port` / `http://u:p@host:port` / IPv6
+- [ ] 端口超出 1-65535 静默丢弃
+- [ ] 非 200 响应错误信息附 response body
+- [ ] 业务错误码 `code != 0` 抛出明确错误（可关闭）
+- [ ] `Content-Type` 可通过 `PROXY_PROVIDER_CONTENT_TYPE` 配置
+- [ ] `node bin/run-test.js proxy-provider` dry-run 工具可用
+- [ ] 测试覆盖 25 个 case（含 preset、错误处理、容错）
 
 ## 范围外（YAGNI）
 
