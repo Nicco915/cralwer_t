@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const { loadEnvFile } = require('./src/cli');
 const { buildServiceConfig } = require('./bin/run.js');
 const { Channel } = require('./src/channel');
+const { ImageUploader } = require('./src/image-uploader');
 
 const COMMON_BROWSER_ARGS = [
   '--disable-blink-features=AutomationControlled',
@@ -82,7 +83,34 @@ async function main() {
       product_url: result.product_url,
       error: result.error,
       image_count: result.images ? result.images.length : 0,
+      image_paths: result.image_paths || '',
     }, null, 2));
+
+    if (result.status === 'success' && result.image_paths) {
+      const uploadUrl = process.env.CRAWLER_IMAGE_UPLOAD_URL;
+      if (uploadUrl) {
+        const concurrency = Number(process.env.CRAWLER_IMAGE_UPLOAD_CONCURRENCY) || 2;
+        const maxRetries = process.env.CRAWLER_IMAGE_UPLOAD_RETRIES !== undefined
+          ? Number(process.env.CRAWLER_IMAGE_UPLOAD_RETRIES)
+          : 3;
+        const uploader = new ImageUploader({
+          uploadUrl,
+          nodeCode: config.nodeCode,
+          nodeToken: config.nodeToken,
+          concurrency,
+          maxRetries,
+        });
+        console.log(`\n=== Uploading images to ${uploadUrl} ===`);
+        try {
+          const uploadResult = await uploader.upload(result);
+          console.log(JSON.stringify(uploadResult, null, 2));
+        } catch (uploadErr) {
+          console.error('Image upload failed:', uploadErr.message);
+        }
+      } else {
+        console.log('\n=== CRAWLER_IMAGE_UPLOAD_URL not set, skipping image upload ===');
+      }
+    }
   } catch (err) {
     console.log('\n=== Thrown error ===');
     console.error(err);
