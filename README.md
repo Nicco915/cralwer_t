@@ -102,6 +102,24 @@ Content-Type: application/json
 }
 ```
 
+**Upload product images**
+
+```http
+POST /renren-api/classify/open/image/upload
+Content-Type: application/json
+
+{
+  "nodeCode": "crawler-01",
+  "nodeToken": "",
+  "sku": "ABC-001",
+  "imageBase64": "...",
+  "contentType": "image/jpeg",
+  "fileName": "ABC-001_1.jpg"
+}
+```
+
+图片在 `/renren-api/classify/open/crawler/callback` 返回 `success: true` 后上传。单张图片上传失败不会影响其他图片，也不会改变 callback 的成功状态。
+
 **Callback field mapping**
 
 | Crawled field | Callback field | Notes |
@@ -128,6 +146,10 @@ See `src/pusher.js` for the exact implementation.
 | `--poll-interval` | `CRAWLER_POLL_INTERVAL` | `5000` | Poll interval (ms) |
 | `--poll-limit` | `CRAWLER_POLL_LIMIT` | `10` | Tasks per poll |
 | `--push-retries` | `CRAWLER_PUSH_RETRIES` | `3` | Callback retry count |
+| `--image-upload-url` | `CRAWLER_IMAGE_UPLOAD_URL` | - | 图片上传接口 URL；未设置时不启用 |
+| `--image-upload-concurrency` | `CRAWLER_IMAGE_UPLOAD_CONCURRENCY` | `2` | 单 SKU 图片并发上传数 |
+| `--image-upload-retries` | `CRAWLER_IMAGE_UPLOAD_RETRIES` | `3` | 单张图上传重试次数 |
+| `--image-upload` / `--no-image-upload` | `CRAWLER_IMAGE_UPLOAD` | `true`（URL 配置后生效） | 是否启用图片上传 |
 
 ### Multi-machine deployment
 
