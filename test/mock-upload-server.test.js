@@ -26,6 +26,10 @@ describe('startMockUploadServer', () => {
       assert.equal(response.status, 200);
       const data = JSON.parse(response.body);
       assert.equal(data.code, 0);
+      assert.equal(data.data.sku, 'X');
+      assert.equal(data.data.contentType, 'image/jpeg');
+      assert.equal(data.data.fileName, 'x.jpg');
+      assert.equal(data.data.fileSize, 6);
       assert.equal(handle.getUploadCount(), 1);
     } finally {
       handle.close();

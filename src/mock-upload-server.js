@@ -8,8 +8,17 @@ function startMockUploadServer() {
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
         uploadCount++;
-        let parsed = {};
-        try { parsed = JSON.parse(body || '{}'); } catch (e) { /* ignore */ }
+        let parsed;
+        try {
+          parsed = JSON.parse(body || '{}');
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 400, error: 'invalid json' }));
+          return;
+        }
+        const fileSize = typeof parsed.imageBase64 === 'string'
+          ? Math.ceil(parsed.imageBase64.length * 0.75)
+          : 0;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           code: 0,
@@ -18,7 +27,7 @@ function startMockUploadServer() {
             sku: parsed.sku,
             contentType: parsed.contentType,
             fileName: parsed.fileName,
-            fileSize: parsed.imageBase64 ? Math.ceil(parsed.imageBase64.length * 0.75) : 0,
+            fileSize,
           },
         }));
       });
@@ -28,8 +37,10 @@ function startMockUploadServer() {
     res.end('not found');
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
       const { port } = server.address();
       resolve({
         server,
