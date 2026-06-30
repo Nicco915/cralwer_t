@@ -242,7 +242,11 @@ describe('transferImages', () => {
       maxConcurrent = Math.max(maxConcurrent, concurrent);
       const d = deferred();
       releases.push(d.resolve);
-      return d.promise.then(() => ({ ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) }));
+      try {
+        return await d.promise.then(() => ({ ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) }));
+      } finally {
+        concurrent--;
+      }
     };
     const reportP = transferImages({
       paths: files.map((f) => f.filePath),
@@ -254,8 +258,12 @@ describe('transferImages', () => {
         startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
       },
     });
-    await new Promise((r) => setTimeout(r, 20));
-    releases.forEach((r) => r());
+    // Drain pending deferreds one at a time so workers stay at the concurrency limit
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setImmediate(r));
+      const pending = releases.splice(0, releases.length);
+      for (const r of pending) r();
+    }
     const report = await reportP;
     assert.equal(report.total, 4);
     assert.equal(report.success, 4);

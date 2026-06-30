@@ -47,4 +47,128 @@ function parseTransferArgs(argv) {
   return { paths, options };
 }
 
-module.exports = { parseTransferArgs };
+class ConfigError extends Error {
+  constructor(message) { super(message); this.name = 'ConfigError'; }
+}
+
+const _imageUploaderProto = ImageUploader.prototype;
+
+async function transferImages({ paths, options, deps = {} }) {
+  const {
+    loadEnvFile: loadEnv = () => {},
+    pathExists = (p) => fs.existsSync(p),
+    readFile = (p) => fs.readFileSync(p),
+    startMockUploadServer: startMock = startMockUploadServer,
+  } = deps;
+
+  loadEnv(process.cwd());
+
+  const opts = { ...options };
+
+  let mockHandle = null;
+  if (opts.mockUpload) {
+    mockHandle = await startMock();
+    opts.uploadUrl = mockHandle.url;
+  }
+
+  const envUrl = process.env.CRAWLER_IMAGE_UPLOAD_URL;
+  if (!opts.uploadUrl && envUrl) opts.uploadUrl = envUrl;
+
+  if (!opts.uploadUrl) {
+    if (mockHandle) await mockHandle.close();
+    throw new ConfigError('upload url required: pass --upload-url=, set CRAWLER_IMAGE_UPLOAD_URL, or use --mock-upload');
+  }
+
+  if (!Array.isArray(paths) || paths.length === 0) {
+    if (mockHandle) await mockHandle.close();
+    throw new Error('no paths provided');
+  }
+
+  for (const p of paths) {
+    if (!pathExists(p)) {
+      if (mockHandle) await mockHandle.close();
+      throw new Error(`path not found: ${p}`);
+    }
+  }
+
+  const records = paths.map((p) => {
+    const stats = fs.statSync(p);
+    const buffer = readFile(p);
+    const ext = path.extname(p);
+    const fileName = path.basename(p);
+    const sku = path.basename(fileName, path.extname(fileName));
+    const contentType = _imageUploaderProto.detectContentType.call(
+      Object.create(_imageUploaderProto), buffer, ext
+    );
+    return { path: p, buffer, fileName, sku, contentType, fileSize: stats.size, isEmpty: stats.size === 0 };
+  });
+
+  const uploadItems = [];
+  const results = [];
+  for (const r of records) {
+    if (r.isEmpty) {
+      results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: 0, ok: false, error: 'empty file' });
+      continue;
+    }
+    if (!r.contentType) {
+      results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: null, fileSize: r.fileSize, ok: false, error: 'unknown content type' });
+      continue;
+    }
+    uploadItems.push({ fileName: r.fileName, buffer: r.buffer, contentType: r.contentType });
+  }
+
+  const fetchImpl = opts.fetchImpl;
+  const concurrency = Number.isFinite(opts.uploadConcurrency)
+    ? opts.uploadConcurrency
+    : (Number(process.env.CRAWLER_IMAGE_UPLOAD_CONCURRENCY) || 2);
+  const maxRetries = Number.isFinite(opts.uploadRetries)
+    ? opts.uploadRetries
+    : (process.env.CRAWLER_IMAGE_UPLOAD_RETRIES !== undefined
+        ? Number(process.env.CRAWLER_IMAGE_UPLOAD_RETRIES)
+        : 3);
+  const nodeCode = opts.nodeCode !== undefined ? opts.nodeCode : (process.env.CRAWLER_NODE_CODE || '');
+  const nodeToken = opts.nodeToken !== undefined ? opts.nodeToken : (process.env.CRAWLER_NODE_TOKEN || '');
+
+  const uploader = new ImageUploader({
+    uploadUrl: opts.uploadUrl,
+    nodeCode,
+    nodeToken,
+    concurrency,
+    maxRetries,
+    fetch: fetchImpl,
+    skuForImage: (_buf, _index, image) => image.fileName.replace(/\.[^.]+$/, ''),
+  });
+
+  if (uploadItems.length > 0) {
+    const fakeResult = {
+      crawlerTaskId: `cli-transfer-${Date.now()}`,
+      status: 'success',
+      sku: '',
+      image_paths: '',
+      _preloadedItems: uploadItems,
+    };
+    const summary = await uploader.upload(fakeResult);
+    const uploadedByFile = new Map(summary.uploaded.map((u) => [u.fileName, u]));
+    const failedByFile = new Map(summary.failed.map((f) => [f.fileName, f]));
+    for (const r of records) {
+      if (r.isEmpty || !r.contentType) continue;
+      const u = uploadedByFile.get(r.fileName);
+      const f = failedByFile.get(r.fileName);
+      if (u) {
+        results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: true, response: u.response || { id: u.id } });
+      } else if (f) {
+        results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: false, error: f.error });
+      } else {
+        results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: false, error: 'unknown state' });
+      }
+    }
+  }
+
+  if (mockHandle) await mockHandle.close();
+
+  const success = results.filter((r) => r.ok).length;
+  const failed = results.length - success;
+  return { total: results.length, success, failed, results };
+}
+
+module.exports = { parseTransferArgs, transferImages, ConfigError, main: () => Promise.resolve(0) };
