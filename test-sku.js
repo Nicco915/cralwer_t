@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
 const { chromium } = require('playwright');
 const { loadEnvFile } = require('./src/cli');
 const { buildServiceConfig } = require('./bin/run.js');
 const { Channel } = require('./src/channel');
 const { ImageUploader } = require('./src/image-uploader');
+const { startMockUploadServer } = require('./src/mock-upload-server');
 
 const COMMON_BROWSER_ARGS = [
   '--disable-blink-features=AutomationControlled',
@@ -38,41 +38,6 @@ function parseArgs(argv) {
   }
 
   return { sku: sku || 'GXSBSJSGWLGXVOLJBV0', rawConfig, mockUpload };
-}
-
-function startMockUploadServer() {
-  let uploadCount = 0;
-  const server = http.createServer((req, res) => {
-    if (req.url === '/upload' && req.method === 'POST') {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        uploadCount++;
-        const parsed = JSON.parse(body || '{}');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          code: 0,
-          data: {
-            id: Date.now() + uploadCount,
-            sku: parsed.sku,
-            contentType: parsed.contentType,
-            fileName: parsed.fileName,
-            fileSize: parsed.imageBase64 ? Math.ceil(parsed.imageBase64.length * 0.75) : 0,
-          },
-        }));
-      });
-      return;
-    }
-    res.writeHead(404);
-    res.end('not found');
-  });
-
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, url: `http://127.0.0.1:${port}/upload`, getUploadCount: () => uploadCount });
-    });
-  });
 }
 
 async function launchBrowser(headless, config) {
@@ -172,7 +137,7 @@ async function main(argv = process.argv) {
   } finally {
     try { await browser.close(); } catch (e) { /* ignore */ }
     if (mockServer) {
-      mockServer.server.close();
+      mockServer.close();
     }
     process.exit(0);
   }
@@ -185,4 +150,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, startMockUploadServer, main };
+module.exports = { parseArgs, main };
