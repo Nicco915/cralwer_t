@@ -9,6 +9,7 @@ const { resolveBrowserPath } = require('./crawler');
 const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
+const { ImageUploader } = require('./image-uploader');
 
 class CrawlerService {
   constructor(config) {
@@ -176,8 +177,21 @@ class CrawlerService {
       retryDelays: [1000, 2000, 4000],
     });
 
+    let imageUploader = null;
+    if (this.config.imageUploadUrl) {
+      imageUploader = new ImageUploader({
+        uploadUrl: this.config.imageUploadUrl,
+        nodeCode: this.config.nodeCode,
+        nodeToken: this.config.nodeToken,
+        concurrency: this.config.imageUploadConcurrency,
+        maxRetries: this.config.imageUploadRetries,
+        retryDelays: [1000, 2000, 4000],
+      });
+    }
+
     this.worker = new Worker({
       pusher: this.pusher,
+      imageUploader,
       log: this.log.bind(this),
     });
 
