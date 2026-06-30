@@ -23,7 +23,7 @@ function matchesMagicBytes(buffer, bytes) {
 }
 
 function detectWebp(buffer) {
-  if (buffer.length < 12) return false;
+  if (!buffer || buffer.length < 12) return false;
   if (!matchesMagicBytes(buffer, MAGIC_BYTES.RIFF)) return false;
   return matchesMagicBytes(buffer.slice(8, 12), MAGIC_BYTES.WEBP);
 }

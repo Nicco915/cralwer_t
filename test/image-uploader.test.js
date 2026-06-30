@@ -35,4 +35,17 @@ describe('ImageUploader.detectContentType', () => {
     const buffer = Buffer.from([0, 0, 0]);
     assert.equal(ImageUploader.detectContentType(buffer, '.xyz'), null);
   });
+
+  it('falls back to extension for null buffer', () => {
+    assert.equal(ImageUploader.detectContentType(null, '.jpg'), 'image/jpeg');
+  });
+
+  it('falls back to extension for empty buffer', () => {
+    assert.equal(ImageUploader.detectContentType(Buffer.alloc(0), '.png'), 'image/png');
+  });
+
+  it('falls back to extension for short WebP candidate buffer', () => {
+    const buffer = Buffer.from([0x52, 0x49, 0x46, 0x46]);
+    assert.equal(ImageUploader.detectContentType(buffer, '.webp'), 'image/webp');
+  });
 });
