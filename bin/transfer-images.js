@@ -66,7 +66,7 @@ class ConfigError extends Error {
 
 async function transferImages({ paths, options, deps = {} }) {
   const {
-    loadEnvFile: loadEnv = () => {},
+    loadEnvFile: loadEnv = loadEnvFile,
     pathExists = (p) => fs.existsSync(p),
     readFile = (p) => fs.readFileSync(p),
     startMockUploadServer: startMock = startMockUploadServer,

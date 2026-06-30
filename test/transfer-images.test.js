@@ -295,3 +295,43 @@ describe('transferImages with mockUpload', () => {
     assert.ok(typeof report.results[0].response.id === 'number');
   });
 });
+
+describe('transferImages default deps', () => {
+  const os = require('os');
+
+  function makeImage(filename, buffer) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-default-'));
+    const filePath = path.join(dir, filename);
+    fs.writeFileSync(filePath, buffer);
+    return { dir, filePath };
+  }
+
+  it('reads upload url from CRAWLER_IMAGE_UPLOAD_URL when no uploadUrl option', async () => {
+    const buf = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);
+    const { filePath } = makeImage('X_1.jpg', buf);
+
+    let captured;
+    const fakeFetch = async (url, init) => {
+      captured = { url, init };
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 7 } }) };
+    };
+
+    const prevEnv = process.env.CRAWLER_IMAGE_UPLOAD_URL;
+    const prevFile = process.env.__TRANSFER_TEST_CWD;
+    process.env.CRAWLER_IMAGE_UPLOAD_URL = 'http://from-env.test/up';
+    process.env.__TRANSFER_TEST_CWD = '/__nonexistent__';
+    try {
+      const report = await transferImages({
+        paths: [filePath],
+        options: { fetchImpl: fakeFetch },
+      });
+      assert.equal(report.success, 1);
+      assert.equal(captured.url, 'http://from-env.test/up');
+    } finally {
+      if (prevEnv === undefined) delete process.env.CRAWLER_IMAGE_UPLOAD_URL;
+      else process.env.CRAWLER_IMAGE_UPLOAD_URL = prevEnv;
+      if (prevFile === undefined) delete process.env.__TRANSFER_TEST_CWD;
+      else process.env.__TRANSFER_TEST_CWD = prevFile;
+    }
+  });
+});
