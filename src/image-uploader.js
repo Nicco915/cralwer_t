@@ -119,7 +119,7 @@ class ImageUploader {
         }
 
         const data = await response.json().catch(() => ({}));
-        return { id: data.data?.id, fileName: payload.fileName };
+        return { id: data.data?.id, response: data.data, fileName: payload.fileName };
       } catch (error) {
         lastError = error;
         console.error(`[IMAGE_UPLOAD] Failed ${payload.fileName} attempt ${attempt}: ${error.message}`);

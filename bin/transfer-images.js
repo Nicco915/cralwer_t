@@ -105,7 +105,9 @@ async function transferImages({ paths, options, deps = {} }) {
       const buffer = readFile(p);
       const ext = path.extname(p);
       const fileName = path.basename(p);
-      const sku = path.basename(fileName, path.extname(fileName));
+      // SKU inference: fileName matches `<sku>_<index>.<ext>` convention; strip
+      // both the trailing _N index and the extension. Same regex as skuForImage below.
+      const sku = fileName.replace(/_\d+\.[^.]+$/, '');
       // `detectContentType` is a pure buffer/extension inspection — no this-state dependency,
       // so calling on the prototype (without `this`) is sufficient.
       const contentType = ImageUploader.prototype.detectContentType(buffer, ext);
@@ -145,7 +147,7 @@ async function transferImages({ paths, options, deps = {} }) {
       concurrency,
       maxRetries,
       fetch: fetchImpl,
-      skuForImage: (_buf, _index, image) => image.fileName.replace(/\.[^.]+$/, ''),
+      skuForImage: (_buf, _index, image) => image.fileName.replace(/_\d+\.[^.]+$/, ''),
     });
 
     if (uploadItems.length > 0) {

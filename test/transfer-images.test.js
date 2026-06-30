@@ -80,7 +80,7 @@ describe('transferImages', () => {
     let captured;
     const fakeFetch = async (url, init) => {
       captured = { url, init };
-      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 9, sku: 'A_1' } }) };
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 9, sku: 'A' } }) };
     };
 
     const report = await transferImages({
@@ -98,11 +98,11 @@ describe('transferImages', () => {
     assert.equal(report.success, 1);
     assert.equal(report.failed, 0);
     assert.equal(report.results[0].ok, true);
-    assert.equal(report.results[0].sku, 'A_1');
+    assert.equal(report.results[0].sku, 'A');
     assert.equal(report.results[0].fileName, 'A_1.jpg');
     assert.equal(captured.url, 'http://test/up');
     const body = JSON.parse(captured.init.body);
-    assert.equal(body.sku, 'A_1');
+    assert.equal(body.sku, 'A');
     assert.equal(body.contentType, 'image/jpeg');
     assert.equal(body.fileName, 'A_1.jpg');
   });
@@ -176,7 +176,7 @@ describe('transferImages', () => {
     assert.equal(report.results[0].error, 'unknown content type');
   });
 
-  it('infers SKU from fileName without extension', async () => {
+  it('infers SKU from fileName stripping _N suffix and extension', async () => {
     const buf = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);
     const { filePath } = makeImage('XYZ-100_3.jpg', buf);
     let body;
@@ -194,7 +194,7 @@ describe('transferImages', () => {
         startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
       },
     });
-    assert.equal(body.sku, 'XYZ-100_3');
+    assert.equal(body.sku, 'XYZ-100');
     assert.equal(body.fileName, 'XYZ-100_3.jpg');
   });
 
