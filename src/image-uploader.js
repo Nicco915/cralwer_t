@@ -158,7 +158,18 @@ class ImageUploader {
     if (result.status !== 'success') return summary;
     if (!Array.isArray(result._preloadedItems) && !result.image_paths) return summary;
 
+    // Two SKU sources by entry mode:
+    //   - _preloadedItems (CLI/script use): per-image SKU resolved by hook or fallback
+    //     (skuForImage → nodeCode_${index} → crawlerTaskId_${index} → '')
+    //   - image_paths (crawler use): all images share result.sku; 18 legacy tests
+    //     assert payload.sku === result.sku, so we must NOT funnel them through
+    //     resolveImageSku or those tests regress. Do NOT simplify this branch.
     const usePreloaded = Array.isArray(result._preloadedItems);
+
+    if (usePreloaded && result.image_paths) {
+      console.warn('[IMAGE_UPLOAD] Both result._preloadedItems and result.image_paths provided; ignoring image_paths because _preloadedItems takes precedence.');
+    }
+
     const uploadItems = usePreloaded
       ? result._preloadedItems
       : this._resolveFromPaths(result.image_paths, summary);
@@ -171,9 +182,16 @@ class ImageUploader {
       indexed,
       async ({ item, index }) => {
         try {
-          const sku = usePreloaded
-            ? resolveImageSku(this, item.buffer, index, item, result)
-            : result.sku;
+          // See the comment above usePreloaded: image_paths mode must use
+          // result.sku (crawler zero-regression); _preloadedItems mode resolves
+          // per-image SKU via hook/fallback chain. Do NOT collapse to a single
+          // expression or 18 legacy payload.sku tests will break.
+          let sku;
+          if (usePreloaded) {
+            sku = resolveImageSku(this, item.buffer, index, item, result);
+          } else {
+            sku = result.sku;
+          }
           const payload = this.buildPayload(sku, item.fileName, item.buffer, item.contentType);
           const data = await this.uploadSingle(payload);
           return { status: 'uploaded', data };
