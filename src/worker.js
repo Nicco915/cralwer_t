@@ -61,6 +61,7 @@ class Worker {
 
   async runTask(task, channel) {
     const taskIdKey = this.getTaskIdKey(task);
+    channel.busy = true;
 
     const pushPromise = (async () => {
       let result = null;
@@ -117,6 +118,7 @@ class Worker {
 
     this.pendingPushes.add(pushPromise);
     pushPromise.finally(() => {
+      channel.busy = false;
       this.pendingPushes.delete(pushPromise);
       if (taskIdKey !== null) {
         this.inFlightTaskIds.delete(taskIdKey);
