@@ -209,24 +209,55 @@ module.exports = {
 
 **问题**：脚本有 N 张图来自 N 个不同 SKU（按 fileName 推断），无法共用一个 `result.sku`。
 
-### 7.2 最小改动：新增 skuForImage 钩子
+### 7.2 最小改动：新增 skuForImage 钩子 + _preloadedItems 旁路
 
+**构造器新增 `skuForImage` 字段**：
 ```js
-// src/image-uploader.js（构造器内新增）
+// src/image-uploader.js（构造器内）
 this.skuForImage = typeof options.skuForImage === 'function'
   ? options.skuForImage
   : null;
-
-// uploadSingle() 替换原 payload.sku 拼装
-const sku = typeof this.skuForImage === 'function'
-  ? this.skuForImage(buffer, index, imageRecord)
-  : (this.nodeCode ? `${this.nodeCode}_${index}` : `${result.crawlerTaskId || 'cli'}_${index}`);
-// ↑ 默认行为兼容爬虫（nodeCode 或 taskId 都为空时，原行为是空串；保持）
 ```
+
+**顶层新增 `resolveImageSku` 函数**（与 `isNonRetryableError` 同级）：
+```js
+function resolveImageSku(uploader, buf, index, imageRecord, result) {
+  if (typeof uploader.skuForImage === 'function') {
+    return uploader.skuForImage(buf, index, imageRecord);
+  }
+  if (uploader.nodeCode) return `${uploader.nodeCode}_${index}`;
+  if (result && result.crawlerTaskId) return `${result.crawlerTaskId}_${index}`;
+  return '';
+}
+```
+
+**upload() 拆 SKU 拼装到 `_preloadedItems` 路径**：调用方通过 `result._preloadedItems` 传预加载的 items，并依赖 `resolveImageSku` 计算每图独立 SKU。`image_paths` 路径保留原 `result.sku` 共用语义（兼容爬虫）。
+
+```js
+// upload() 内（伪代码）
+const usePreloaded = Array.isArray(result._preloadedItems);
+const uploadItems = usePreloaded
+  ? result._preloadedItems
+  : this._resolveFromPaths(result.image_paths, summary);
+
+const outputs = await this.limitConcurrency(
+  uploadItems,
+  async (item, index) => {
+    const sku = usePreloaded
+      ? resolveImageSku(this, item.buffer, index, item, result)
+      : result.sku;
+    // ...
+  },
+  ...
+);
+```
+
+> **决策说明**：规格最初尝试全局三选一 sku 拼装，但发现 `image_paths` 路径有 18 个原 case 期望 `payload.sku === result.sku`，全局改会全部回归失败。改为"两条路径两条语义"：脚本用 `_preloadedItems` 走三选一；爬虫走 `image_paths` 保持 `result.sku` 共用，零回归。
 
 **契约**：
 - `skuForImage(buffer, index, imageRecord)` → `string`
-- `imageRecord` 形如 `{ fileName, buffer, contentType }`（与 `upload()` 中 `uploadItems` 项一致）
+- `imageRecord` 形如 `{ fileName, buffer, contentType }`（与 `uploadItems` 项一致）
+- 仅在 `result._preloadedItems` 路径生效
 
 **bin/transfer-images.js 注入**：
 ```js
@@ -245,25 +276,14 @@ const uploader = new ImageUploader({
 
 ### 7.3 行为兼容性
 
-| 场景 | 修改前 | 修改后 |
-|---|---|---|
-| 爬虫调用（不传 skuForImage） | payload.sku = `${nodeCode}_${index}` 或 `${taskId}_${index}` | 完全相同 |
-| 爬虫调用（nodeCode 空，taskId 空） | payload.sku = `''` | payload.sku = `'cli_${index}'` |
+| 场景 | 路径 | 修改前 | 修改后 |
+|---|---|---|---|
+| 爬虫调用（不传 skuForImage） | `image_paths` | `payload.sku = result.sku` | 完全相同 |
+| 爬虫调用（不传 skuForImage，走 _preloadedItems） | `_preloadedItems` | 不支持 | `payload.sku = nodeCode_${index}` 或 taskId_${index} 或 `''` |
+| 脚本调用（传 skuForImage，走 _preloadedItems） | `_preloadedItems` | 不支持 | `payload.sku = skuForImage(...)` |
+| 脚本调用（传 skuForImage，走 image_paths） | `image_paths` | 无此路径 | 同爬虫：`result.sku` |
 
-唯一差异在最坏情况（nodeCode 和 taskId 都空）。实际部署中 nodeCode 总是已配置；为彻底兼容，再加一个 fallback：
-
-```js
-const sku = (() => {
-  if (typeof this.skuForImage === 'function') {
-    return this.skuForImage(buffer, index, imageRecord);
-  }
-  if (this.nodeCode) return `${this.nodeCode}_${index}`;
-  if (result && result.crawlerTaskId) return `${result.crawlerTaskId}_${index}`;
-  return '';
-})();
-```
-
-这样保证完全向后兼容。
+两条路径互不影响；原 18 个 case 在 `image_paths` 路径下零回归。
 
 ## 8. 数据流
 
