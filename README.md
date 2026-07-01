@@ -258,22 +258,58 @@ Implementation: `src/page-crawler.js` (`encodeSkuForSearchPath`).
 
 ## 独立图片传输脚本
 
-不启动爬虫，直接把已有图片文件上传到 `/classify/open/image/upload`（支持多张并发、目录批量、日志监控）。
+不启动爬虫，直接把已有图片文件上传到 `/classify/open/image/upload`。支持多张并发、目录批量、日志监控、**断点续传**——25k 张大目录内存峰值 < 1MB，上次跑过的图片自动跳过。
+
+### 三种典型用法
 
 ```bash
-# 默认从 .env 中 CRAWLER_IMAGE_UPLOAD_URL 读取真实接口
+# 1. 单张 / 多张位置参数 + 默认 .env 中的 CRAWLER_IMAGE_UPLOAD_URL
 node bin/transfer-images.js ./output/ABC-001_1.jpg ./output/ABC-001_2.jpg
 
-# 命令行覆盖接口地址 / 并发 / 重试
+# 2. 命令行覆盖接口地址 / 并发 / 重试
 node bin/transfer-images.js \
   --upload-url=http://47.92.233.36:8003/renren-api/classify/open/image/upload \
   --upload-concurrency=4 \
   --upload-retries=5 \
   ./img/*.jpg
 
-# 启用内置 mock 服务（覆盖真实接口，便于 CI / 离线）
+# 3. 内置 mock 服务（覆盖真实接口，便于 CI / 离线调试）
 node bin/transfer-images.js --mock-upload ./img/foo.jpg ./img/bar.jpg
 ```
+
+### CLI 参数一览
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `[<path1> <path2> ...]` | — | 一个或多个本地图片路径（空格分隔，去重保序） |
+| `--dir=<path>` | — | 扫描整个目录；与位置参数混用时合并 |
+| `--recursive` | `false` | 配合 `--dir` 递归子目录 |
+| `--upload-url=<url>` | `CRAWLER_IMAGE_UPLOAD_URL` env | 覆盖上传目标地址 |
+| `--upload-concurrency=<n>` | env 或 `2` | 同时上传的并发数（worker 池大小） |
+| `--upload-retries=<n>` | env 或 `3` | 单图最大重试次数；4xx 立即停止重试，5xx 与业务码非 0 走重试 |
+| `--node-code=<code>` | `CRAWLER_NODE_CODE` env | 透传到 payload.nodeCode |
+| `--node-token=<token>` | `CRAWLER_NODE_TOKEN` env | 透传到 payload.nodeToken |
+| `--mock-upload` | `false` | 启动内置 mock HTTP server，覆盖 `--upload-url` |
+| `--no-progress` | `false` | 关闭 stdout 上的逐张日志（`--log-file` 仍写） |
+| `--log-file=<path>` | — | 同步追加日志到这个文件，可用 `tail -f` 监控 |
+| `--quiet` | `false` | 关闭所有 stdout 日志输出（`--log-file` 仍写） |
+| `--state-file=<path>` | `<cwd>/.transfer-state/<sha1-of-dir>.ndjson` | NDJSON 状态文件位置；不存在则视为空集 |
+| `--force` | `false` | 忽略 state 全部重传（覆盖默认的 resume 行为） |
+
+环境变量优先级：命令行 `--xxx=` > 进程 env > 代码内 fallback。`--mock-upload` 优先级最高（启动后直接覆盖 `--upload-url`）。
+
+### SKU 推断
+
+`fileName` 匹配 `<sku>_<index>.<ext>` 约定，**去掉末尾 `_数字.扩展名` 得到 SKU**：
+
+| 文件名 | SKU |
+|---|---|
+| `100PCSGXBSYT00001V0_1.jpg` | `100PCSGXBSYT00001V0` |
+| `100PCSGXBSYT00001V0_12.jpg` | `100PCSGXBSYT00001V0` |
+| `XYZ-100_3.jpeg` | `XYZ-100` |
+| `foo.png`（无 `_N`） | `foo`（回退：去掉扩展名） |
+
+**支持的文件扩展名**（大小写不敏感）：`.jpg` `.jpeg` `.png` `.webp` `.gif` `.bmp`。
 
 ### 批量上传整个目录 + 日志监控
 
@@ -295,15 +331,8 @@ node bin/transfer-images.js \
 tail -f /tmp/transfer.log
 ```
 
-支持的文件扩展名：`.jpg / .jpeg / .png / .webp / .gif / .bmp`（大小写不敏感）。
+日志格式：
 
-SKU 推断规则：`fileName` 匹配 `<sku>_<index>.<ext>` 约定，去掉末尾 `_数字.扩展名` 得到 SKU（`100PCSGXBSYT00001V0_1.jpg` → `100PCSGXBSYT00001V0`）。
-
-退出码：`0` = 至少一张成功；`1` = 全部失败或启动错误；`2` = 配置错误。
-
-终态输出单块 JSON：`{ total, success, failed, results: [{path, sku, fileName, contentType, fileSize, ok, response|error}] }`，便于管道消费。
-
-日志格式（带 `--log-file` 时同步追加）：
 ```
 [2026-07-01T14:50:01Z] [INFO] Scanned 142 images from /mnt/d/images (recursive)
 [2026-07-01T14:50:01Z] [INFO] Starting transfer: 142 images, uploadUrl=...
@@ -325,9 +354,14 @@ node bin/transfer-images.js --dir=/mnt/d/.../images --log-file=/tmp/xfer.log
 node bin/transfer-images.js --dir=/mnt/d/.../images --log-file=/tmp/xfer.log
 ```
 
-**state 文件位置**：默认 `<cwd>/.transfer-state/<sha1-of-dir>.ndjson`（按 `--dir` 派生）。
-**覆盖**：`--state-file=/path/to/state.ndjson`
-**强制重传**：`--force`（忽略 state，全部重新传）
+**state 文件位置**：
+
+- 默认：`<cwd>/.transfer-state/<sha1-of-resolved-dir>.ndjson`（按 `--dir` 的绝对路径派生 sha1）
+- 覆盖：`--state-file=/path/to/state.ndjson`
+
+例：`/mnt/d/project/hs-sku-crawler/.transfer-state/3a4b5c6d7e8f.ndjson`
+
+**强制重传**：`--force`（忽略 state 全部重新传）
 
 state 文件每行一条 NDJSON：
 
@@ -335,8 +369,104 @@ state 文件每行一条 NDJSON：
 {"basename":"100PCSGXBSYT00001V0_1.jpg","sku":"100PCSGXBSYT00001V0","id":12345,"ts":"2026-07-01T14:50:04Z","uploadUrl":"http://.../upload"}
 ```
 
-**内存**：流式扫描 + worker 内逐张 readFile，25k 张峰值 < 1MB。
-**注意**：不要同时跑两个 `transfer-images` 进程处理同一 `--dir`，会双写 state 文件混乱。
+字段含义：`basename` 主键 · `sku` 推断 SKU · `id` 上游返回 id · `ts` ISO 时间 · `uploadUrl` 上传 endpoint。
+
+**内存特性**：流式扫描 + worker 内逐张 `readFile`，25k 张峰值 < 1MB。
+
+**重要约束**：**不要同时跑两个 `transfer-images` 进程处理同一 `--dir`**，会双写 state 文件混乱。
+
+### 终态输出 (stdout)
+
+单块 JSON：
+
+```json
+{
+  "total": 3,
+  "success": 2,
+  "failed": 1,
+  "results": [
+    {
+      "path": "/mnt/d/.../100PCSGXBSYT00001V0_1.jpg",
+      "sku": "100PCSGXBSYT00001V0",
+      "fileName": "100PCSGXBSYT00001V0_1.jpg",
+      "contentType": "image/jpeg",
+      "fileSize": 26789,
+      "ok": true,
+      "response": { "id": 12345, "sku": "100PCSGXBSYT00001V0", ... }
+    },
+    {
+      "path": "/mnt/d/.../100PCSGXBSYT00001V0_2.jpg",
+      "sku": "100PCSGXBSYT00001V0",
+      "fileName": "100PCSGXBSYT00001V0_2.jpg",
+      "contentType": "image/jpeg",
+      "fileSize": 28103,
+      "ok": false,
+      "error": "Upload business failure: 七牛图片上传失败"
+    },
+    {
+      "path": "100PCSGXBSYT00001V0_3.jpg",
+      "sku": "100PCSGXBSYT00001V0",
+      "fileName": "100PCSGXBSYT00001V0_3.jpg",
+      "contentType": null,
+      "fileSize": 0,
+      "ok": true,
+      "skipped": true
+    }
+  ]
+}
+```
+
+`results` 中三种状态共享同一 schema（path / sku / fileName / contentType / fileSize / ok），外加状态特定字段：
+- **uploaded** → `ok: true, response: {...}` 透传上游 `data` 字段
+- **failed** → `ok: false, error: "..."` 错误描述
+- **skipped**（state 命中）→ `ok: true, skipped: true` 跳过
+
+可用 jq 过滤：`jq '.results[] | select(.ok)'` 列出所有成功的；`jq '.results[] | select(.skipped)'` 列出被 resume 跳过的。
+
+### 退出码
+
+| 码 | 含义 |
+|---|---|
+| `0` | 至少一张上传成功（即便其它失败） |
+| `1` | 全部失败 / 启动错误（路径不存在 / 全部 magic bytes 无法识别） |
+| `2` | 配置错误（`ConfigError`：上传 URL 未配置且非 mock） |
+
+### Mock 模式
+
+`--mock-upload` 启动内置 HTTP mock server（端口随机），不依赖真实接口；适合：
+- CI 集成测试
+- 离线调试 payload 拼装
+- 学习脚本行为（mock 会把请求的 imageBase64、sku、contentType 等回显到 response）
+
+```bash
+node bin/transfer-images.js --mock-upload --dir=./test-imgs
+# mock 模式不需要 --upload-url，也不需要 .env
+```
+
+### 环境变量（.env）
+
+脚本启动时调 `loadEnvFile()` 读 `process.cwd()/.env`，读取以下变量：
+
+| 变量 | 用途 |
+|---|---|
+| `CRAWLER_IMAGE_UPLOAD_URL` | 默认上传 endpoint（`--upload-url=` 覆盖） |
+| `CRAWLER_IMAGE_UPLOAD_CONCURRENCY` | 默认并发数（`--upload-concurrency=` 覆盖） |
+| `CRAWLER_IMAGE_UPLOAD_RETRIES` | 默认重试次数（`--upload-retries=` 覆盖） |
+| `CRAWLER_NODE_CODE` | 默认 nodeCode（`--node-code=` 覆盖） |
+| `CRAWLER_NODE_TOKEN` | 默认 nodeToken（`--node-token=` 覆盖） |
+
+### 故障排查
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| `[transfer-images] upload url required` 退出码 2 | `.env` 没设 `CRAWLER_IMAGE_UPLOAD_URL` 且命令行未给 `--upload-url=`；用 `--mock-upload` 或补 env |
+| 全部失败 `Upload business failure: 七牛图片上传失败` | 上游业务码 500；先 `--mock-upload` 验证本地逻辑，再查上游 |
+| 全部失败 `400` / `401` / `403` | payload 缺字段或 token 无效；检查 `nodeCode` / `nodeToken` / `sku` |
+| 进程卡住不动 | 检查 `--upload-concurrency` 是否过大被上游限流；降到 2 试 |
+| state 文件没生成 | `--dir` 没传 → 没有默认 state path；显式 `--state-file=` 才会写 |
+| 同一文件重复上传 | `--force` 或 `--state-file` 指向了另一个文件；检查 `ls .transfer-state/` |
+| OOM / 进程被 kill | 25k+ 大目录 + 上游慢；升级后内存峰值 < 1MB 应消失。若仍 OOM 检查是否启用了 `node --max-old-space-size=` |
+| 第二次跑没跳过 | state 文件路径变了；用 `--state-file=` 显式指定相同路径 |
 
 详见规格 `docs/superpowers/specs/2026-07-01-transfer-images-streaming-resume-design.md`。
 
