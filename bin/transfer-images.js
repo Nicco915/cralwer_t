@@ -251,18 +251,6 @@ async function transferImages({ paths, options, deps = {} }) {
 
     logger.info(`Starting transfer: ${toUpload.length} images, uploadUrl=${opts.uploadUrl}`);
 
-    // ★ Async iterator: yields { path, fileName, ext, sku, size, contentType } — NO buffer
-    //    Worker reads buffer inside limitConcurrency (single readFileSync < 200KB)
-    async function* iter() {
-      for (const p of toUpload) {
-        const stats = fs.statSync(p);
-        const ext = path.extname(p);
-        const fileName = path.basename(p);
-        const sku = fileName.replace(/_\d+\.[^.]+$/, '');
-        yield { path: p, fileName, ext, sku, size: stats.size };
-      }
-    }
-
     const fetchImpl = opts.fetchImpl;
     const concurrency = Number.isFinite(opts.uploadConcurrency)
       ? opts.uploadConcurrency
@@ -289,24 +277,41 @@ async function transferImages({ paths, options, deps = {} }) {
     const workerOutputs = []; // preserve order: { status, data|error, item }
 
     if (toUpload.length > 0) {
-      // ★ Materialize iter into array for limitConcurrency's index access
-      //    Materialize phase only stats (no readFile)
+      // ★ Pre-stat all paths upfront; worker reads buffer inside limitConcurrency.
+      //    Only metadata (size, ext, sku) is computed here — buffers stay in workers.
+      //    statSync is wrapped in try/catch so a single bad path becomes a failed
+      //    record instead of aborting the whole batch.
       const arr = [];
-      let idx = 0;
-      for await (const item of iter()) {
-        arr.push({ item, index: idx++ });
+      for (let i = 0; i < toUpload.length; i++) {
+        const p = toUpload[i];
+        const fileName = path.basename(p);
+        const ext = path.extname(p);
+        const sku = fileName.replace(/_\d+\.[^.]+$/, '');
+        let size;
+        try {
+          size = fs.statSync(p).size;
+        } catch (e) {
+          arr.push({ item: { path: p, fileName, ext, sku, size: 0, statError: e.message }, index: i });
+          continue;
+        }
+        arr.push({ item: { path: p, fileName, ext, sku, size }, index: i });
       }
 
       const outputs = await uploader.limitConcurrency(
         arr,
         async ({ item, index }) => {
+          // Pre-stat failure short-circuit
+          if (item.statError) {
+            logger.uploadFail(index + 1, toUpload.length, item.fileName, `stat failed: ${item.statError}`);
+            return { status: 'failed', fileName: item.fileName, error: `stat failed: ${item.statError}`, contentType: null, item };
+          }
           // ★ 流式核心：在 worker 内同步 readFile
           let buffer;
           try {
             buffer = readFile(item.path);
           } catch (e) {
             logger.uploadFail(index + 1, toUpload.length, item.fileName, `read failed: ${e.message}`);
-            return { status: 'failed', fileName: item.fileName, error: `read failed: ${e.message}`, item };
+            return { status: 'failed', fileName: item.fileName, error: `read failed: ${e.message}`, contentType: null, item };
           }
           const contentType = ImageUploader.prototype.detectContentType(buffer, item.ext);
           if (!contentType) {
@@ -318,8 +323,7 @@ async function transferImages({ paths, options, deps = {} }) {
             return { status: 'failed', fileName: item.fileName, error: 'empty file', contentType, item };
           }
 
-          const sku = item.sku;
-          const payload = uploader.buildPayload(sku, item.fileName, buffer, contentType);
+          const payload = uploader.buildPayload(item.sku, item.fileName, buffer, contentType);
           const sizeKB = Math.ceil(item.size / 1024);
           logger.uploadStart(index + 1, toUpload.length, item.fileName, sizeKB);
           try {
@@ -330,7 +334,7 @@ async function transferImages({ paths, options, deps = {} }) {
             if (stateFile) {
               appendStateDep(stateFile, {
                 basename: item.fileName,
-                sku,
+                sku: item.sku,
                 id: data.id,
                 ts: new Date().toISOString(),
                 uploadUrl: opts.uploadUrl,
