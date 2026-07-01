@@ -613,6 +613,58 @@ describe('appendState', () => {
   });
 });
 
+describe('transferImages resume', () => {
+  const os = require('os');
+
+  it('skips basenames already in state file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-'));
+    const stateFile = path.join(dir, 'state.ndjson');
+    // Pre-populate state with one basename
+    fs.writeFileSync(stateFile, JSON.stringify({
+      basename: 'a_1.jpg', sku: 'a', id: 100, ts: 't', uploadUrl: 'http://test/up',
+    }) + '\n');
+
+    const files = [];
+    for (const name of ['a_1.jpg', 'b_1.jpg']) {
+      const p = path.join(dir, name);
+      fs.writeFileSync(p, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+      files.push(p);
+    }
+
+    let fetchCalls = 0;
+    const fakeFetch = async () => {
+      fetchCalls++;
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: fetchCalls } }) };
+    };
+
+    try {
+      const report = await transferImages({
+        paths: files,
+        options: { uploadUrl: 'http://test/up', stateFile, fetchImpl: fakeFetch },
+        deps: {
+          loadEnvFile: () => {},
+          pathExists: () => true,
+          readFile: (p) => fs.readFileSync(p),
+          startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+          loadState: require('../bin/transfer-images').loadState,
+          appendState: () => {},
+          defaultStatePath: () => '/tmp/should-not-be-used',
+        },
+      });
+      // 2 files, 1 already in state → only 1 fetch
+      assert.equal(fetchCalls, 1);
+      assert.equal(report.total, 2);
+      assert.equal(report.success, 2);     // 1 uploaded + 1 skipped
+      const skipped = report.results.find((r) => r.skipped);
+      assert.ok(skipped);
+      assert.equal(skipped.basename || skipped.fileName, 'a_1.jpg');
+      assert.equal(skipped.ok, true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('defaultStatePath', () => {
   it('returns same hash for same dir + same cwd', () => {
     const dir = '/tmp/test-dir-A';
