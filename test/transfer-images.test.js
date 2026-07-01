@@ -846,6 +846,67 @@ describe('transferImages no state write on failure', () => {
   });
 });
 
+describe('transferImages cross-run resume', () => {
+  const os = require('os');
+
+  it('second run with same stateFile skips already-uploaded', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cross-run-'));
+    const stateFile = path.join(dir, 'state.ndjson');
+
+    const files = [];
+    for (let i = 0; i < 4; i++) {
+      const p = path.join(dir, `img${i}_1.jpg`);
+      fs.writeFileSync(p, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+      files.push(p);
+    }
+
+    const makeFetch = () => {
+      let calls = 0;
+      const fetchImpl = async () => {
+        calls++;
+        return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: calls } }) };
+      };
+      return { fetchImpl, getCalls: () => calls };
+    };
+
+    const deps = {
+      loadEnvFile: () => {},
+      pathExists: () => true,
+      readFile: (p) => fs.readFileSync(p),
+      startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+      loadState: require('../bin/transfer-images').loadState,
+      appendState: require('../bin/transfer-images').appendState,
+      defaultStatePath: () => '/tmp/should-not-be-used',
+    };
+
+    try {
+      // First run: 4 fetches
+      const f1 = makeFetch();
+      const r1 = await transferImages({
+        paths: files,
+        options: { uploadUrl: 'http://test/up', stateFile, fetchImpl: f1.fetchImpl },
+        deps,
+      });
+      assert.equal(f1.getCalls(), 4);
+      assert.equal(r1.success, 4);
+
+      // Second run: same stateFile → 0 fetches (all skipped via state)
+      const f2 = makeFetch();
+      const r2 = await transferImages({
+        paths: files,
+        options: { uploadUrl: 'http://test/up', stateFile, fetchImpl: f2.fetchImpl },
+        deps,
+      });
+      assert.equal(f2.getCalls(), 0, 'second run should skip all already-uploaded basenames');
+      assert.equal(r2.total, 4);
+      assert.equal(r2.success, 4);
+      assert.ok(r2.results.every((r) => r.skipped === true));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('defaultStatePath', () => {
   it('returns same hash for same dir + same cwd', () => {
     const dir = '/tmp/test-dir-A';
