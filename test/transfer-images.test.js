@@ -713,6 +713,46 @@ describe('transferImages --force', () => {
   });
 });
 
+describe('transferImages --state-file override', () => {
+  const os = require('os');
+
+  it('uses --state-file instead of defaultStatePath', async () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'override-'));
+    const customState = path.join(workDir, 'custom.ndjson');
+
+    const imgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'override-imgs-'));
+    const p = path.join(imgDir, 'x_1.jpg');
+    fs.writeFileSync(p, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+
+    const fakeFetch = async () => ({
+      ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }),
+    });
+
+    try {
+      const report = await transferImages({
+        paths: [p],
+        options: { uploadUrl: 'http://test/up', stateFile: customState, fetchImpl: fakeFetch },
+        deps: {
+          loadEnvFile: () => {},
+          pathExists: () => true,
+          readFile: (p) => fs.readFileSync(p),
+          startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+          loadState: require('../bin/transfer-images').loadState,
+          appendState: require('../bin/transfer-images').appendState,
+          defaultStatePath: () => { throw new Error('defaultStatePath should NOT be called when --state-file set'); },
+        },
+      });
+      assert.equal(report.success, 1);
+      assert.ok(fs.existsSync(customState), 'state file should be created at --state-file path');
+      const content = fs.readFileSync(customState, 'utf-8');
+      assert.match(content, /"basename":"x_1.jpg"/);
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
+      fs.rmSync(imgDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('defaultStatePath', () => {
   it('returns same hash for same dir + same cwd', () => {
     const dir = '/tmp/test-dir-A';
