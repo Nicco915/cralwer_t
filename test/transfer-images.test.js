@@ -800,6 +800,52 @@ describe('transferImages appendState on success', () => {
   });
 });
 
+describe('transferImages no state write on failure', () => {
+  const os = require('os');
+
+  it('does not append state when upload fails', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fail-no-state-'));
+    const stateFile = path.join(dir, 'state.ndjson');
+
+    const okPath = path.join(dir, 'ok_1.jpg');
+    const failPath = path.join(dir, 'fail_1.jpg');
+    fs.writeFileSync(okPath, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(failPath, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+
+    let n = 0;
+    const fakeFetch = async () => {
+      n++;
+      if (n === 1) return { ok: false, status: 500, text: async () => 'server error' };
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) };
+    };
+
+    try {
+      const report = await transferImages({
+        paths: [failPath, okPath],
+        options: { uploadUrl: 'http://test/up', stateFile, uploadRetries: 0, fetchImpl: fakeFetch },
+        deps: {
+          loadEnvFile: () => {},
+          pathExists: () => true,
+          readFile: (p) => fs.readFileSync(p),
+          startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+          loadState: () => new Map(),
+          appendState: require('../bin/transfer-images').appendState,
+          defaultStatePath: () => '/tmp/should-not-be-used',
+        },
+      });
+      assert.equal(report.success, 1);
+      assert.equal(report.failed, 1);
+
+      const lines = fs.readFileSync(stateFile, 'utf-8').split('\n').filter(Boolean);
+      assert.equal(lines.length, 1, 'only the successful upload should write state');
+      const entry = JSON.parse(lines[0]);
+      assert.equal(entry.basename, 'ok_1.jpg');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('defaultStatePath', () => {
   it('returns same hash for same dir + same cwd', () => {
     const dir = '/tmp/test-dir-A';
