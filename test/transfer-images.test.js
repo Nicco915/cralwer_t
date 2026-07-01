@@ -285,6 +285,59 @@ describe('transferImages', () => {
   });
 });
 
+describe('transferImages streaming', () => {
+  it('does not preload all buffers before first fetch', async () => {
+    // 5 items, mock fetch delayed 50ms, concurrency=2
+    // streaming → readFile calls interleave with fetchStart (≤ 2-3 reads before first fetchStart)
+    // eager → all 5 readFile calls happen before first fetchStart
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stream-'));
+    const files = [];
+    for (let i = 0; i < 5; i++) {
+      const p = path.join(dir, `img${i}_1.jpg`);
+      fs.writeFileSync(p, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+      files.push(p);
+    }
+
+    const log = [];
+    const trackingReadFile = (p) => {
+      log.push({ event: 'readFile', file: path.basename(p) });
+      return fs.readFileSync(p);
+    };
+    const trackingFetch = async (url, init) => {
+      log.push({ event: 'fetchStart', file: JSON.parse(init.body).fileName });
+      await new Promise((r) => setTimeout(r, 50));
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: 1 } }) };
+    };
+
+    try {
+      const report = await transferImages({
+        paths: files,
+        options: { uploadUrl: 'http://test/up', uploadConcurrency: 2, fetchImpl: trackingFetch },
+        deps: {
+          loadEnvFile: () => {},
+          pathExists: () => true,
+          readFile: trackingReadFile,
+          startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+          loadState: () => new Map(),       // isolate from state in this test
+          appendState: () => {},
+          defaultStatePath: () => '/tmp/should-not-be-used',
+        },
+      });
+      assert.equal(report.success, 5);
+
+      const firstFetchIdx = log.findIndex((e) => e.event === 'fetchStart');
+      const readsBeforeFirstFetch = log.slice(0, firstFetchIdx).filter((e) => e.event === 'readFile').length;
+      // concurrency=2, allow +1 tolerance for microtask ordering
+      assert.ok(
+        readsBeforeFirstFetch <= 3,
+        `expected streaming (≤3 reads before first fetch), got ${readsBeforeFirstFetch}`
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('transferImages with mockUpload', () => {
   it('uses mock upload server when --mock-upload', async () => {
     const buf = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);

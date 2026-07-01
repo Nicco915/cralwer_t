@@ -171,6 +171,9 @@ async function transferImages({ paths, options, deps = {} }) {
     readFile = (p) => fs.readFileSync(p),
     startMockUploadServer: startMock = startMockUploadServer,
     scanImages: scanDep = scanImages,
+    loadState: loadStateDep = loadState,
+    appendState: appendStateDep = appendState,
+    defaultStatePath: defaultStatePathDep = defaultStatePath,
   } = deps;
 
   loadEnv(process.cwd());
@@ -192,7 +195,7 @@ async function transferImages({ paths, options, deps = {} }) {
       throw new ConfigError('upload url required: pass --upload-url=, set CRAWLER_IMAGE_UPLOAD_URL, or use --mock-upload');
     }
 
-    // Expand --dir into individual image paths (after merging with positional paths).
+    // Expand --dir into individual image paths
     let allPaths = [...paths];
     if (opts.dir) {
       if (!pathExists(opts.dir)) {
@@ -202,7 +205,7 @@ async function transferImages({ paths, options, deps = {} }) {
       logger.info(`Scanned ${scanned.length} images from ${opts.dir}${opts.recursive ? ' (recursive)' : ''}`);
       allPaths = allPaths.concat(scanned);
     }
-    // Dedup, preserve order.
+    // Dedup, preserve order
     const seenSet = new Set();
     allPaths = allPaths.filter((p) => (seenSet.has(p) ? false : (seenSet.add(p), true)));
 
@@ -216,36 +219,48 @@ async function transferImages({ paths, options, deps = {} }) {
       }
     }
 
-    logger.info(`Starting transfer: ${allPaths.length} images, uploadUrl=${opts.uploadUrl}`);
+    // ★ Resolve state file path
+    const stateFile = opts.stateFile
+      || (opts.dir ? defaultStatePathDep(opts.dir) : null);
 
-    const records = allPaths.map((p) => {
-      const stats = fs.statSync(p);
-      const buffer = readFile(p);
-      const ext = path.extname(p);
-      const fileName = path.basename(p);
-      // SKU inference: fileName matches `<sku>_<index>.<ext>` convention; strip
-      // both the trailing _N index and the extension. Same regex as skuForImage below.
-      const sku = fileName.replace(/_\d+\.[^.]+$/, '');
-      // `detectContentType` is a pure buffer/extension inspection — no this-state dependency,
-      // so calling on the prototype (without `this`) is sufficient.
-      const contentType = ImageUploader.prototype.detectContentType(buffer, ext);
-      return { path: p, buffer, fileName, sku, contentType, fileSize: stats.size, isEmpty: stats.size === 0 };
-    });
+    // ★ Load existing state (basename → entry)
+    const doneMap = stateFile ? loadStateDep(stateFile, { logger }) : new Map();
+    if (stateFile && doneMap.size > 0) {
+      logger.info(`State: ${doneMap.size} basenames already uploaded at ${stateFile}`);
+    }
 
-    const uploadItems = [];
-    const results = [];
-    const fileSizeByName = new Map();
-    for (const r of records) {
-      fileSizeByName.set(r.fileName, r.fileSize);
-      if (r.isEmpty) {
-        results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: 0, ok: false, error: 'empty file' });
-        continue;
+    // ★ Filter skipped (basename in doneMap) unless --force
+    const skipped = [];
+    let toUpload = allPaths;
+    if (!opts.force && doneMap.size > 0) {
+      const before = allPaths.length;
+      toUpload = allPaths.filter((p) => {
+        const basename = path.basename(p);
+        if (doneMap.has(basename)) {
+          skipped.push({ basename, sku: doneMap.get(basename).sku });
+          return false;
+        }
+        return true;
+      });
+      if (before !== toUpload.length) {
+        logger.info(`Resume: skipping ${before - toUpload.length} already-uploaded, ${toUpload.length} to upload`);
       }
-      if (!r.contentType) {
-        results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: null, fileSize: r.fileSize, ok: false, error: 'unknown content type' });
-        continue;
+    } else if (opts.force && doneMap.size > 0) {
+      logger.info(`--force set: ignoring state, will upload all ${toUpload.length}`);
+    }
+
+    logger.info(`Starting transfer: ${toUpload.length} images, uploadUrl=${opts.uploadUrl}`);
+
+    // ★ Async iterator: yields { path, fileName, ext, sku, size, contentType } — NO buffer
+    //    Worker reads buffer inside limitConcurrency (single readFileSync < 200KB)
+    async function* iter() {
+      for (const p of toUpload) {
+        const stats = fs.statSync(p);
+        const ext = path.extname(p);
+        const fileName = path.basename(p);
+        const sku = fileName.replace(/_\d+\.[^.]+$/, '');
+        yield { path: p, fileName, ext, sku, size: stats.size };
       }
-      uploadItems.push({ fileName: r.fileName, buffer: r.buffer, contentType: r.contentType });
     }
 
     const fetchImpl = opts.fetchImpl;
@@ -267,45 +282,110 @@ async function transferImages({ paths, options, deps = {} }) {
       concurrency,
       maxRetries,
       fetch: fetchImpl,
-      skuForImage: (_buf, _index, image) => image.fileName.replace(/_\d+\.[^.]+$/, ''),
     });
 
-    if (uploadItems.length > 0) {
-      const fakeResult = {
-        crawlerTaskId: `cli-transfer-${Date.now()}`,
-        status: 'success',
-        sku: '',
-        image_paths: '',
-        _preloadedItems: uploadItems,
-      };
-      const startTime = Date.now();
-      const summary = await uploader.upload(fakeResult, {
-        onProgress: ({ phase, index, total, fileName, id, error }) => {
-          const sizeKB = Math.ceil((fileSizeByName.get(fileName) || 0) / 1024);
-          if (phase === 'start') logger.uploadStart(index + 1, total, fileName, sizeKB);
-          else if (phase === 'success') logger.uploadOk(index + 1, total, fileName, id);
-          else if (phase === 'failure') logger.uploadFail(index + 1, total, fileName, error);
-        },
-      });
-      const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
-      const total = summary.uploaded.length + summary.failed.length;
-      const rate = elapsedSec > 0 ? (total / Number(elapsedSec)).toFixed(2) : '0.00';
-      logger.info(`Done: ${total} attempted, ${summary.uploaded.length} success, ${summary.failed.length} failed, ${elapsedSec}s elapsed, ${rate} img/s`);
+    const startTime = Date.now();
+    const summary = { uploaded: [], failed: [], skipped: [] };
+    const workerOutputs = []; // preserve order: { status, data|error, item }
 
-      const uploadedByFile = new Map(summary.uploaded.map((u) => [u.fileName, u]));
-      const failedByFile = new Map(summary.failed.map((f) => [f.fileName, f]));
-      for (const r of records) {
-        if (r.isEmpty || !r.contentType) continue;
-        const u = uploadedByFile.get(r.fileName);
-        const f = failedByFile.get(r.fileName);
-        if (u) {
-          results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: true, response: u.response || { id: u.id } });
-        } else if (f) {
-          results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: false, error: f.error });
+    if (toUpload.length > 0) {
+      // ★ Materialize iter into array for limitConcurrency's index access
+      //    Materialize phase only stats (no readFile)
+      const arr = [];
+      let idx = 0;
+      for await (const item of iter()) {
+        arr.push({ item, index: idx++ });
+      }
+
+      const outputs = await uploader.limitConcurrency(
+        arr,
+        async ({ item, index }) => {
+          // ★ 流式核心：在 worker 内同步 readFile
+          let buffer;
+          try {
+            buffer = readFile(item.path);
+          } catch (e) {
+            logger.uploadFail(index + 1, toUpload.length, item.fileName, `read failed: ${e.message}`);
+            return { status: 'failed', fileName: item.fileName, error: `read failed: ${e.message}`, item };
+          }
+          const contentType = ImageUploader.prototype.detectContentType(buffer, item.ext);
+          if (!contentType) {
+            logger.uploadFail(index + 1, toUpload.length, item.fileName, 'unknown content type');
+            return { status: 'failed', fileName: item.fileName, error: 'unknown content type', contentType: null, item };
+          }
+          if (buffer.length === 0) {
+            logger.uploadFail(index + 1, toUpload.length, item.fileName, 'empty file');
+            return { status: 'failed', fileName: item.fileName, error: 'empty file', contentType, item };
+          }
+
+          const sku = item.sku;
+          const payload = uploader.buildPayload(sku, item.fileName, buffer, contentType);
+          const sizeKB = Math.ceil(item.size / 1024);
+          logger.uploadStart(index + 1, toUpload.length, item.fileName, sizeKB);
+          try {
+            const data = await uploader.uploadSingle(payload);
+            logger.uploadOk(index + 1, toUpload.length, item.fileName, data.id);
+
+            // ★ 成功后写 state
+            if (stateFile) {
+              appendStateDep(stateFile, {
+                basename: item.fileName,
+                sku,
+                id: data.id,
+                ts: new Date().toISOString(),
+                uploadUrl: opts.uploadUrl,
+              }, { logger });
+            }
+
+            return { status: 'uploaded', data, contentType, item };
+          } catch (error) {
+            logger.uploadFail(index + 1, toUpload.length, item.fileName, error.message);
+            return { status: 'failed', fileName: item.fileName, error: error.message, contentType, item };
+          }
+        },
+        Math.max(1, concurrency)
+      );
+
+      for (const o of outputs) {
+        workerOutputs.push(o);
+        if (o.status === 'uploaded') {
+          summary.uploaded.push(o.data);
         } else {
-          results.push({ path: r.path, sku: r.sku, fileName: r.fileName, contentType: r.contentType, fileSize: r.fileSize, ok: false, error: 'unknown state' });
+          summary.failed.push({ fileName: o.fileName, error: o.error });
         }
       }
+    }
+
+    const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    const attempted = summary.uploaded.length + summary.failed.length;
+    const rate = elapsedSec > 0 ? (attempted / Number(elapsedSec)).toFixed(2) : '0.00';
+    logger.info(`Done: ${attempted} attempted, ${summary.uploaded.length} success, ${summary.failed.length} failed, ${elapsedSec}s elapsed, ${rate} img/s`);
+
+    // ★ Build final results with consistent shape (uploaded/failed/skipped all share fields)
+    const results = [];
+    for (const o of workerOutputs) {
+      const item = o.item;
+      if (o.status === 'uploaded') {
+        results.push({
+          path: item.path, sku: item.sku, fileName: item.fileName,
+          contentType: o.contentType, fileSize: item.size,
+          ok: true, response: o.data.response || { id: o.data.id },
+        });
+      } else {
+        results.push({
+          path: item.path, sku: item.sku, fileName: item.fileName,
+          contentType: o.contentType !== undefined ? o.contentType : null, fileSize: item.size,
+          ok: false, error: o.error,
+        });
+      }
+    }
+    // 2. skipped items (from state recovery)
+    for (const s of skipped) {
+      results.push({
+        path: s.basename, sku: s.sku, fileName: s.basename,
+        contentType: null, fileSize: 0,
+        ok: true, skipped: true,
+      });
     }
 
     const success = results.filter((r) => r.ok).length;
