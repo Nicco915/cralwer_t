@@ -769,8 +769,9 @@ describe('transferImages appendState on success', () => {
 
     let idCounter = 0;
     const fakeFetch = async () => {
-      idCounter++;
-      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: idCounter * 100 } }) };
+      // Capture id per-call so concurrent fetches don't race on shared counter
+      const id = ++idCounter * 100;
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id } }) };
     };
 
     try {
