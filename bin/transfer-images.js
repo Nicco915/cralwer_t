@@ -92,6 +92,26 @@ async function scanImages(dir, recursive = false) {
   return out.sort();
 }
 
+function loadState(stateFile, deps = {}) {
+  const logger = deps.logger || null;
+  if (!fs.existsSync(stateFile)) return new Map();
+  const content = fs.readFileSync(stateFile, 'utf-8');
+  const map = new Map();
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry && typeof entry.basename === 'string' && !map.has(entry.basename)) {
+        map.set(entry.basename, entry);
+      }
+    } catch (_e) {
+      if (logger) logger.warn(`skipping malformed state line: ${line.slice(0, 80)}`);
+    }
+  }
+  return map;
+}
+
 // Build a logger that can write to stdout, append to a file, or both,
 // suitable for `tail -f` monitoring of long batch uploads.
 function makeLogger({ quiet = false, logFile = null } = {}) {
@@ -298,6 +318,7 @@ module.exports = {
   transferImages,
   scanImages,
   makeLogger,
+  loadState,
   IMAGE_EXTS,
   ConfigError,
   main,

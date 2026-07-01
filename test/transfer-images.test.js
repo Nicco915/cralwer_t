@@ -2,9 +2,11 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const {
   parseTransferArgs,
   transferImages,
+  loadState,
 } = require('../bin/transfer-images');
 
 describe('parseTransferArgs', () => {
@@ -442,5 +444,56 @@ describe('makeLogger', () => {
     assert.equal(r.options.recursive, true);
     assert.equal(r.options.logFile, '/tmp/x.log');
     assert.equal(r.options.quiet, true);
+  });
+});
+
+describe('loadState', () => {
+  it('returns empty Map when state file does not exist', () => {
+    const missing = path.join(os.tmpdir(), `state-missing-${Date.now()}-${Math.random()}.ndjson`);
+    const map = loadState(missing);
+    assert.equal(map.size, 0);
+  });
+
+  it('returns empty Map for empty file', () => {
+    const f = path.join(os.tmpdir(), `state-empty-${Date.now()}.ndjson`);
+    fs.writeFileSync(f, '');
+    try {
+      assert.equal(loadState(f).size, 0);
+    } finally {
+      fs.rmSync(f, { force: true });
+    }
+  });
+
+  it('skips malformed lines with a warning', () => {
+    const f = path.join(os.tmpdir(), `state-bad-${Date.now()}.ndjson`);
+    fs.writeFileSync(f, [
+      JSON.stringify({ basename: 'a_1.jpg', sku: 'a', id: 1, ts: 't', uploadUrl: 'u' }),
+      'not-json-line',
+      JSON.stringify({ basename: 'b_1.jpg', sku: 'b', id: 2, ts: 't', uploadUrl: 'u' }),
+      '',
+    ].join('\n'));
+    try {
+      const map = loadState(f);
+      assert.equal(map.size, 2);
+      assert.ok(map.has('a_1.jpg'));
+      assert.ok(map.has('b_1.jpg'));
+    } finally {
+      fs.rmSync(f, { force: true });
+    }
+  });
+
+  it('keeps first entry on duplicate basename', () => {
+    const f = path.join(os.tmpdir(), `state-dup-${Date.now()}.ndjson`);
+    fs.writeFileSync(f, [
+      JSON.stringify({ basename: 'a_1.jpg', sku: 'a', id: 1, ts: 't', uploadUrl: 'u' }),
+      JSON.stringify({ basename: 'a_1.jpg', sku: 'a', id: 999, ts: 't2', uploadUrl: 'u' }),
+    ].join('\n'));
+    try {
+      const map = loadState(f);
+      assert.equal(map.size, 1);
+      assert.equal(map.get('a_1.jpg').id, 1);  // first write wins
+    } finally {
+      fs.rmSync(f, { force: true });
+    }
   });
 });
