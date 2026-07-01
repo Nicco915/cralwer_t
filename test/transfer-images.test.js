@@ -335,3 +335,112 @@ describe('transferImages default deps', () => {
     }
   });
 });
+
+describe('scanImages', () => {
+  const os = require('os');
+
+  function makeTree() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-'));
+    // Top-level images
+    fs.writeFileSync(path.join(root, 'a.jpg'), Buffer.from([0xFF, 0xD8, 0xFF]));
+    fs.writeFileSync(path.join(root, 'b.PNG'), Buffer.from([0x89, 0x50, 0x4E, 0x47]));
+    fs.writeFileSync(path.join(root, 'ignore.txt'), 'not an image');
+    // Nested
+    const sub = path.join(root, 'sub');
+    fs.mkdirSync(sub);
+    fs.writeFileSync(path.join(sub, 'c.webp'), Buffer.alloc(12));
+    const deeper = path.join(sub, 'deeper');
+    fs.mkdirSync(deeper);
+    fs.writeFileSync(path.join(deeper, 'd.jpeg'), Buffer.from([0xFF, 0xD8, 0xFF]));
+    return root;
+  }
+
+  it('returns only top-level image files when recursive=false', async () => {
+    const { scanImages } = require('../bin/transfer-images');
+    const root = makeTree();
+    try {
+      const result = await scanImages(root, false);
+      assert.equal(result.length, 2);
+      assert.ok(result.every((p) => path.dirname(p) === root));
+      // Sorted
+      assert.ok(result[0] < result[1]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('walks subdirectories when recursive=true', async () => {
+    const { scanImages } = require('../bin/transfer-images');
+    const root = makeTree();
+    try {
+      const result = await scanImages(root, true);
+      assert.equal(result.length, 4);
+      const fileNames = result.map((p) => path.basename(p)).sort();
+      assert.deepEqual(fileNames, ['a.jpg', 'b.PNG', 'c.webp', 'd.jpeg']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('makeLogger', () => {
+  const os = require('os');
+
+  it('writes to stdout when not quiet', () => {
+    const { makeLogger } = require('../bin/transfer-images');
+    const logs = [];
+    const orig = process.stdout.write;
+    process.stdout.write = (chunk) => { logs.push(String(chunk)); return true; };
+    try {
+      const logger = makeLogger({ quiet: false });
+      logger.info('hello');
+      assert.ok(logs.some((l) => l.includes('[INFO] hello')));
+    } finally {
+      process.stdout.write = orig;
+    }
+  });
+
+  it('does not write to stdout when quiet', () => {
+    const { makeLogger } = require('../bin/transfer-images');
+    const logs = [];
+    const orig = process.stdout.write;
+    process.stdout.write = (chunk) => { logs.push(String(chunk)); return true; };
+    try {
+      const logger = makeLogger({ quiet: true });
+      logger.info('silent');
+      assert.equal(logs.length, 0);
+    } finally {
+      process.stdout.write = orig;
+    }
+  });
+
+  it('appends to log file when logFile provided', () => {
+    const { makeLogger } = require('../bin/transfer-images');
+    const logFile = path.join(os.tmpdir(), `logger-${Date.now()}.log`);
+    try {
+      const logger = makeLogger({ quiet: true, logFile });
+      logger.info('first');
+      logger.uploadStart(1, 3, 'a.jpg', 12);
+      logger.uploadOk(1, 3, 'a.jpg', 'id-1');
+      const content = fs.readFileSync(logFile, 'utf-8');
+      assert.match(content, /\[INFO\] first/);
+      assert.match(content, /\[UPLOAD\] \[1\/3\] a\.jpg \(12 KB\) \.\.\./);
+      assert.match(content, /\[UPLOAD\] \[1\/3\] a\.jpg \.\.\. ok \(id=id-1\)/);
+    } finally {
+      fs.rmSync(logFile, { force: true });
+    }
+  });
+
+  it('parseTransferArgs accepts --dir, --recursive, --log-file, --quiet', () => {
+    const r = parseTransferArgs([
+      '--dir=/tmp/imgs',
+      '--recursive',
+      '--log-file=/tmp/x.log',
+      '--quiet',
+    ]);
+    assert.equal(r.options.dir, '/tmp/imgs');
+    assert.equal(r.options.recursive, true);
+    assert.equal(r.options.logFile, '/tmp/x.log');
+    assert.equal(r.options.quiet, true);
+  });
+});

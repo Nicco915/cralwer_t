@@ -378,3 +378,97 @@ describe('ImageUploader skuForImage hook', () => {
     assert.deepEqual(seen, ['NODE42_0']);
   });
 });
+
+describe('ImageUploader onProgress callback', () => {
+  const jpegBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]);
+
+  it('invokes onProgress for start/success on each item', async () => {
+    const events = [];
+    const fakeFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 0, data: { id: 99 } }),
+    });
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      fetch: fakeFetch,
+    });
+    await uploader.upload(
+      {
+        crawlerTaskId: 't',
+        status: 'success',
+        sku: '',
+        image_paths: '',
+        _preloadedItems: [
+          { fileName: 'a.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+          { fileName: 'b.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+        ],
+      },
+      {
+        onProgress: (e) => events.push(e),
+      }
+    );
+    const phases = events.map((e) => e.phase);
+    assert.ok(phases.includes('start'));
+    assert.ok(phases.includes('success'));
+    const successEvents = events.filter((e) => e.phase === 'success');
+    assert.equal(successEvents.length, 2);
+    assert.equal(successEvents[0].id, 99);
+    for (const e of events) {
+      assert.equal(e.total, 2);
+      assert.ok(typeof e.fileName === 'string');
+    }
+  });
+
+  it('invokes onProgress failure phase when upload fails', async () => {
+    const events = [];
+    const fakeFetch = async () => ({
+      ok: false,
+      status: 500,
+      text: async () => 'boom',
+    });
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      maxRetries: 0,
+      fetch: fakeFetch,
+    });
+    await uploader.upload(
+      {
+        crawlerTaskId: 't',
+        status: 'success',
+        sku: '',
+        image_paths: '',
+        _preloadedItems: [
+          { fileName: 'a.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+        ],
+      },
+      { onProgress: (e) => events.push(e) }
+    );
+    const fail = events.find((e) => e.phase === 'failure');
+    assert.ok(fail, 'expected failure event');
+    assert.match(fail.error, /500/);
+  });
+
+  it('does nothing if onProgress is not provided', async () => {
+    const fakeFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 0, data: { id: 1 } }),
+    });
+    const uploader = new ImageUploader({
+      uploadUrl: 'http://example.com/upload',
+      fetch: fakeFetch,
+    });
+    // No onProgress — must not throw
+    const summary = await uploader.upload({
+      crawlerTaskId: 't',
+      status: 'success',
+      sku: '',
+      image_paths: '',
+      _preloadedItems: [
+        { fileName: 'a.jpg', buffer: jpegBuffer, contentType: 'image/jpeg' },
+      ],
+    });
+    assert.equal(summary.uploaded.length, 1);
+  });
+});

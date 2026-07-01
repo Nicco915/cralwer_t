@@ -258,7 +258,7 @@ Implementation: `src/page-crawler.js` (`encodeSkuForSearchPath`).
 
 ## 独立图片传输脚本
 
-不启动爬虫，直接把已有图片文件上传到 `/classify/open/image/upload`（支持多张并发）。
+不启动爬虫，直接把已有图片文件上传到 `/classify/open/image/upload`（支持多张并发、目录批量、日志监控）。
 
 ```bash
 # 默认从 .env 中 CRAWLER_IMAGE_UPLOAD_URL 读取真实接口
@@ -275,9 +275,43 @@ node bin/transfer-images.js \
 node bin/transfer-images.js --mock-upload ./img/foo.jpg ./img/bar.jpg
 ```
 
-SKU 由 fileName 去扩展名推断（`ABC-001_1.jpg` → `ABC-001_1`）。退出码：`0` = 至少一张成功；`1` = 全部失败或启动错误；`2` = 配置错误。
+### 批量上传整个目录 + 日志监控
+
+```bash
+# 单层目录扫描
+node bin/transfer-images.js --dir=/mnt/d/images/0625 --upload-concurrency=4
+
+# 递归扫描子目录
+node bin/transfer-images.js --dir=/mnt/d/images/0625 --recursive --upload-concurrency=4
+
+# 同时写入日志文件（适合 tail -f 实时监控）
+node bin/transfer-images.js \
+  --dir=/mnt/d/images/0625 \
+  --recursive \
+  --log-file=/tmp/transfer.log \
+  --upload-concurrency=4
+
+# 另一个终端监控：
+tail -f /tmp/transfer.log
+```
+
+支持的文件扩展名：`.jpg / .jpeg / .png / .webp / .gif / .bmp`（大小写不敏感）。
+
+SKU 推断规则：`fileName` 匹配 `<sku>_<index>.<ext>` 约定，去掉末尾 `_数字.扩展名` 得到 SKU（`100PCSGXBSYT00001V0_1.jpg` → `100PCSGXBSYT00001V0`）。
+
+退出码：`0` = 至少一张成功；`1` = 全部失败或启动错误；`2` = 配置错误。
 
 终态输出单块 JSON：`{ total, success, failed, results: [{path, sku, fileName, contentType, fileSize, ok, response|error}] }`，便于管道消费。
+
+日志格式（带 `--log-file` 时同步追加）：
+```
+[2026-07-01T14:50:01Z] [INFO] Scanned 142 images from /mnt/d/images (recursive)
+[2026-07-01T14:50:01Z] [INFO] Starting transfer: 142 images, uploadUrl=...
+[2026-07-01T14:50:03Z] [UPLOAD] [1/142] 100PCSGXBSYT00001V0_1.jpg (26 KB) ...
+[2026-07-01T14:50:04Z] [UPLOAD] [1/142] 100PCSGXBSYT00001V0_1.jpg ... ok (id=12345)
+[2026-07-01T14:50:05Z] [UPLOAD] [2/142] 100PCSGXBSYT00001V0_2.jpg ... FAIL (七牛图片上传失败)
+[2026-07-01T14:55:12Z] [INFO] Done: 142 attempted, 138 success, 4 failed, 312.4s elapsed, 0.45 img/s
+```
 
 详见规格 `docs/superpowers/specs/2026-06-30-standalone-image-transfer-design.md`。
 

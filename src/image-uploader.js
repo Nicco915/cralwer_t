@@ -156,7 +156,7 @@ class ImageUploader {
     return results;
   }
 
-  async upload(result) {
+  async upload(result, opts = {}) {
     const summary = {
       sku: result.sku,
       uploaded: [],
@@ -186,10 +186,13 @@ class ImageUploader {
     if (uploadItems.length === 0) return summary;
 
     const indexed = uploadItems.map((item, index) => ({ item, index }));
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    const total = indexed.length;
 
     const outputs = await this.limitConcurrency(
       indexed,
       async ({ item, index }) => {
+        if (onProgress) onProgress({ phase: 'start', index, total, fileName: item.fileName });
         try {
           // See the comment above usePreloaded: image_paths mode must use
           // result.sku (crawler zero-regression); _preloadedItems mode resolves
@@ -203,8 +206,10 @@ class ImageUploader {
           }
           const payload = this.buildPayload(sku, item.fileName, item.buffer, item.contentType);
           const data = await this.uploadSingle(payload);
+          if (onProgress) onProgress({ phase: 'success', index, total, fileName: item.fileName, id: data.id });
           return { status: 'uploaded', data };
         } catch (error) {
+          if (onProgress) onProgress({ phase: 'failure', index, total, fileName: item.fileName, error: error.message });
           return { status: 'failed', fileName: item.fileName, error: error.message };
         }
       },
