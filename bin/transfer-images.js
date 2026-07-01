@@ -7,7 +7,7 @@ const { startMockUploadServer } = require('../src/mock-upload-server');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']);
 
-const BOOLEAN_FLAGS = new Set(['mock-upload', 'no-progress', 'recursive', 'quiet']);
+const BOOLEAN_FLAGS = new Set(['mock-upload', 'no-progress', 'recursive', 'quiet', 'force']);
 
 function parseTransferArgs(argv) {
   const args = (argv || []).filter((a) => a !== undefined && a !== null);
@@ -26,6 +26,8 @@ function parseTransferArgs(argv) {
     recursive: false,
     logFile: undefined,
     quiet: false,
+    stateFile: undefined,
+    force: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -61,6 +63,8 @@ function parseTransferArgs(argv) {
         case 'recursive': options.recursive = true; break;
         case 'log-file': options.logFile = rawVal; break;
         case 'quiet': options.quiet = true; break;
+        case 'state-file': options.stateFile = rawVal; break;
+        case 'force': options.force = true; break;
         default:
           console.warn(`[transfer-images] unknown option: --${rawKey}`);
           break;

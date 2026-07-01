@@ -59,6 +59,16 @@ describe('parseTransferArgs', () => {
     assert.equal(r.options.nodeCode, 'NC');
     assert.equal(r.options.nodeToken, 'NT');
   });
+
+  it('parses --state-file', () => {
+    const r = parseTransferArgs(['--state-file=/tmp/custom.ndjson']);
+    assert.equal(r.options.stateFile, '/tmp/custom.ndjson');
+  });
+
+  it('parses --force', () => {
+    const r = parseTransferArgs(['--force']);
+    assert.equal(r.options.force, true);
+  });
 });
 
 describe('transferImages', () => {
