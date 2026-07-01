@@ -753,6 +753,53 @@ describe('transferImages --state-file override', () => {
   });
 });
 
+describe('transferImages appendState on success', () => {
+  const os = require('os');
+
+  it('writes one NDJSON line per successful upload', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'append-success-'));
+    const stateFile = path.join(dir, 'state.ndjson');
+
+    const files = [];
+    for (let i = 0; i < 3; i++) {
+      const p = path.join(dir, `img${i}_1.jpg`);
+      fs.writeFileSync(p, Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+      files.push(p);
+    }
+
+    let idCounter = 0;
+    const fakeFetch = async () => {
+      idCounter++;
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { id: idCounter * 100 } }) };
+    };
+
+    try {
+      await transferImages({
+        paths: files,
+        options: { uploadUrl: 'http://test/up', stateFile, fetchImpl: fakeFetch },
+        deps: {
+          loadEnvFile: () => {},
+          pathExists: () => true,
+          readFile: (p) => fs.readFileSync(p),
+          startMockUploadServer: require('../src/mock-upload-server').startMockUploadServer,
+          loadState: () => new Map(),
+          appendState: require('../bin/transfer-images').appendState,
+          defaultStatePath: () => '/tmp/should-not-be-used',
+        },
+      });
+      assert.ok(fs.existsSync(stateFile));
+      const lines = fs.readFileSync(stateFile, 'utf-8').split('\n').filter(Boolean);
+      assert.equal(lines.length, 3);
+      const entries = lines.map((l) => JSON.parse(l));
+      assert.deepEqual(entries.map((e) => e.id), [100, 200, 300]);
+      assert.ok(entries.every((e) => e.uploadUrl === 'http://test/up'));
+      assert.ok(entries.every((e) => typeof e.ts === 'string' && e.ts.length > 0));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('defaultStatePath', () => {
   it('returns same hash for same dir + same cwd', () => {
     const dir = '/tmp/test-dir-A';
