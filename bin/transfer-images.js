@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
 const { loadEnvFile } = require('../src/cli');
 const { ImageUploader } = require('../src/image-uploader');
 const { startMockUploadServer } = require('../src/mock-upload-server');
@@ -120,6 +121,12 @@ function appendState(stateFile, entry, deps = {}) {
   } catch (e) {
     if (logger) logger.error(`failed to append state: ${e.message}`);
   }
+}
+
+function defaultStatePath(dir) {
+  const resolved = path.resolve(dir);
+  const hash = crypto.createHash('sha1').update(resolved).digest('hex').slice(0, 12);
+  return path.join(process.cwd(), '.transfer-state', `${hash}.ndjson`);
 }
 
 // Build a logger that can write to stdout, append to a file, or both,
@@ -330,6 +337,7 @@ module.exports = {
   makeLogger,
   loadState,
   appendState,
+  defaultStatePath,
   IMAGE_EXTS,
   ConfigError,
   main,

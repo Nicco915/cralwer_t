@@ -8,6 +8,7 @@ const {
   transferImages,
   loadState,
   appendState,
+  defaultStatePath,
 } = require('../bin/transfer-images');
 
 describe('parseTransferArgs', () => {
@@ -545,6 +546,45 @@ describe('appendState', () => {
     } finally {
       fs.chmodSync(dir, 0o700);
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('defaultStatePath', () => {
+  it('returns same hash for same dir + same cwd', () => {
+    const dir = '/tmp/test-dir-A';
+    const prevCwd = process.cwd();
+    process.chdir('/tmp');
+    try {
+      const a = defaultStatePath(dir);
+      const b = defaultStatePath(dir);
+      assert.equal(a, b);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it('returns different hash for different dirs', () => {
+    const prevCwd = process.cwd();
+    process.chdir('/tmp');
+    try {
+      const a = defaultStatePath('/tmp/test-dir-A');
+      const b = defaultStatePath('/tmp/test-dir-B');
+      assert.notEqual(a, b);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it('places file under .transfer-state/ in cwd', () => {
+    const prevCwd = process.cwd();
+    process.chdir('/tmp');
+    try {
+      const p = defaultStatePath('/tmp/some/dir');
+      assert.match(p, /\.transfer-state\/[a-f0-9]{12}\.ndjson$/);
+      assert.ok(p.startsWith('/tmp/.transfer-state/'));
+    } finally {
+      process.chdir(prevCwd);
     }
   });
 });
