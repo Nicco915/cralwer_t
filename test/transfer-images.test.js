@@ -472,11 +472,14 @@ describe('loadState', () => {
       JSON.stringify({ basename: 'b_1.jpg', sku: 'b', id: 2, ts: 't', uploadUrl: 'u' }),
       '',
     ].join('\n'));
+    const warns = [];
     try {
-      const map = loadState(f);
+      const map = loadState(f, { logger: { warn: (m) => warns.push(m) } });
       assert.equal(map.size, 2);
       assert.ok(map.has('a_1.jpg'));
       assert.ok(map.has('b_1.jpg'));
+      assert.equal(warns.length, 1);
+      assert.match(warns[0], /malformed/);
     } finally {
       fs.rmSync(f, { force: true });
     }
