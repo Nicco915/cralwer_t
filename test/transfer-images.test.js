@@ -7,6 +7,7 @@ const {
   parseTransferArgs,
   transferImages,
   loadState,
+  appendState,
 } = require('../bin/transfer-images');
 
 describe('parseTransferArgs', () => {
@@ -497,6 +498,53 @@ describe('loadState', () => {
       assert.equal(map.get('a_1.jpg').id, 1);  // first write wins
     } finally {
       fs.rmSync(f, { force: true });
+    }
+  });
+});
+
+describe('appendState', () => {
+  it('appends a JSON line + newline to state file', () => {
+    const f = path.join(os.tmpdir(), `append-${Date.now()}.ndjson`);
+    try {
+      appendState(f, { basename: 'x_1.jpg', sku: 'x', id: 42, ts: '2026-07-01T00:00:00Z', uploadUrl: 'http://up' });
+      appendState(f, { basename: 'y_1.jpg', sku: 'y', id: 43, ts: '2026-07-01T00:00:01Z', uploadUrl: 'http://up' });
+      const content = fs.readFileSync(f, 'utf-8');
+      const lines = content.split('\n').filter(Boolean);
+      assert.equal(lines.length, 2);
+      assert.deepEqual(JSON.parse(lines[0]), { basename: 'x_1.jpg', sku: 'x', id: 42, ts: '2026-07-01T00:00:00Z', uploadUrl: 'http://up' });
+      assert.deepEqual(JSON.parse(lines[1]).basename, 'y_1.jpg');
+    } finally {
+      fs.rmSync(f, { force: true });
+    }
+  });
+
+  it('creates parent directory if missing', () => {
+    const dir = path.join(os.tmpdir(), `append-mkdir-${Date.now()}-${Math.random()}`);
+    const f = path.join(dir, 'sub', 'state.ndjson');
+    try {
+      appendState(f, { basename: 'a.jpg', sku: 'a', id: 1, ts: 't', uploadUrl: 'u' });
+      assert.ok(fs.existsSync(f));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not throw when write fails (logs error instead)', () => {
+    // Read-only directory → write should fail
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'append-ro-'));
+    fs.chmodSync(dir, 0o500);
+    const f = path.join(dir, 'state.ndjson');
+    const errs = [];
+    try {
+      // Should not throw
+      appendState(f, { basename: 'a.jpg', sku: 'a', id: 1, ts: 't', uploadUrl: 'u' }, { logger: { error: (m) => errs.push(m) } });
+      // File may or may not exist depending on platform; we just assert no throw + error was logged
+      assert.ok(true);
+      assert.equal(errs.length, 1);
+      assert.match(errs[0], /failed to append state/);
+    } finally {
+      fs.chmodSync(dir, 0o700);
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

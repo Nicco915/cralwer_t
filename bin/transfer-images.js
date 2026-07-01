@@ -112,6 +112,16 @@ function loadState(stateFile, deps = {}) {
   return map;
 }
 
+function appendState(stateFile, entry, deps = {}) {
+  const logger = deps.logger || null;
+  try {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.appendFileSync(stateFile, JSON.stringify(entry) + '\n');
+  } catch (e) {
+    if (logger) logger.error(`failed to append state: ${e.message}`);
+  }
+}
+
 // Build a logger that can write to stdout, append to a file, or both,
 // suitable for `tail -f` monitoring of long batch uploads.
 function makeLogger({ quiet = false, logFile = null } = {}) {
@@ -319,6 +329,7 @@ module.exports = {
   scanImages,
   makeLogger,
   loadState,
+  appendState,
   IMAGE_EXTS,
   ConfigError,
   main,
