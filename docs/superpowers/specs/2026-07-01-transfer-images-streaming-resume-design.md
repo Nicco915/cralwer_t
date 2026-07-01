@@ -271,19 +271,10 @@ async function transferImages({ paths, options, deps = {} }) {
     }
   }
 
-  // 6. ★ 构造 uploadItems：从迭代器里读 buffer 喂给 worker
-  const fileSizeByName = new Map();
-  const preloaded = [];   // 全部项（最终一次性 push 给 _preloadedItems）
-
-  //   这里有微妙处：见 §8.2
-  //   我们让 worker 自己 readFile，所以这里只传"路径 + 元信息"
-  //   uploadSingle 不再接收 buffer 而接收 path
-  //   ——但这需要改 ImageUploader。本规格选择**最小改动**：
-  //   让 worker 同步 readFile 后调 uploadSingle（仍传 buffer）
-  //   这样 _preloadedItems 形态不变
-
-  // 7. 复用现有 uploader.upload()，注入 onProgress
-  //   (略，与现状一致)
+  // 6. 复用现有 uploader.upload()：将异步迭代器包装成 _preloadedItems
+  //    ★ 流式核心：worker 内同步 readFile（单张 ~150KB 不阻塞事件循环）
+  //    ★ uploadSingle 仍接收 buffer；ImageUploader 完全不改
+  //    onProgress 内部完成 [INFO]/[UPLOAD] 日志 + state append
 }
 ```
 
@@ -293,9 +284,9 @@ async function transferImages({ paths, options, deps = {} }) {
 
 新增退出码分支不变；增加 `--state-file` / `--force` 解析。
 
-## 7. ImageUploader 改动
+## 7. ImageUploader 改动（无）
 
-**零改动**。所有流式 + state 逻辑在 `transferImages` 内。
+**ImageUploader 类零改动**。所有流式 + state 逻辑在 `transferImages` 内。
 
 理由：
 - 现有 `_preloadedItems` 旁路已经接受 `{ fileName, buffer, contentType }` 形态
@@ -362,10 +353,29 @@ summary = uploader.upload(...)
   → failed:   [{ fileName, error }, ...]
 
 // 与 skipped（已上传 basename）合并为完整 results
+// 所有结果项共享同一 shape：path/sku/fileName/contentType/fileSize/ok，外加可选字段
+// 这样 jq '.results[] | select(.ok)' 等消费者一致工作
 results = [
-  ...uploaded.map(u => ({ path, sku, fileName, ok: true, response, ... })),
-  ...failed.map(f => ({ path, sku, fileName, ok: false, error, ... })),
-  ...skipped.map(s => ({ basename: s.basename, sku: s.sku, ok: true, skipped: true })),
+  ...uploaded.map(u => ({
+    path, sku, fileName, contentType, fileSize,
+    ok: true,
+    response: u.response || { id: u.id },
+  })),
+  ...failed.map(f => ({
+    path, sku, fileName, contentType, fileSize,
+    ok: false,
+    error: f.error,
+  })),
+  ...skipped.map(s => ({
+    // skipped 项 path 不可得（仅 basename 命中 state）；用 basename 作 path 占位
+    path: s.basename,
+    sku: s.sku,
+    fileName: s.basename,
+    contentType: null,
+    fileSize: 0,
+    ok: true,
+    skipped: true,           // ← 唯一标识"从 state 恢复"
+  })),
 ]
 
 report = { total: results.length, success, failed, results }
