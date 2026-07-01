@@ -313,7 +313,32 @@ SKU 推断规则：`fileName` 匹配 `<sku>_<index>.<ext>` 约定，去掉末尾
 [2026-07-01T14:55:12Z] [INFO] Done: 142 attempted, 138 success, 4 failed, 312.4s elapsed, 0.45 img/s
 ```
 
-详见规格 `docs/superpowers/specs/2026-06-30-standalone-image-transfer-design.md`。
+### 断点续传 / State 文件
+
+跑大目录（> 1000 张）时，进程崩溃或上游恢复后想继续跑，没必要从头传：
+
+```bash
+# 第一次：传 25k 张；中途 kill -9 也行（最多丢 ≤ concurrency 张）
+node bin/transfer-images.js --dir=/mnt/d/.../images --log-file=/tmp/xfer.log
+
+# 第二次：自动跳过已成功的，只传剩下的
+node bin/transfer-images.js --dir=/mnt/d/.../images --log-file=/tmp/xfer.log
+```
+
+**state 文件位置**：默认 `<cwd>/.transfer-state/<sha1-of-dir>.ndjson`（按 `--dir` 派生）。
+**覆盖**：`--state-file=/path/to/state.ndjson`
+**强制重传**：`--force`（忽略 state，全部重新传）
+
+state 文件每行一条 NDJSON：
+
+```json
+{"basename":"100PCSGXBSYT00001V0_1.jpg","sku":"100PCSGXBSYT00001V0","id":12345,"ts":"2026-07-01T14:50:04Z","uploadUrl":"http://.../upload"}
+```
+
+**内存**：流式扫描 + worker 内逐张 readFile，25k 张峰值 < 1MB。
+**注意**：不要同时跑两个 `transfer-images` 进程处理同一 `--dir`，会双写 state 文件混乱。
+
+详见规格 `docs/superpowers/specs/2026-07-01-transfer-images-streaming-resume-design.md`。
 
 ## Use as a Node.js Module
 
