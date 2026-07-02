@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,14 +40,21 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
+      - name: Lowercase repository
+        id: repo
+        run: |
+          echo "lower=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
           script: |
             cd /opt/crawler
-            export CRAWLER_IMAGE_BASE=ghcr.io/${{ github.repository }}
-            ./update.sh ${{ github.ref_name }}
+            export CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}
+            ./update.sh "${{ github.ref_name }}"

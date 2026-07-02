@@ -21,6 +21,10 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
+if [[ ! "${IMAGE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "警告：镜像 tag 格式不符合 vX.Y.Z 规范，继续执行: ${IMAGE_TAG}" >&2
+fi
+
 CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' hs-sku-crawler 2>/dev/null || true)
 if [ -n "$CURRENT_IMAGE" ]; then
   echo "$CURRENT_IMAGE" > .last_image

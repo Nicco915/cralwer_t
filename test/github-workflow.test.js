@@ -28,4 +28,19 @@ describe('.github/workflows/deploy-vps.yml', () => {
     assert.ok(content.includes('secrets.VPS_SSH_KEY'), 'should use VPS_SSH_KEY secret');
     assert.ok(content.includes('appleboy/ssh-action'), 'should use ssh action');
   });
+
+  it('quotes ref_name in ssh script', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes('./update.sh "${{ github.ref_name }}"'), 'should quote ref_name');
+  });
+
+  it('declares workflow permissions', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes('permissions:'), 'should declare permissions');
+  });
+
+  it('lowercases repository for image base', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes("tr '[:upper:]' '[:lower:]'"), 'should lowercase repo');
+  });
 });
