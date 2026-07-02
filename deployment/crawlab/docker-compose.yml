@@ -51,22 +51,186 @@ services:
     networks:
       - crawler-net
 
-  crawler:
+  crawler-1:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
-    container_name: hs-sku-crawler
+    container_name: hs-sku-crawler-1
     restart: unless-stopped
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-eu-01}
+      - CRAWLER_NODE_CODE=crawler-eu-01
+      - CRAWLER_HEALTH_PORT=3001
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-01
       - CRAWLER_HEADED_FALLBACK=false
-      - CRAWLER_HEALTH_PORT=3000
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./logs:/app/logs
-      - ./output:/app/output
-      - ./images:/app/images
+      - ./output/crawler-eu-01:/app/output
+      - ./images/crawler-eu-01:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-2:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-2
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-eu-02
+      - CRAWLER_HEALTH_PORT=3002
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-02
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3002:3002"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-eu-02:/app/output
+      - ./images/crawler-eu-02:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-3:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-3
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-eu-03
+      - CRAWLER_HEALTH_PORT=3003
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-03
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3003:3003"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-eu-03:/app/output
+      - ./images/crawler-eu-03:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-4:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-4
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-eu-04
+      - CRAWLER_HEALTH_PORT=3004
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-04
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3004:3004"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-eu-04:/app/output
+      - ./images/crawler-eu-04:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-5:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-5
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-eu-05
+      - CRAWLER_HEALTH_PORT=3005
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-05
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3005:3005"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-eu-05:/app/output
+      - ./images/crawler-eu-05:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-6:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-6
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-eu-06
+      - CRAWLER_HEALTH_PORT=3006
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-06
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3006:3006"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-eu-06:/app/output
+      - ./images/crawler-eu-06:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
     depends_on:
       redis:
         condition: service_healthy
