@@ -14,9 +14,15 @@ if [ ! -f .last_image ]; then
   exit 1
 fi
 
-LAST_IMAGE=$(cat .last_image)
-export CRAWLER_IMAGE="$LAST_IMAGE"
+# 按容器名逐行回滚
+while IFS='=' read -r container_name image; do
+  [ -z "$container_name" ] && continue
+  [ -z "$image" ] && continue
+  service_index=${container_name#hs-sku-crawler-}
+  service_name="crawler-${service_index}"
+  echo "回滚 ${service_name} 到 ${image}"
+  CRAWLER_IMAGE="$image" docker compose up -d --no-deps "$service_name"
+done < .last_image
 
-docker compose up -d --no-deps crawler
-
-echo "回滚完成:${LAST_IMAGE}"
+echo "回滚完成"
+docker compose ps
