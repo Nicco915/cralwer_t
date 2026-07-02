@@ -1,20 +1,33 @@
 const fs = require('fs');
 const path = require('path');
 
+function getCircularReplacer() {
+  const seen = new WeakSet();
+  return (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+    return value;
+  };
+}
+
 function createLogger(options = {}) {
   const nodeCode = options.nodeCode || 'unknown';
   const write = options.write || ((line) => process.stdout.write(line));
 
   function log(level, component, msg, extra = {}) {
     const entry = {
+      ...extra,
       time: new Date().toISOString(),
       level,
       component,
-      msg,
+      msg: msg === undefined ? null : msg,
       nodeCode,
-      ...extra,
     };
-    write(JSON.stringify(entry) + '\n');
+    write(JSON.stringify(entry, getCircularReplacer()) + '\n');
   }
 
   return {
@@ -26,11 +39,12 @@ function createLogger(options = {}) {
 
 function createFileLogger(options = {}) {
   const logDir = options.logDir || path.resolve('./logs');
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
-  }
+  fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, 'crawler.jsonl');
   const stream = fs.createWriteStream(logFile, { flags: 'a' });
+  stream.on('error', (err) => {
+    process.stderr.write(`[LOGGER] File stream error: ${err.message}\n`);
+  });
   return createLogger({
     nodeCode: options.nodeCode,
     write: (line) => stream.write(line),

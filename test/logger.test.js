@@ -35,4 +35,35 @@ describe('Logger', () => {
     assert.strictEqual(JSON.parse(logs[0]).level, 'WARN');
     assert.strictEqual(JSON.parse(logs[1]).level, 'ERROR');
   });
+
+  it('does not let extra override core fields', () => {
+    const logs = [];
+    const logger = createLogger({
+      nodeCode: 'test-node',
+      write: (line) => logs.push(line),
+    });
+
+    logger.info('service', 'started', { level: 'FAKE', nodeCode: 'spoofed', time: '1970' });
+
+    const parsed = JSON.parse(logs[0]);
+    assert.strictEqual(parsed.level, 'INFO');
+    assert.strictEqual(parsed.nodeCode, 'test-node');
+    assert.notStrictEqual(parsed.time, '1970');
+  });
+
+  it('handles circular extra objects', () => {
+    const logs = [];
+    const logger = createLogger({
+      nodeCode: 'test-node',
+      write: (line) => logs.push(line),
+    });
+
+    const extra = { a: 1 };
+    extra.self = extra;
+    logger.info('service', 'circular', extra);
+
+    const parsed = JSON.parse(logs[0]);
+    assert.strictEqual(parsed.msg, 'circular');
+    assert.strictEqual(parsed.self.self, '[Circular]');
+  });
 });
