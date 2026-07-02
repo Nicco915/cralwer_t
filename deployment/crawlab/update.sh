@@ -16,6 +16,11 @@ if [[ "${CRAWLER_IMAGE_BASE}" == */ ]]; then
   exit 1
 fi
 
+if [ ! -f .env ]; then
+  echo "错误:当前目录缺少 .env 文件" >&2
+  exit 1
+fi
+
 CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' hs-sku-crawler 2>/dev/null || true)
 if [ -n "$CURRENT_IMAGE" ]; then
   echo "$CURRENT_IMAGE" > .last_image
@@ -23,7 +28,7 @@ fi
 
 export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE}:${IMAGE_TAG}"
 
-docker compose pull
+docker compose pull crawler
 docker compose up -d --no-deps crawler
 
 echo "更新完成:${CRAWLER_IMAGE}"
