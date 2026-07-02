@@ -6,7 +6,7 @@ SSH_USER="${2:-root}"
 GITHUB_OWNER="${GITHUB_OWNER:?请设置 GITHUB_OWNER 环境变量}"
 REPO="${REPO:?请设置 REPO 环境变量}"
 
-SSH_OPTS="-o StrictHostKeyChecking=accept-new -o SendEnv=GITHUB_OWNER -o SendEnv=REPO"
+SSH_OPTS="-o StrictHostKeyChecking=accept-new"
 
 if [[ ! "$VPS_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "错误：VPS_IP 格式不正确" >&2
@@ -40,11 +40,11 @@ ssh ${SSH_OPTS} "${SSH_USER}@${VPS_IP}" '
 '
 
 echo ">>> 3. 克隆仓库"
-ssh ${SSH_OPTS} "crawler@${VPS_IP}" '
+ssh ${SSH_OPTS} "crawler@${VPS_IP}" "
   rm -rf /opt/crawler/repo
-  git clone "https://github.com/${GITHUB_OWNER}/${REPO}.git" /opt/crawler/repo
+  git clone \"https://github.com/${GITHUB_OWNER}/${REPO}.git\" /opt/crawler/repo
   ln -sf /opt/crawler/repo/deployment/crawlab/* /opt/crawler/
-'
+"
 
 echo ">>> 4. 初始化 .env"
 ssh ${SSH_OPTS} "crawler@${VPS_IP}" '
