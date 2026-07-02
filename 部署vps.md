@@ -465,3 +465,80 @@ cliproxy-assignments.json  # Cliproxy 会话持久化（自动生成）
 ```
 
 部署代码与脚本在 `deployment/linux/`，配置示例在 `.env.example`，Dockerfile 在 `deployment/docker/Dockerfile`。
+
+---
+
+## 十二、多节点部署（单 VPS 多 crawler 节点）
+
+当单台 VPS 配置较高（如 6C8G）时，可以运行多个 crawler 节点以充分利用资源。
+
+### 12.1 生成多节点 compose 文件
+
+默认生成 6 个节点：
+
+```bash
+cd deployment/crawlab
+node generate-compose.js
+```
+
+生成 4 个节点：
+
+```bash
+node generate-compose.js --nodes=4
+```
+
+节点编号为 `crawler-1` ~ `crawler-N`，对应：
+- `CRAWLER_NODE_CODE`: `crawler-eu-01` ~ `crawler-eu-0N`
+- `CRAWLER_HEALTH_PORT`: `3001` ~ `3000+N`
+- `CRAWLER_CLIPROXY_SESSION_PREFIX`: 与 `nodeCode` 相同，避免 IP 冲突
+
+### 12.2 首次部署
+
+```bash
+export CRAWLER_IMAGE_BASE=ghcr.io/<owner>/<repo>
+./deploy.sh v1.0.0
+```
+
+`deploy.sh` 会自动创建每个节点的 `output/crawler-eu-0N` 和 `images/crawler-eu-0N` 子目录。
+
+### 12.3 在 crawlab 中添加节点
+
+进入 crawlab Web UI → 节点 → 添加节点：
+
+| 节点名称 | 节点地址 |
+|----------|----------|
+| crawler-eu-01 | http://crawler-1:3001/health |
+| crawler-eu-02 | http://crawler-2:3002/health |
+| ... | ... |
+| crawler-eu-06 | http://crawler-6:3006/health |
+
+### 12.4 升级全部节点
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+GitHub Actions 会自动执行 `./update.sh v1.2.3`，滚动升级所有 crawler 节点。
+
+### 12.5 单节点运维
+
+```bash
+# 停止节点 3
+docker compose stop crawler-3
+
+# 删除并重建节点 3
+docker compose rm -f crawler-3
+docker compose up -d crawler-3
+
+# 查看单个节点日志
+docker compose logs -f crawler-3
+```
+
+如需新增或删除节点，用 `generate-compose.js --nodes=N` 重新生成 compose 文件，并在 crawlab UI 中同步节点配置。
+
+### 12.6 资源与风险
+
+- 6 节点 × 2 channel 约占用 6.25 GB 内存 limit，请根据实际 `docker stats` 调整。
+- 每个节点使用独立的 `output`/`images` 子目录，避免文件冲突。
+- 所有节点共用同一组 Cliproxy 账号，靠不同 `sessionPrefix` 获取不同 IP。
