@@ -9,6 +9,7 @@ playwright-browsers/
 *.xlsx
 !test/*.xlsx
 说明.md
+bug.md
 .pm2/
 
 # 运行时状态与产物（不应入库）
