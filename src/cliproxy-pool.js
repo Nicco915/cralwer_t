@@ -44,6 +44,21 @@ class CliproxyPool {
     fs.writeFileSync(this.assignmentsFile, JSON.stringify(assignments, null, 2), 'utf-8');
   }
 
+  extractNonceFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      const user = parsed.username || '';
+      const parts = user.split('-');
+      const tIndex = parts.lastIndexOf('t');
+      if (tIndex > 0 && /^[a-f0-9]{8}$/.test(parts[tIndex - 1])) {
+        return parts[tIndex - 1];
+      }
+    } catch (e) {
+      // ignore invalid URL
+    }
+    return null;
+  }
+
   async assign() {
     const previous = this.loadAssignments();
     const assignments = {};
@@ -54,8 +69,7 @@ class CliproxyPool {
       let nonce;
 
       if (previousUrl && typeof previousUrl === 'string') {
-        const match = previousUrl.match(/sid-.+-([a-f0-9]{8})-t-/);
-        nonce = match ? match[1] : this.generateNonce();
+        nonce = this.extractNonceFromUrl(previousUrl) || this.generateNonce();
       } else {
         nonce = this.generateNonce();
       }

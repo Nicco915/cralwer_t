@@ -124,7 +124,14 @@ class CrawlerService {
       return;
     }
 
-    if (this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey) {
+    const hasKuaidaili = this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey;
+    const hasCliproxy = this.config.cliproxyUsername && this.config.cliproxyPassword;
+
+    if (hasKuaidaili && hasCliproxy) {
+      throw new Error('Kuaidaili and Cliproxy credentials are mutually exclusive; configure only one proxy pool');
+    }
+
+    if (hasKuaidaili) {
       const client = new KuaidailiClient({
         secretId: this.config.kuaidailiSecretId,
         secretKey: this.config.kuaidailiSecretKey,
@@ -144,7 +151,7 @@ class CrawlerService {
       return;
     }
 
-    if (this.config.cliproxyUsername && this.config.cliproxyPassword) {
+    if (hasCliproxy) {
       this.proxyPool = new CliproxyPool({
         host: this.config.cliproxyHost,
         port: this.config.cliproxyPort,

@@ -48,4 +48,29 @@ describe('CrawlerService Cliproxy integration', { timeout: 60000 }, () => {
 
     try { await service.stop(); } catch (e) {}
   });
+
+  it('throws when both Kuaidaili and Cliproxy credentials are configured', async () => {
+    const service = new CrawlerService({
+      nodeCode: 'test-node',
+      nodeToken: '',
+      taskUrl: 'http://127.0.0.1:1/tasks',
+      callbackUrl: 'http://127.0.0.1:1/callback',
+      channels: 1,
+      imageDir: '/tmp/test-images-3',
+      kuaidailiSecretId: 'kdl-id',
+      kuaidailiSecretKey: 'kdl-key',
+      cliproxyHost: 'test.cliproxy.io',
+      cliproxyPort: 1080,
+      cliproxyUsername: 'user',
+      cliproxyPassword: 'pass',
+    });
+
+    service.ensureImageDir();
+    await assert.rejects(
+      () => service.startProxyPool(),
+      /mutually exclusive/
+    );
+
+    try { await service.stop(); } catch (e) {}
+  });
 });

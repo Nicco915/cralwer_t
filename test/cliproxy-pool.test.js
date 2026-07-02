@@ -73,4 +73,18 @@ describe('CliproxyPool', () => {
 
     try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
   });
+
+  it('reuses nonce from previous URL even when sessionPrefix contains dashes', async () => {
+    const assignmentsFile = path.join(os.tmpdir(), `cliproxy-${Date.now()}.json`);
+    const pool1 = createPool({ sessionPrefix: 'crawler-t-01' }, assignmentsFile);
+    const map1 = await pool1.assign();
+
+    const pool2 = createPool({ sessionPrefix: 'crawler-t-01' }, assignmentsFile);
+    const map2 = await pool2.assign();
+
+    assert.strictEqual(map1['ch-1'], map2['ch-1']);
+    assert.strictEqual(map1['ch-2'], map2['ch-2']);
+
+    try { fs.unlinkSync(assignmentsFile); } catch (e) {}
+  });
 });
