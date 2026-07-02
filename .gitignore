@@ -25,4 +25,6 @@ mock_test/*
 !mock_test/mocktest.xlsx
 # 回调日志（按日分包）
 logs/callbacks/
+# 批量测试产物
+test/batch-runs/
 部署新windows.md
