@@ -8,7 +8,7 @@ describe('CrawlerService health endpoint', { timeout: 30000 }, () => {
   let healthPort;
 
   before(async () => {
-    healthPort = 19999;
+    healthPort = 0;
     service = new CrawlerService({
       nodeCode: 'test-node',
       nodeToken: '',
@@ -19,6 +19,8 @@ describe('CrawlerService health endpoint', { timeout: 30000 }, () => {
       healthPort,
     });
     service.ensureImageDir();
+    await service.startHealthServer();
+    healthPort = service.healthServer.address().port;
   });
 
   after(async () => {
@@ -26,7 +28,7 @@ describe('CrawlerService health endpoint', { timeout: 30000 }, () => {
   });
 
   it('exposes /health returning status ok', async () => {
-    await service.startHealthServer();
+    service.browser = { isConnected: () => true };
 
     const res = await new Promise((resolve, reject) => {
       const req = http.get(`http://127.0.0.1:${healthPort}/health`, (res) => {
@@ -46,10 +48,11 @@ describe('CrawlerService health endpoint', { timeout: 30000 }, () => {
 
   it('returns 503 when browser is not connected', async () => {
     await service.startHealthServer();
+    const actualPort = service.healthServer.address().port;
     service.browser = { isConnected: () => false };
 
     const res = await new Promise((resolve, reject) => {
-      const req = http.get(`http://127.0.0.1:${healthPort}/health`, (res) => {
+      const req = http.get(`http://127.0.0.1:${actualPort}/health`, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
         res.on('end', () => resolve({ status: res.statusCode, body: data }));

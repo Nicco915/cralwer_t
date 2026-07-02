@@ -12,6 +12,18 @@ const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { ImageUploader } = require('./image-uploader');
 
+function maskProxyUrl(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.password = '***';
+    parsed.username = '***';
+    return parsed.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
 class CrawlerService {
   constructor(config) {
     this.config = config;
@@ -297,7 +309,7 @@ class CrawlerService {
   }
 
   async startHealthServer() {
-    if (this.healthServer || !this.config.healthPort) {
+    if (this.healthServer || this.config.healthPort == null) {
       return;
     }
 
@@ -310,16 +322,18 @@ class CrawlerService {
         return;
       }
 
-      const browserConnected = !this.browser || this.browser.isConnected();
+      const browserConnected = this.browser && this.browser.isConnected();
       const status = browserConnected ? 'ok' : 'degraded';
       const code = browserConnected ? 200 : 503;
 
       const channels = this.channels.map((c) => ({
         id: c.id,
         healthy: c.healthy || false,
-        proxy: this.proxyPool
-          ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
-          : this.config.proxy,
+        proxy: maskProxyUrl(
+          this.proxyPool
+            ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
+            : this.config.proxy
+        ),
       }));
 
       const queue = {
@@ -344,7 +358,7 @@ class CrawlerService {
 
     return new Promise((resolve, reject) => {
       this.healthServer.listen(this.config.healthPort, '0.0.0.0', () => {
-        this.log(`[HEALTH] Server listening on port ${this.config.healthPort}`);
+        this.log(`[HEALTH] Server listening on port ${this.healthServer.address().port}`);
         resolve();
       });
       this.healthServer.on('error', reject);
