@@ -23,7 +23,11 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-mkdir -p logs output images
+mkdir -p logs
+for i in $(seq 1 6); do
+  node_code=$(printf "crawler-eu-%02d" "$i")
+  mkdir -p "output/${node_code}" "images/${node_code}"
+done
 
 docker compose pull
 docker compose up -d
