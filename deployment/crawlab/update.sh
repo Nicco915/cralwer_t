@@ -25,15 +25,22 @@ if [[ ! "${IMAGE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "警告：镜像 tag 格式不符合 vX.Y.Z 规范，继续执行: ${IMAGE_TAG}" >&2
 fi
 
-CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' hs-sku-crawler 2>/dev/null || true)
-if [ -n "$CURRENT_IMAGE" ]; then
-  echo "$CURRENT_IMAGE" > .last_image
-fi
-
 export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE}:${IMAGE_TAG}"
 
-docker compose pull crawler
-docker compose up -d --no-deps crawler
+# 记录每个 crawler 节点当前镜像
+> .last_image
+for i in $(seq 1 6); do
+  container_name=$(printf "hs-sku-crawler-%d" "$i")
+  current_image=$(docker inspect --format='{{.Config.Image}}' "$container_name" 2>/dev/null || true)
+  if [ -n "$current_image" ]; then
+    echo "$container_name=$current_image" >> .last_image
+  fi
+done
+
+docker compose pull crawler-1 crawler-2 crawler-3 crawler-4 crawler-5 crawler-6
+for i in $(seq 1 6); do
+  docker compose up -d --no-deps "crawler-$i"
+done
 
 echo "更新完成:${CRAWLER_IMAGE}"
 docker compose ps
