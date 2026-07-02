@@ -1,6 +1,6 @@
 services:
   crawlab:
-    image: crawlabteam/crawlab:latest
+    image: crawlabteam/crawlab:0.6.3
     container_name: crawlab
     restart: unless-stopped
     ports:
@@ -14,26 +14,40 @@ services:
       - crawlab-data:/data
       - ./logs:/app/logs:ro
     depends_on:
-      - mongo
-      - redis
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - crawler-net
 
   mongo:
-    image: mongo:6
+    image: mongo:6.0.15
     container_name: crawlab-mongo
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - crawler-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2.4-alpine
     container_name: crawlab-redis
     restart: unless-stopped
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
       - crawler-net
 
@@ -54,7 +68,8 @@ services:
       - ./output:/app/output
       - ./images:/app/images
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - crawler-net
 

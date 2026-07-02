@@ -39,4 +39,27 @@ describe('deployment/crawlab/docker-compose.yml', () => {
   it('uses a shared crawler-net network', () => {
     assert.ok(content.includes('crawler-net:'), 'should define crawler-net');
   });
+
+  it('pins crawlab image tag', () => {
+    assert.ok(!content.includes('crawlabteam/crawlab:latest'), 'should not use crawlab latest tag');
+    assert.ok(content.includes('crawlabteam/crawlab:0.6.3'), 'should pin crawlab to 0.6.3');
+  });
+
+  it('pins mongo image tag', () => {
+    assert.ok(content.includes('mongo:6.0.15'), 'should pin mongo to 6.0.15');
+  });
+
+  it('pins redis image tag', () => {
+    assert.ok(content.includes('redis:7.2.4-alpine'), 'should pin redis to 7.2.4-alpine');
+  });
+
+  it('adds healthchecks to mongo and redis', () => {
+    assert.ok(content.includes('healthcheck:'), 'should define healthcheck');
+    assert.ok(content.includes('mongosh'), 'should use mongosh for mongo healthcheck');
+    assert.ok(content.includes('redis-cli'), 'should use redis-cli for redis healthcheck');
+  });
+
+  it('uses service_healthy condition in depends_on', () => {
+    assert.ok(content.includes('condition: service_healthy'), 'should wait for services to be healthy');
+  });
 });
