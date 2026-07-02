@@ -1,6 +1,11 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
+const { execSync } = require('child_process');
 const { generate, parseArgs } = require('../../deployment/crawlab/generate-compose');
+
+function runParse(argv) {
+  return parseArgs(['node', 'script', ...argv]);
+}
 
 describe('generate-compose', () => {
   it('generates 6 nodes by default', () => {
@@ -54,9 +59,41 @@ describe('generate-compose', () => {
     assert.ok(content.includes('memory: 800M'));
   });
 
+  it('adds resource reservations to each node', () => {
+    const content = generate({ nodes: 1 });
+    assert.ok(content.includes("cpus: '0.2'"));
+    assert.ok(content.includes('memory: 400M'));
+  });
+
+  it('parses --output with equals sign', () => {
+    const result = runParse(['--output=custom.yml']);
+    assert.ok(result.output.endsWith('custom.yml'));
+  });
+
+  it('parses --output as separate argument', () => {
+    const result = runParse(['--output', 'custom.yml']);
+    assert.ok(result.output.endsWith('custom.yml'));
+  });
+
+  it('rejects decimal node counts', () => {
+    assert.throws(() => runParse(['--nodes=2.5']), /错误/);
+  });
+
+  it('rejects unknown arguments', () => {
+    assert.throws(() => runParse(['--nods=5']), /未识别|错误/);
+  });
+
   it('rejects invalid node counts', () => {
-    assert.throws(() => parseArgs(['node', 'script', '--nodes=0']), /错误/);
-    assert.throws(() => parseArgs(['node', 'script', '--nodes=abc']), /错误/);
-    assert.throws(() => parseArgs(['node', 'script', '--nodes=21']), /错误/);
+    assert.throws(() => runParse(['--nodes=0']), /错误/);
+    assert.throws(() => runParse(['--nodes=abc']), /错误/);
+    assert.throws(() => runParse(['--nodes=21']), /错误/);
+  });
+
+  it('generates valid YAML that can be parsed by Python yaml', () => {
+    const content = generate({ nodes: 1 });
+    execSync('python3 -c "import sys, yaml; yaml.safe_load(sys.stdin)"', {
+      input: content,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
   });
 });

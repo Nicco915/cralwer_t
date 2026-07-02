@@ -10,19 +10,21 @@ function parseArgs(argv) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--nodes=')) {
-      nodes = parseInt(arg.slice('--nodes='.length), 10);
+      nodes = Number(arg.slice('--nodes='.length));
     } else if (arg === '--nodes' && i + 1 < args.length) {
-      nodes = parseInt(args[i + 1], 10);
+      nodes = Number(args[i + 1]);
       i++;
     } else if (arg.startsWith('--output=')) {
       output = path.resolve(__dirname, arg.slice('--output='.length));
     } else if (arg === '--output' && i + 1 < args.length) {
       output = path.resolve(__dirname, args[i + 1]);
       i++;
+    } else {
+      throw new Error(`错误: 未识别的参数 ${arg}`);
     }
   }
 
-  if (Number.isNaN(nodes) || nodes < 1 || nodes > 20) {
+  if (!Number.isInteger(nodes) || nodes < 1 || nodes > 20) {
     throw new Error('错误: --nodes 必须是 1-20 之间的整数');
   }
 
