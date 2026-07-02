@@ -1,0 +1,68 @@
+services:
+  crawlab:
+    image: crawlabteam/crawlab:latest
+    container_name: crawlab
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - CRAWLAB_NODE_MASTER=y
+      - CRAWLAB_MONGO_HOST=mongo
+      - CRAWLAB_REDIS_HOST=redis
+      - CRAWLAB_LOG_LEVEL=info
+    volumes:
+      - crawlab-data:/data
+      - ./logs:/app/logs:ro
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - crawler-net
+
+  mongo:
+    image: mongo:6
+    container_name: crawlab-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - crawler-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: crawlab-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - crawler-net
+
+  crawler:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-eu-01}
+      - CRAWLER_HEADED_FALLBACK=false
+      - CRAWLER_HEALTH_PORT=3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - ./images:/app/images
+    depends_on:
+      - redis
+    networks:
+      - crawler-net
+
+volumes:
+  crawlab-data:
+  mongo-data:
+  redis-data:
+
+networks:
+  crawler-net:
+    driver: bridge
