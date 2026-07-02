@@ -53,8 +53,8 @@ ssh ${SSH_OPTS} "crawler@${VPS_IP}" '
 '
 
 echo ">>> 完成。请执行:"
-echo "    export CRAWLER_IMAGE_BASE=ghcr.io/${GITHUB_OWNER}/${REPO}"
 echo "    ssh crawler@${VPS_IP}"
 echo "    cd /opt/crawler"
+echo "    export CRAWLER_IMAGE_BASE=ghcr.io/${GITHUB_OWNER}/${REPO}"
 echo "    nano .env"
 echo "    ./deploy.sh v1.0.0"
