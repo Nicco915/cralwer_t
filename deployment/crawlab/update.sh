@@ -28,18 +28,20 @@ fi
 export CRAWLER_IMAGE="${CRAWLER_IMAGE_BASE}:${IMAGE_TAG}"
 
 # 记录每个 crawler 节点当前镜像
+crawler_services=$(docker compose config --services 2>/dev/null | grep '^crawler-' || true)
 > .last_image
-for i in $(seq 1 6); do
-  container_name=$(printf "hs-sku-crawler-%d" "$i")
+for service in $crawler_services; do
+  index=${service#crawler-}
+  container_name=$(printf "hs-sku-crawler-%d" "$index")
   current_image=$(docker inspect --format='{{.Config.Image}}' "$container_name" 2>/dev/null || true)
   if [ -n "$current_image" ]; then
     echo "$container_name=$current_image" >> .last_image
   fi
 done
 
-docker compose pull crawler-1 crawler-2 crawler-3 crawler-4 crawler-5 crawler-6
-for i in $(seq 1 6); do
-  docker compose up -d --no-deps "crawler-$i"
+docker compose pull $crawler_services
+for service in $crawler_services; do
+  docker compose up -d --no-deps "$service"
 done
 
 echo "更新完成:${CRAWLER_IMAGE}"

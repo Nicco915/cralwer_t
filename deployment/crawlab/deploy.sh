@@ -24,8 +24,10 @@ if [ ! -f .env ]; then
 fi
 
 mkdir -p logs
-for i in $(seq 1 6); do
-  node_code=$(printf "crawler-eu-%02d" "$i")
+crawler_services=$(docker compose config --services 2>/dev/null | grep '^crawler-' || true)
+for service in $crawler_services; do
+  index=${service#crawler-}
+  node_code=$(printf "crawler-eu-%02d" "$index")
   mkdir -p "output/${node_code}" "images/${node_code}"
 done
 

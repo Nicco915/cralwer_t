@@ -410,11 +410,17 @@ cd /opt/crawler/repo/deployment/crawlab
 ./deploy.sh v1.0.0
 ```
 
-此 compose 会启动 4 个服务：
+此 compose 默认启动 6 个 crawler 节点，节点数可通过 `generate-compose.js --nodes=N` 调整。实际启动的服务包括：
 - `crawlab`：管理界面，访问 `http://<VPS_IP>:8080`
 - `mongo`：crawlab 元数据
 - `redis`：crawlab 任务队列
-- `crawler`：hs-sku-crawler，暴露健康端点
+- `crawler-1` ~ `crawler-N`：hs-sku-crawler 多节点，分别暴露健康端点
+
+每个 crawler 节点拥有独立的配置：
+- `CRAWLER_NODE_CODE`：`crawler-eu-01` ~ `crawler-eu-0N`
+- `CRAWLER_HEALTH_PORT`：`3001` ~ `3000+N`
+- `CRAWLER_CLIPROXY_SESSION_PREFIX`：与 `nodeCode` 相同，避免 IP 冲突
+- 独立的 volume 子目录：`output/crawler-eu-0N/` 和 `images/crawler-eu-0N/`
 
 ### 11.2 在 crawlab 中添加节点
 
