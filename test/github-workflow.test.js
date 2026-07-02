@@ -17,7 +17,7 @@ describe('.github/workflows/deploy-vps.yml', () => {
 
   it('builds and pushes image to ghcr', () => {
     const content = fs.readFileSync(workflowPath, 'utf-8');
-    assert.ok(content.includes('ghcr.io/${{ github.repository }}'), 'should use ghcr');
+    assert.ok(content.includes('ghcr.io/${{ steps.repo.outputs.lower }}'), 'should use ghcr');
     assert.ok(content.includes('docker/build-push-action'), 'should build and push');
   });
 
@@ -39,8 +39,9 @@ describe('.github/workflows/deploy-vps.yml', () => {
     assert.ok(content.includes('permissions:'), 'should declare permissions');
   });
 
-  it('lowercases repository for image base', () => {
+  it('lowercases repository for image base in both jobs', () => {
     const content = fs.readFileSync(workflowPath, 'utf-8');
     assert.ok(content.includes("tr '[:upper:]' '[:lower:]'"), 'should lowercase repo');
+    assert.ok(content.includes('ghcr.io/${{ steps.repo.outputs.lower }}'), 'should use lowercased repo in tags');
   });
 });
