@@ -23,7 +23,11 @@ function buildServiceConfig(config) {
     maxDelay: config.maxDelay !== undefined ? Number(config.maxDelay) : 10,
     nodeCode: config.nodeCode || os.hostname(),
     nodeToken: config.nodeToken || '',
-    healthPort: config.healthPort !== undefined ? Number(config.healthPort) : undefined,
+    healthPort: (() => {
+      if (config.healthPort === undefined || config.healthPort === '') return undefined;
+      const n = Number(config.healthPort);
+      return Number.isNaN(n) ? undefined : n;
+    })(),
     taskUrl: config.taskUrl || 'http://117.72.52.0/renren-api/classify/open/crawler/tasks',
     callbackUrl: config.callbackUrl || 'http://117.72.52.0/renren-api/classify/open/crawler/callback',
     channels: config.channels !== undefined ? Number(config.channels) : 4,

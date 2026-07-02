@@ -32,4 +32,18 @@ describe('buildServiceConfig reads CRAWLER_HEALTH_PORT', () => {
     const serviceConfig = buildServiceConfig(config);
     assert.strictEqual(serviceConfig.healthPort, undefined);
   });
+
+  it('treats non-numeric CRAWLER_HEALTH_PORT as undefined', () => {
+    process.env.CRAWLER_HEALTH_PORT = 'abc';
+    const config = parse([]);
+    const serviceConfig = buildServiceConfig(config);
+    assert.strictEqual(serviceConfig.healthPort, undefined);
+  });
+
+  it('treats empty CRAWLER_HEALTH_PORT as undefined', () => {
+    process.env.CRAWLER_HEALTH_PORT = '';
+    const config = parse([]);
+    const serviceConfig = buildServiceConfig(config);
+    assert.strictEqual(serviceConfig.healthPort, undefined);
+  });
 });
