@@ -399,6 +399,53 @@ docker compose logs --tail=100 crawler
 
 ---
 
+## 十一、crawlab 同机部署（可选）
+
+如果需要可视化监控节点，可将 crawlab 与爬虫部署在同一台 VPS。
+
+### 11.1 使用 crawlab 版 Docker Compose
+
+```bash
+cd /opt/crawler/repo/deployment/crawlab
+./deploy.sh v1.0.0
+```
+
+此 compose 会启动 4 个服务：
+- `crawlab`：管理界面，访问 `http://<VPS_IP>:8080`
+- `mongo`：crawlab 元数据
+- `redis`：crawlab 任务队列
+- `crawler`：hs-sku-crawler，暴露健康端点
+
+### 11.2 在 crawlab 中添加节点
+
+1. 打开 `http://<VPS_IP>:8080`
+2. 进入「节点」→「添加节点」
+3. 节点地址填 `http://crawler:3000/health`
+4. 轮询间隔 30 秒
+
+### 11.3 GitHub Actions 自动发布
+
+配置 GitHub Secrets：
+- `VPS_HOST`：VPS 公网 IP
+- `VPS_USER`：部署用户名（如 `crawler`）
+- `VPS_SSH_KEY`：SSH 私钥
+
+发布新版本：
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+GitHub Actions 会自动构建镜像、推送到 GHCR、SSH 到 VPS 执行 `update.sh`。
+
+### 11.4 安全建议
+
+- crawlab 的 8080 端口建议通过 Nginx + Basic Auth 保护，或仅通过 SSH 隧道访问
+- 健康端口 3000 仅监听 `127.0.0.1`，不暴露公网
+
+---
+
 ## 附录：完整文件清单
 
 部署目录 `/opt/crawler/` 应包含：
