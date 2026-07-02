@@ -594,22 +594,18 @@ describe('appendState', () => {
   });
 
   it('does not throw when write fails (logs error instead)', () => {
-    // Read-only directory → write should fail
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'append-ro-'));
-    fs.chmodSync(dir, 0o500);
-    const f = path.join(dir, 'state.ndjson');
+    // 通过给一个无法解析的路径模拟 write 失败，比 chmod 更跨平台
+    const f = '  not-a-valid-path  ';
     const errs = [];
+    let threw = false;
     try {
-      // Should not throw
       appendState(f, { basename: 'a.jpg', sku: 'a', id: 1, ts: 't', uploadUrl: 'u' }, { logger: { error: (m) => errs.push(m) } });
-      // File may or may not exist depending on platform; we just assert no throw + error was logged
-      assert.ok(true);
-      assert.equal(errs.length, 1);
-      assert.match(errs[0], /failed to append state/);
-    } finally {
-      fs.chmodSync(dir, 0o700);
-      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      threw = true;
     }
+    assert.equal(threw, false);
+    assert.equal(errs.length, 1);
+    assert.match(errs[0], /failed to append state/);
   });
 });
 
@@ -936,13 +932,16 @@ describe('defaultStatePath', () => {
 
   it('places file under .transfer-state/ in cwd', () => {
     const prevCwd = process.cwd();
-    process.chdir('/tmp');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'statepath-'));
+    process.chdir(tmpDir);
     try {
-      const p = defaultStatePath('/tmp/some/dir');
-      assert.match(p, /\.transfer-state\/[a-f0-9]{12}\.ndjson$/);
-      assert.ok(p.startsWith('/tmp/.transfer-state/'));
+      const p = defaultStatePath(path.join(tmpDir, 'some', 'dir'));
+      const sep = path.sep.replace(/\\/g, '\\\\');
+      assert.match(p, new RegExp(`\\.transfer-state${sep}[a-f0-9]{12}\\.ndjson$`));
+      assert.ok(p.startsWith(path.join(tmpDir, '.transfer-state') + path.sep));
     } finally {
       process.chdir(prevCwd);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });
