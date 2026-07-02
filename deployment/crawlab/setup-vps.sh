@@ -23,6 +23,9 @@ if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+$ ]]; then
   exit 1
 fi
 
+GITHUB_OWNER_LOWER=$(echo "${GITHUB_OWNER}" | tr '[:upper:]' '[:lower:]')
+REPO_LOWER=$(echo "${REPO}" | tr '[:upper:]' '[:lower:]')
+
 echo ">>> 1. 安装 Docker"
 ssh ${SSH_OPTS} "${SSH_USER}@${VPS_IP}" '
   export DEBIAN_FRONTEND=noninteractive
@@ -37,12 +40,19 @@ ssh ${SSH_OPTS} "${SSH_USER}@${VPS_IP}" '
   usermod -aG docker crawler
   mkdir -p /opt/crawler/logs /opt/crawler/output /opt/crawler/images
   chown -R crawler:crawler /opt/crawler
+  if [ -f /root/.ssh/authorized_keys ]; then
+    mkdir -p /home/crawler/.ssh
+    cp /root/.ssh/authorized_keys /home/crawler/.ssh/authorized_keys
+    chown -R crawler:crawler /home/crawler/.ssh
+    chmod 700 /home/crawler/.ssh
+    chmod 600 /home/crawler/.ssh/authorized_keys
+  fi
 '
 
 echo ">>> 3. 克隆仓库"
 ssh ${SSH_OPTS} "crawler@${VPS_IP}" "
   rm -rf /opt/crawler/repo
-  git clone \"https://github.com/${GITHUB_OWNER}/${REPO}.git\" /opt/crawler/repo
+  git clone \"https://github.com/${GITHUB_OWNER_LOWER}/${REPO_LOWER}.git\" /opt/crawler/repo
   ln -sf /opt/crawler/repo/deployment/crawlab/* /opt/crawler/
 "
 
@@ -55,6 +65,6 @@ ssh ${SSH_OPTS} "crawler@${VPS_IP}" '
 echo ">>> 完成。请执行:"
 echo "    ssh crawler@${VPS_IP}"
 echo "    cd /opt/crawler"
-echo "    export CRAWLER_IMAGE_BASE=ghcr.io/${GITHUB_OWNER}/${REPO}"
+echo "    export CRAWLER_IMAGE_BASE=ghcr.io/${GITHUB_OWNER_LOWER}/${REPO_LOWER}"
 echo "    nano .env"
 echo "    ./deploy.sh v1.0.0"

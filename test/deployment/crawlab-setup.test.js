@@ -39,4 +39,14 @@ describe('deployment/crawlab/setup-vps.sh', () => {
     const content = fs.readFileSync(scriptPath, 'utf-8');
     assert.ok(content.includes('StrictHostKeyChecking=accept-new'), 'should accept new host keys');
   });
+
+  it('copies ssh authorized_keys to crawler user', () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+    assert.ok(content.includes('/home/crawler/.ssh/authorized_keys'), 'should copy authorized_keys to crawler');
+  });
+
+  it('lowercases github owner/repo for image base', () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+    assert.ok(content.includes("tr '[:upper:]' '[:lower:]'"), 'should lowercase owner/repo');
+  });
 });
