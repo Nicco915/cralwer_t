@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const http = require('node:http');
 const { chromium } = require('playwright');
 const { Poller } = require('./poller');
 const { Worker } = require('./worker');
@@ -10,6 +11,18 @@ const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { ImageUploader } = require('./image-uploader');
+
+function maskProxyUrl(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.password = '***';
+    parsed.username = '***';
+    return parsed.toString();
+  } catch (e) {
+    return url;
+  }
+}
 
 class CrawlerService {
   constructor(config) {
@@ -26,6 +39,8 @@ class CrawlerService {
     this.restartPromise = null;
     this.proxyPool = null;
     this.proxyRefreshTimer = null;
+    this.healthServer = null;
+    this.healthServerStartTime = null;
   }
 
   log(...args) {
@@ -224,6 +239,7 @@ class CrawlerService {
     this.log(`[SERVICE] Running with nodeCode=${this.config.nodeCode}, channels=${this.config.channels}`);
 
     this.startHealthCheck();
+    await this.startHealthServer();
     this.registerSignalHandlers();
   }
 
@@ -234,6 +250,10 @@ class CrawlerService {
 
     this.stopHealthCheck();
     this.stopProxyRefresh();
+    if (this.healthServer) {
+      this.healthServer.close();
+      this.healthServer = null;
+    }
     this.poller.stop();
     await this.worker.drain();
 
@@ -286,6 +306,63 @@ class CrawlerService {
         this.log('[SERVICE] Health check error:', err.message);
       });
     }, interval);
+  }
+
+  async startHealthServer() {
+    if (this.healthServer || this.config.healthPort == null) {
+      return;
+    }
+
+    this.healthServerStartTime = Date.now();
+
+    this.healthServer = http.createServer((req, res) => {
+      if (req.url !== '/health') {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'not found' }));
+        return;
+      }
+
+      const browserConnected = this.browser && this.browser.isConnected();
+      const status = browserConnected ? 'ok' : 'degraded';
+      const code = browserConnected ? 200 : 503;
+
+      const channels = this.channels.map((c) => ({
+        id: c.id,
+        healthy: c.healthy || false,
+        proxy: maskProxyUrl(
+          this.proxyPool
+            ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
+            : this.config.proxy
+        ),
+      }));
+
+      const queue = {
+        pending: this.worker ? this.worker.taskQueue.length : 0,
+        running: this.worker ? this.worker.channels.filter((c) => c.busy).length : 0,
+        completed: 0,
+      };
+
+      const payload = {
+        status,
+        nodeCode: this.config.nodeCode,
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor((Date.now() - this.healthServerStartTime) / 1000),
+        browserConnected,
+        channels,
+        queue,
+      };
+
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
+    });
+
+    return new Promise((resolve, reject) => {
+      this.healthServer.listen(this.config.healthPort, '0.0.0.0', () => {
+        this.log(`[HEALTH] Server listening on port ${this.healthServer.address().port}`);
+        resolve();
+      });
+      this.healthServer.on('error', reject);
+    });
   }
 
   stopHealthCheck() {
