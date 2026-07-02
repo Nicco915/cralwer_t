@@ -28,4 +28,15 @@ describe('deployment/crawlab/setup-vps.sh', () => {
     assert.ok(content.includes('useradd'), 'should create crawler user');
     assert.ok(content.includes('/opt/crawler'), 'should create /opt/crawler');
   });
+
+  it('validates environment variables', () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+    assert.ok(content.includes('GITHUB_OWNER="${GITHUB_OWNER:?'), 'should require GITHUB_OWNER');
+    assert.ok(content.includes('REPO="${REPO:?'), 'should require REPO');
+  });
+
+  it('uses StrictHostKeyChecking=accept-new', () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+    assert.ok(content.includes('StrictHostKeyChecking=accept-new'), 'should accept new host keys');
+  });
 });
