@@ -12,7 +12,7 @@ if [ -z "${CRAWLER_IMAGE_BASE:-}" ] && [ -f .env ]; then
 fi
 
 # 同步 repo 代码（docker-compose.yml 也可能需要更新）
-cd /opt/crawler/repo && git pull origin main
+cd /opt/crawler/repo && git -c safe.directory=/opt/crawler/repo pull origin main
 cd "$SCRIPT_DIR"
 
 IMAGE_TAG="${1:?请提供镜像 tag,例如 ./update.sh v1.0.0}"

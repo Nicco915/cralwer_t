@@ -11,7 +11,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-cd /opt/crawler/repo && git pull origin main
+cd /opt/crawler/repo && git -c safe.directory=/opt/crawler/repo pull origin main
 
 cd "$SCRIPT_DIR"
 
