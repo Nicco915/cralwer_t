@@ -4,6 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 如果 .env 存在，读取环境变量
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 IMAGE_TAG="${1:?请提供镜像 tag，例如 ./update.sh abc1234}"
 
 if [ -z "${CRAWLER_IMAGE_BASE:-}" ]; then

@@ -197,17 +197,24 @@ CLIPROXY_SESSION_PREFIX=crawler-01
 
 ## 六、首次部署
 
+### 部署用户
+
+所有部署/更新操作请使用 `crawler` 用户执行，避免 git `safe.directory` 权限检查报错：
+
+```bash
+su - crawler -c "cd /opt/crawler && ./deploy.sh v1.0.0"
+```
+
 ### 6.1 启动容器
 
 ```bash
-cd /opt/crawler
-./deploy.sh <镜像tag>
+su - crawler -c "cd /opt/crawler && ./deploy.sh <镜像tag>"
 ```
 
 例如：
 
 ```bash
-./deploy.sh v1.0.0
+su - crawler -c "cd /opt/crawler && ./deploy.sh v1.0.0"
 ```
 
 脚本执行流程：
@@ -274,7 +281,7 @@ pool.assign().then(map => console.log(JSON.stringify(map, null, 2)));
 ### 7.1 升级到新版本
 
 ```bash
-./update.sh <新tag>
+su - crawler -c "cd /opt/crawler && ./update.sh <新tag>"
 ```
 
 脚本行为：
@@ -288,7 +295,7 @@ pool.assign().then(map => console.log(JSON.stringify(map, null, 2)));
 ### 7.2 回滚到上一版本
 
 ```bash
-./rollback.sh
+su - crawler -c "cd /opt/crawler && ./rollback.sh"
 ```
 
 读取 `.last_image` 中的镜像 tag，重新 `docker compose up -d`。
@@ -355,7 +362,7 @@ docker compose logs --tail=100 crawler
 
 #### Q5：部署脚本提示「未设置 CRAWLER_IMAGE_BASE」
 
-脚本要求显式设置环境变量，避免误用默认镜像。执行前先 `export CRAWLER_IMAGE_BASE=...`，或写入 `~/.bashrc`。
+请检查 `.env` 文件是否已配置 `CRAWLER_IMAGE_BASE`，并确认以 `crawler` 用户执行脚本。脚本会自动读取 `.env`，无需手动 `export`。
 
 ---
 
@@ -406,8 +413,7 @@ docker compose logs --tail=100 crawler
 ### 11.1 使用 crawlab 版 Docker Compose
 
 ```bash
-cd /opt/crawler/repo/deployment/crawlab
-./deploy.sh v1.0.0
+su - crawler -c "cd /opt/crawler/repo/deployment/crawlab && ./deploy.sh v1.0.0"
 ```
 
 此 compose 默认启动 6 个 crawler 节点，节点数可通过 `generate-compose.js --nodes=N` 调整。实际启动的服务包括：
@@ -501,8 +507,7 @@ node generate-compose.js --nodes=4
 ### 12.2 首次部署
 
 ```bash
-export CRAWLER_IMAGE_BASE=ghcr.io/<owner>/<repo>
-./deploy.sh v1.0.0
+su - crawler -c "cd /opt/crawler/repo/deployment/crawlab && ./deploy.sh v1.0.0"
 ```
 
 `deploy.sh` 会自动创建每个节点的 `output/crawler-0N` 和 `images/crawler-0N` 子目录。
