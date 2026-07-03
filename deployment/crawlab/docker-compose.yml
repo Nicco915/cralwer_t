@@ -58,16 +58,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-01
+      - CRAWLER_NODE_CODE=crawler-01
       - CRAWLER_HEALTH_PORT=3001
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-01
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3001:3001"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-01:/app/output
-      - ./images/crawler-eu-01:/app/images
+      - ./output/crawler-01:/app/output
+      - ./images/crawler-01:/app/images
     deploy:
       resources:
         limits:
@@ -89,16 +89,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-02
+      - CRAWLER_NODE_CODE=crawler-02
       - CRAWLER_HEALTH_PORT=3002
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-02
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-02
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3002:3002"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-02:/app/output
-      - ./images/crawler-eu-02:/app/images
+      - ./output/crawler-02:/app/output
+      - ./images/crawler-02:/app/images
     deploy:
       resources:
         limits:
@@ -120,16 +120,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-03
+      - CRAWLER_NODE_CODE=crawler-03
       - CRAWLER_HEALTH_PORT=3003
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-03
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-03
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3003:3003"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-03:/app/output
-      - ./images/crawler-eu-03:/app/images
+      - ./output/crawler-03:/app/output
+      - ./images/crawler-03:/app/images
     deploy:
       resources:
         limits:
@@ -151,16 +151,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-04
+      - CRAWLER_NODE_CODE=crawler-04
       - CRAWLER_HEALTH_PORT=3004
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-04
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-04
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3004:3004"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-04:/app/output
-      - ./images/crawler-eu-04:/app/images
+      - ./output/crawler-04:/app/output
+      - ./images/crawler-04:/app/images
     deploy:
       resources:
         limits:
@@ -182,16 +182,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-05
+      - CRAWLER_NODE_CODE=crawler-05
       - CRAWLER_HEALTH_PORT=3005
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-05
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-05
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3005:3005"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-05:/app/output
-      - ./images/crawler-eu-05:/app/images
+      - ./output/crawler-05:/app/output
+      - ./images/crawler-05:/app/images
     deploy:
       resources:
         limits:
@@ -213,16 +213,16 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-06
+      - CRAWLER_NODE_CODE=crawler-06
       - CRAWLER_HEALTH_PORT=3006
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-06
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-06
       - CRAWLER_HEADED_FALLBACK=false
     ports:
       - "127.0.0.1:3006:3006"
     volumes:
       - ./logs:/app/logs
-      - ./output/crawler-eu-06:/app/output
-      - ./images/crawler-eu-06:/app/images
+      - ./output/crawler-06:/app/output
+      - ./images/crawler-06:/app/images
     deploy:
       resources:
         limits:

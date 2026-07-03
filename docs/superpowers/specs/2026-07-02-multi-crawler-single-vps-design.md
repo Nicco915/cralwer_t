@@ -51,12 +51,12 @@
 
 | 服务名 | 容器名 | nodeCode | healthPort | crawlab 访问地址 |
 |--------|--------|----------|------------|------------------|
-| crawler-1 | hs-sku-crawler-1 | crawler-eu-01 | 3001 | http://crawler-1:3001/health |
-| crawler-2 | hs-sku-crawler-2 | crawler-eu-02 | 3002 | http://crawler-2:3002/health |
-| crawler-3 | hs-sku-crawler-3 | crawler-eu-03 | 3003 | http://crawler-3:3003/health |
-| crawler-4 | hs-sku-crawler-4 | crawler-eu-04 | 3004 | http://crawler-4:3004/health |
-| crawler-5 | hs-sku-crawler-5 | crawler-eu-05 | 3005 | http://crawler-5:3005/health |
-| crawler-6 | hs-sku-crawler-6 | crawler-eu-06 | 3006 | http://crawler-6:3006/health |
+| crawler-1 | hs-sku-crawler-1 | crawler-01 | 3001 | http://crawler-1:3001/health |
+| crawler-2 | hs-sku-crawler-2 | crawler-02 | 3002 | http://crawler-2:3002/health |
+| crawler-3 | hs-sku-crawler-3 | crawler-03 | 3003 | http://crawler-3:3003/health |
+| crawler-4 | hs-sku-crawler-4 | crawler-04 | 3004 | http://crawler-4:3004/health |
+| crawler-5 | hs-sku-crawler-5 | crawler-05 | 3005 | http://crawler-5:3005/health |
+| crawler-6 | hs-sku-crawler-6 | crawler-06 | 3006 | http://crawler-6:3006/health |
 
 ### 2.2 数据流
 
@@ -115,7 +115,7 @@ docker compose logs -f crawler-3
 1. 停止并删除 `crawler-3`。
 2. 用 `--nodes=7` 重新生成 compose 文件。
 3. 执行 `docker compose up -d`。
-4. 在 crawlab UI 中删除旧节点 `crawler-eu-03`，添加新节点 `http://crawler-7:3007/health`。
+4. 在 crawlab UI 中删除旧节点 `crawler-03`，添加新节点 `http://crawler-7:3007/health`。
 
 ---
 
@@ -170,14 +170,14 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=crawler-eu-01
+      - CRAWLER_NODE_CODE=crawler-01
       - CRAWLER_HEALTH_PORT=3001
-      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-01
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01
       - CRAWLER_CHANNELS=2
-      - CRAWLER_OUTPUT_DIR=/app/output/crawler-eu-01
-      - CRAWLER_IMAGE_DIR=/app/images/crawler-eu-01
-      - CRAWLER_BROWSER_TEMP_DIR=/app/output/browser-temp/crawler-eu-01
-      - CRAWLER_CLIPROXY_ASSIGNMENTS_FILE=/app/output/proxy-assignments-crawler-eu-01.json
+      - CRAWLER_OUTPUT_DIR=/app/output/crawler-01
+      - CRAWLER_IMAGE_DIR=/app/images/crawler-01
+      - CRAWLER_BROWSER_TEMP_DIR=/app/output/browser-temp/crawler-01
+      - CRAWLER_CLIPROXY_ASSIGNMENTS_FILE=/app/output/proxy-assignments-crawler-01.json
     ports:
       - "127.0.0.1:3001:3001"
 ```
@@ -221,10 +221,10 @@ Cliproxy 通过用户名中的 session 字段分配粘性住宅 IP：
 
 | 节点 | sessionPrefix |
 |------|---------------|
-| crawler-1 | crawler-eu-01 |
-| crawler-2 | crawler-eu-02 |
+| crawler-1 | crawler-01 |
+| crawler-2 | crawler-02 |
 | ... | ... |
-| crawler-6 | crawler-eu-06 |
+| crawler-6 | crawler-06 |
 
 这样 6 节点 × 2 channel = 12 个完全不同的 session，拿到 12 个不同的住宅 IP。
 
@@ -258,10 +258,10 @@ Cliproxy 通过用户名中的 session 字段分配粘性住宅 IP：
 
 ```
 logs/
-  crawler-eu-01.jsonl
-  crawler-eu-02.jsonl
+  crawler-01.jsonl
+  crawler-02.jsonl
   ...
-  crawler-eu-06.jsonl
+  crawler-06.jsonl
 ```
 
 crawlab 挂载整个 `logs` 目录只读，按文件名查看不同节点日志。

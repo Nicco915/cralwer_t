@@ -133,7 +133,7 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-eu-01}
+      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-01}
       - CRAWLER_HEADED_FALLBACK=false
       - CRAWLER_HEALTH_PORT=3000
     ports:
@@ -185,7 +185,7 @@ GET /health
 ```json
 {
   "status": "ok",
-  "nodeCode": "crawler-eu-01",
+  "nodeCode": "crawler-01",
   "timestamp": "2026-07-02T11:30:00.000Z",
   "uptime": 3600,
   "browserConnected": true,
@@ -238,8 +238,8 @@ GET /health
 新增 `src/logger.js`,统一输出 JSON Lines(NDJSON)格式:
 
 ```json
-{"time":"2026-07-02T11:30:01.234Z","level":"INFO","component":"service","msg":"browser restarted","nodeCode":"crawler-eu-01","channel":1}
-{"time":"2026-07-02T11:30:05.123Z","level":"WARN","component":"channel","msg":"proxy rotation","nodeCode":"crawler-eu-01","channel":1,"proxy":"eu.cliproxy.io:1080"}
+{"time":"2026-07-02T11:30:01.234Z","level":"INFO","component":"service","msg":"browser restarted","nodeCode":"crawler-01","channel":1}
+{"time":"2026-07-02T11:30:05.123Z","level":"WARN","component":"channel","msg":"proxy rotation","nodeCode":"crawler-01","channel":1,"proxy":"eu.cliproxy.io:1080"}
 ```
 
 ### 5.2 日志级别
@@ -446,7 +446,7 @@ watch docker compose ps
 
 `CRAWLER_NODE_CODE` 支持按机器名区分,例如:
 
-- VPS Docker 节点:`crawler-eu-01`
+- VPS Docker 节点:`crawler-01`
 - Windows PM2 节点:`win-office-01`
 
 ### 9.2 CLI 任务模式入口

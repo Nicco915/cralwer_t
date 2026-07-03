@@ -13,7 +13,7 @@ function createPool(options = {}, assignmentsFile = null) {
     password: 'testpass',
     region: 'EU',
     stickyMinutes: 30,
-    sessionPrefix: 'crawler-eu-01',
+    sessionPrefix: 'crawler-01',
     channels: 2,
     assignmentsFile: assignmentsFile || path.join(os.tmpdir(), `cliproxy-${Date.now()}.json`),
     ...options,
@@ -26,7 +26,7 @@ describe('CliproxyPool', () => {
     const map = await pool.assign();
 
     assert.deepStrictEqual(Object.keys(map).sort(), ['ch-1', 'ch-2']);
-    assert.ok(map['ch-1'].startsWith('http://testuser-region-EU-sid-crawler-eu-01-ch1-'));
+    assert.ok(map['ch-1'].startsWith('http://testuser-region-EU-sid-crawler-01-ch1-'));
     assert.ok(map['ch-1'].includes(':testpass@test.cliproxy.io:1080'));
     assert.notStrictEqual(map['ch-1'], map['ch-2']);
 

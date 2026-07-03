@@ -17,9 +17,9 @@ describe('generate-compose', () => {
 
   it('assigns unique nodeCode per node', () => {
     const content = generate({ nodes: 3 });
-    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-eu-01'));
-    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-eu-02'));
-    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-eu-03'));
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-01'));
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-02'));
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-03'));
     const matches = content.match(/CRAWLER_NODE_CODE=/g);
     assert.strictEqual(matches.length, 3);
   });
@@ -33,9 +33,9 @@ describe('generate-compose', () => {
 
   it('assigns unique sessionPrefix per node', () => {
     const content = generate({ nodes: 3 });
-    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-01'));
-    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-02'));
-    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-03'));
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01'));
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-02'));
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-03'));
   });
 
   it('binds each health port to 127.0.0.1', () => {
@@ -47,10 +47,10 @@ describe('generate-compose', () => {
 
   it('uses per-node output and image directories', () => {
     const content = generate({ nodes: 2 });
-    assert.ok(content.includes('./output/crawler-eu-01:/app/output'));
-    assert.ok(content.includes('./output/crawler-eu-02:/app/output'));
-    assert.ok(content.includes('./images/crawler-eu-01:/app/images'));
-    assert.ok(content.includes('./images/crawler-eu-02:/app/images'));
+    assert.ok(content.includes('./output/crawler-01:/app/output'));
+    assert.ok(content.includes('./output/crawler-02:/app/output'));
+    assert.ok(content.includes('./images/crawler-01:/app/images'));
+    assert.ok(content.includes('./images/crawler-02:/app/images'));
   });
 
   it('adds resource limits to each node', () => {

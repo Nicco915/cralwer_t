@@ -6,7 +6,7 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-eu-01}
+      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-01}
       - CRAWLER_HEADED_FALLBACK=false
     volumes:
       - ./logs:/app/logs

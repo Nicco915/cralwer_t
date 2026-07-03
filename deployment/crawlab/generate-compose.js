@@ -88,7 +88,7 @@ function baseServices() {
 }
 
 function crawlerService(index) {
-  const nodeCode = `crawler-eu-${String(index).padStart(2, '0')}`;
+  const nodeCode = `crawler-${String(index).padStart(2, '0')}`;
   const healthPort = 3000 + index;
   return `  crawler-${index}:
     image: \${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}

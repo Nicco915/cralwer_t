@@ -205,7 +205,7 @@ registry.example.com/hs-sku-crawler:latest    # 始终指向最近一次构建
 CRAWLER_MODE=service
 
 # 节点身份
-CRAWLER_NODE_CODE=crawler-eu-01
+CRAWLER_NODE_CODE=crawler-01
 CRAWLER_NODE_TOKEN=your-node-token
 
 # 上游 API

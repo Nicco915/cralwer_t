@@ -126,7 +126,7 @@ Cliproxy 用户名模板（本项目自动拼接）：
 实际生成的例子：
 
 ```
-myuser-region-EU-sid-crawler-eu-01-ch1-a3f9c2d8-t-30
+myuser-region-EU-sid-crawler-01-ch1-a3f9c2d8-t-30
                 ↓         ↓          ↓        ↓           ↓
               区域     会话前缀   通道编号  随机nonce   粘性30分钟
 ```
@@ -156,7 +156,7 @@ nano .env
 CRAWLER_IMAGE_BASE=ghcr.io/your-org/hs-sku-crawler
 
 # 上游派单 API
-CRAWLER_NODE_CODE=crawler-eu-01
+CRAWLER_NODE_CODE=crawler-01
 CRAWLER_NODE_TOKEN=从上游控制台获取
 CRAWLER_TASK_URL=http://<上游API>/tasks
 CRAWLER_CALLBACK_URL=http://<上游API>/callback
@@ -181,7 +181,7 @@ CLIPROXY_USERNAME=your-cliproxy-username
 CLIPROXY_PASSWORD=your-cliproxy-password
 CLIPROXY_REGION=EU
 CLIPROXY_STICKY_MINUTES=30
-CLIPROXY_SESSION_PREFIX=crawler-eu-01
+CLIPROXY_SESSION_PREFIX=crawler-01
 ```
 
 ### 5.1 互斥校验
@@ -417,10 +417,10 @@ cd /opt/crawler/repo/deployment/crawlab
 - `crawler-1` ~ `crawler-N`：hs-sku-crawler 多节点，分别暴露健康端点
 
 每个 crawler 节点拥有独立的配置：
-- `CRAWLER_NODE_CODE`：`crawler-eu-01` ~ `crawler-eu-0N`
+- `CRAWLER_NODE_CODE`：`crawler-01` ~ `crawler-0N`
 - `CRAWLER_HEALTH_PORT`：`3001` ~ `3000+N`
 - `CRAWLER_CLIPROXY_SESSION_PREFIX`：与 `nodeCode` 相同，避免 IP 冲突
-- 独立的 volume 子目录：`output/crawler-eu-0N/` 和 `images/crawler-eu-0N/`
+- 独立的 volume 子目录：`output/crawler-0N/` 和 `images/crawler-0N/`
 
 ### 11.2 在 crawlab 中添加节点
 
@@ -494,7 +494,7 @@ node generate-compose.js --nodes=4
 ```
 
 节点编号为 `crawler-1` ~ `crawler-N`，对应：
-- `CRAWLER_NODE_CODE`: `crawler-eu-01` ~ `crawler-eu-0N`
+- `CRAWLER_NODE_CODE`: `crawler-01` ~ `crawler-0N`
 - `CRAWLER_HEALTH_PORT`: `3001` ~ `3000+N`
 - `CRAWLER_CLIPROXY_SESSION_PREFIX`: 与 `nodeCode` 相同，避免 IP 冲突
 
@@ -505,7 +505,7 @@ export CRAWLER_IMAGE_BASE=ghcr.io/<owner>/<repo>
 ./deploy.sh v1.0.0
 ```
 
-`deploy.sh` 会自动创建每个节点的 `output/crawler-eu-0N` 和 `images/crawler-eu-0N` 子目录。
+`deploy.sh` 会自动创建每个节点的 `output/crawler-0N` 和 `images/crawler-0N` 子目录。
 
 ### 12.3 在 crawlab 中添加节点
 
@@ -513,10 +513,10 @@ export CRAWLER_IMAGE_BASE=ghcr.io/<owner>/<repo>
 
 | 节点名称 | 节点地址 |
 |----------|----------|
-| crawler-eu-01 | http://crawler-1:3001/health |
-| crawler-eu-02 | http://crawler-2:3002/health |
+| crawler-01 | http://crawler-1:3001/health |
+| crawler-02 | http://crawler-2:3002/health |
 | ... | ... |
-| crawler-eu-06 | http://crawler-6:3006/health |
+| crawler-06 | http://crawler-6:3006/health |
 
 ### 12.4 升级全部节点
 

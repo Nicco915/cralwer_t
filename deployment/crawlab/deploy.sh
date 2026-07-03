@@ -27,7 +27,7 @@ mkdir -p logs
 crawler_services=$(docker compose config --services 2>/dev/null | grep '^crawler-' || true)
 for service in $crawler_services; do
   index=${service#crawler-}
-  node_code=$(printf "crawler-eu-%02d" "$index")
+  node_code=$(printf "crawler-%02d" "$index")
   mkdir -p "output/${node_code}" "images/${node_code}"
 done
 

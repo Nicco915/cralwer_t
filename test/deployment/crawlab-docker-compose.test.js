@@ -36,13 +36,13 @@ describe('deployment/crawlab/docker-compose.yml', () => {
   });
 
   it('sets unique CRAWLER_NODE_CODE per node', () => {
-    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-eu-01'), 'should set crawler-1 node code');
-    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-eu-06'), 'should set crawler-6 node code');
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-01'), 'should set crawler-1 node code');
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-06'), 'should set crawler-6 node code');
   });
 
   it('sets unique CRAWLER_CLIPROXY_SESSION_PREFIX per node', () => {
-    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-01'), 'should set crawler-1 session prefix');
-    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-eu-06'), 'should set crawler-6 session prefix');
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01'), 'should set crawler-1 session prefix');
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-06'), 'should set crawler-6 session prefix');
   });
 
   it('shares logs volume with crawlab read-only', () => {
@@ -50,8 +50,8 @@ describe('deployment/crawlab/docker-compose.yml', () => {
   });
 
   it('uses per-node output and image directories', () => {
-    assert.ok(content.includes('./output/crawler-eu-01:/app/output'), 'crawler-1 should have isolated output dir');
-    assert.ok(content.includes('./images/crawler-eu-06:/app/images'), 'crawler-6 should have isolated images dir');
+    assert.ok(content.includes('./output/crawler-01:/app/output'), 'crawler-1 should have isolated output dir');
+    assert.ok(content.includes('./images/crawler-06:/app/images'), 'crawler-6 should have isolated images dir');
   });
 
   it('uses a shared crawler-net network', () => {

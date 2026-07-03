@@ -130,7 +130,7 @@ services:
     env_file: .env
     environment:
       - CRAWLER_MODE=service
-      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-eu-01}
+      - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-01}
     volumes:
       - ./logs:/app/logs
       - ./output:/app/output
@@ -163,7 +163,7 @@ services:
 示例：
 
 ```
-myaccount-region-EU-sid-crawler-eu-01-ch1-abc123-t-30
+myaccount-region-EU-sid-crawler-01-ch1-abc123-t-30
 ```
 
 - `sid` 不变时，出口 IP 保持不变（在 `t` 分钟内）
@@ -179,7 +179,7 @@ CLIPROXY_USERNAME=myaccount
 CLIPROXY_PASSWORD=mypassword
 CLIPROXY_REGION=EU
 CLIPROXY_STICKY_MINUTES=30
-CLIPROXY_SESSION_PREFIX=crawler-eu-01
+CLIPROXY_SESSION_PREFIX=crawler-01
 ```
 
 ### 6.3 代码集成

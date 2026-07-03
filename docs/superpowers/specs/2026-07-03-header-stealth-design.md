@@ -49,7 +49,7 @@
 const { createProfile, listSupportedLocales } = require('./src/stealth-profile');
 
 const profile = createProfile({
-  nodeCode: 'crawler-eu-01', // 节点标识
+  nodeCode: 'crawler-01', // 节点标识
   channelId: 1,              // 通道号
   sessionIndex: 0,           // 会话索引，recreateContext 时递增
   mode: 'channel',           // 'fixed' | 'channel' | 'session'
@@ -152,7 +152,7 @@ const profile = createProfile({
 
 - 从 `this.config.nodeCode` 读取节点标识，默认 `crawler-01`。
 - 创建 Channel 时传入 `nodeCode` 和 `stealthMode`。
-- 启动日志增加：`[Node crawler-eu-01] Channel 1 profile=a1b2c3d4 uaHash=xxx`，其中 `uaHash` 为 `userAgent` 的 sha256 前 8 位。
+- 启动日志增加：`[Node crawler-01] Channel 1 profile=a1b2c3d4 uaHash=xxx`，其中 `uaHash` 为 `userAgent` 的 sha256 前 8 位。
 
 ### 4. 修改 `src/crawler.js`
 
