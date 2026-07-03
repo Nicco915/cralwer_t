@@ -23,6 +23,7 @@ describe('stealth script in browser context', () => {
   });
 
   after(async () => {
+    if (page) await page.close();
     if (context) await context.close();
     if (browser) await browser.close();
   });

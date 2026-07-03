@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const vm = require('node:vm');
 const { hash, seededRandom, weightedPick, createProfile, buildProfile, generateStealthScript } = require('../src/stealth-profile');
 
 describe('hash', () => {
@@ -363,5 +364,38 @@ describe('generateStealthScript', () => {
     assert.ok(script.includes("Object.defineProperty(navigator, 'languages'"));
     assert.ok(script.includes("Object.defineProperty(navigator, 'platform'"));
     assert.ok(script.includes('window.chrome = { runtime: {} }'));
+  });
+
+  it('JSON-escapes numeric interpolations to prevent script injection', () => {
+    const payload = "8; throw new Error('xss')";
+    const profile = {
+      userAgent: 'UA/1.0',
+      viewport: { width: payload, height: payload },
+      platform: 'Win32',
+      languages: ['en-GB', 'en'],
+      deviceMemory: payload,
+      hardwareConcurrency: payload,
+      colorDepth: payload,
+    };
+
+    const script = generateStealthScript(profile);
+    assert.ok(
+      script.includes(JSON.stringify(payload)),
+      'payload should be JSON-stringified in the generated script'
+    );
+
+    assert.doesNotThrow(() => {
+      const context = {
+        navigator: {
+          permissions: { query: () => Promise.resolve({ state: 'default' }) },
+        },
+        window: {},
+        screen: {},
+        Notification: { permission: 'default' },
+      };
+      context.window.navigator = context.navigator;
+      vm.createContext(context);
+      vm.runInContext(script, context);
+    });
   });
 });

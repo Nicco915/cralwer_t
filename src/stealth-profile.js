@@ -11,6 +11,10 @@ const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKi
 
 const HASH_PREFIX_LENGTH = 8;
 
+// Estimated height of browser chrome (title bar + toolbar) used to derive
+// window.outerHeight from the viewport height.
+const CHROME_UI_HEIGHT = 85;
+
 const BUILTIN_DEVICE_MEMORY_POOL = [
   { v: 4, weight: 15 },
   { v: 8, weight: 50 },
@@ -274,19 +278,19 @@ function generateStealthScript(profile) {
     });
     Object.defineProperty(navigator, 'languages', { get: () => ${JSON.stringify(languages)} });
     Object.defineProperty(navigator, 'platform', { get: () => ${JSON.stringify(platform)} });
-    Object.defineProperty(navigator, 'deviceMemory', { get: () => ${deviceMemory} });
-    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => ${hardwareConcurrency} });
-    Object.defineProperty(screen, 'colorDepth', { get: () => ${colorDepth} });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => ${JSON.stringify(deviceMemory)} });
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => ${JSON.stringify(hardwareConcurrency)} });
+    Object.defineProperty(screen, 'colorDepth', { get: () => ${JSON.stringify(colorDepth)} });
     window.chrome = { runtime: {} };
     const originalQuery = window.navigator.permissions.query;
     window.navigator.permissions.query = (parameters) =>
       parameters.name === 'notifications'
         ? Promise.resolve({ state: Notification.permission })
         : originalQuery(parameters);
-    const viewportWidth = ${viewport.width};
-    const viewportHeight = ${viewport.height};
+    const viewportWidth = ${JSON.stringify(viewport.width)};
+    const viewportHeight = ${JSON.stringify(viewport.height)};
     Object.defineProperty(window, 'outerWidth', { get: () => viewportWidth });
-    Object.defineProperty(window, 'outerHeight', { get: () => viewportHeight + 85 });
+    Object.defineProperty(window, 'outerHeight', { get: () => viewportHeight + ${JSON.stringify(CHROME_UI_HEIGHT)} });
   })()`;
 }
 
