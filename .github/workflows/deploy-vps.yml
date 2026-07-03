@@ -61,5 +61,4 @@ jobs:
           script_stop: true
           script: |
             cd /opt/crawler
-            export CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}
             ./update.sh "${{ github.ref_name }}"
