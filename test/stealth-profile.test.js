@@ -1,6 +1,9 @@
-const { describe, it } = require('node:test');
+const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert');
-const { hash, seededRandom, weightedPick, createProfile } = require('../src/stealth-profile');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { hash, seededRandom, weightedPick, createProfile, buildProfile } = require('../src/stealth-profile');
 
 describe('hash', () => {
   it('returns sha256 hex of input', () => {
@@ -126,5 +129,227 @@ describe('createProfile', () => {
   it('fixed mode without fixedUserAgent falls back to default', () => {
     const profile = createProfile({ mode: 'fixed' });
     assert.ok(profile.userAgent.includes('Chrome/120'));
+  });
+});
+
+describe('parseUaPool via createProfile', () => {
+  const originalEnv = process.env.CRAWLER_UA_POOL_PATH;
+  let tempDir;
+
+  before(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ua-pool-'));
+  });
+
+  after(() => {
+    if (originalEnv === undefined) delete process.env.CRAWLER_UA_POOL_PATH;
+    else process.env.CRAWLER_UA_POOL_PATH = originalEnv;
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('throws clear Error when UA pool file does not exist', () => {
+    process.env.CRAWLER_UA_POOL_PATH = path.join(tempDir, 'missing.json');
+    assert.throws(
+      () => createProfile({ nodeCode: 'node-a', channelId: 1 }),
+      (err) => err instanceof Error && /UA pool/i.test(err.message) && /exist/i.test(err.message)
+    );
+  });
+
+  it('throws clear Error when UA pool file contains invalid JSON', () => {
+    const badPath = path.join(tempDir, 'bad.json');
+    fs.writeFileSync(badPath, 'not json');
+    process.env.CRAWLER_UA_POOL_PATH = badPath;
+    assert.throws(
+      () => createProfile({ nodeCode: 'node-a', channelId: 1 }),
+      (err) => err instanceof Error && /UA pool/i.test(err.message) && /JSON/i.test(err.message)
+    );
+  });
+
+  it('throws clear Error when UA pool file does not contain an array', () => {
+    const badPath = path.join(tempDir, 'object.json');
+    fs.writeFileSync(badPath, JSON.stringify({ ua: 'x' }));
+    process.env.CRAWLER_UA_POOL_PATH = badPath;
+    assert.throws(
+      () => createProfile({ nodeCode: 'node-a', channelId: 1 }),
+      (err) => err instanceof Error && /UA pool/i.test(err.message) && /array/i.test(err.message)
+    );
+  });
+
+  it('throws clear Error when UA pool item object lacks ua', () => {
+    const badPath = path.join(tempDir, 'no-ua.json');
+    fs.writeFileSync(badPath, JSON.stringify([{ weight: 1 }]));
+    process.env.CRAWLER_UA_POOL_PATH = badPath;
+    assert.throws(
+      () => createProfile({ nodeCode: 'node-a', channelId: 1 }),
+      (err) => err instanceof Error && /ua/i.test(err.message)
+    );
+  });
+
+  it('converts string items to objects with weight 1', () => {
+    const ua = 'Mozilla/5.0 (Custom/1.0)';
+    const goodPath = path.join(tempDir, 'strings.json');
+    fs.writeFileSync(goodPath, JSON.stringify([ua]));
+    process.env.CRAWLER_UA_POOL_PATH = goodPath;
+    const profile = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    assert.strictEqual(profile.userAgent, ua);
+  });
+});
+
+describe('parseLocalePool via createProfile', () => {
+  const originalEnv = process.env.CRAWLER_LOCALES;
+  const warnings = [];
+  const originalWarn = console.warn;
+
+  before(() => {
+    console.warn = (...args) => warnings.push(args.join(' '));
+  });
+
+  after(() => {
+    if (originalEnv === undefined) delete process.env.CRAWLER_LOCALES;
+    else process.env.CRAWLER_LOCALES = originalEnv;
+    console.warn = originalWarn;
+  });
+
+  beforeEach(() => {
+    warnings.length = 0;
+    delete process.env.CRAWLER_LOCALES;
+  });
+
+  it('falls back to builtin locale pool when CRAWLER_LOCALES filters to empty', () => {
+    process.env.CRAWLER_LOCALES = 'xx-XX,yy-YY';
+    const profile = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    assert.ok(['en-GB', 'en-US', 'de-DE', 'fr-FR', 'nl-NL', 'es-ES'].includes(profile.locale));
+    assert.ok(warnings.some(w => /locale/i.test(w)));
+  });
+});
+
+describe('derivePlatform via createProfile', () => {
+  it('identifies Android UA as Linux armv8l', () => {
+    const profile = createProfile({
+      mode: 'fixed',
+      fixedUserAgent: 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36',
+    });
+    assert.strictEqual(profile.platform, 'Linux armv8l');
+  });
+
+  it('identifies iPhone UA as iPhone', () => {
+    const profile = createProfile({
+      mode: 'fixed',
+      fixedUserAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+    });
+    assert.strictEqual(profile.platform, 'iPhone');
+  });
+
+  it('identifies iPad UA as iPhone', () => {
+    const profile = createProfile({
+      mode: 'fixed',
+      fixedUserAgent: 'Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+    });
+    assert.strictEqual(profile.platform, 'iPhone');
+  });
+
+  it('falls back to Win32 for unknown UA', () => {
+    const profile = createProfile({ mode: 'fixed', fixedUserAgent: 'Bot/1.0' });
+    assert.strictEqual(profile.platform, 'Win32');
+  });
+});
+
+describe('buildProfile signature', () => {
+  it('includes nodeCode, channelId, sessionIndex, and mode in signature', () => {
+    const base = {
+      userAgent: 'UA/1.0',
+      viewport: { width: 1920, height: 1080 },
+      locale: 'en-GB',
+      timezoneId: 'Europe/London',
+      languages: ['en-GB', 'en'],
+      platform: 'Win32',
+      deviceMemory: 8,
+      hardwareConcurrency: 8,
+      colorDepth: 24,
+      sessionIndex: 0,
+      mode: 'channel',
+    };
+    const a = buildProfile({ ...base, nodeCode: 'node-a', channelId: 1 });
+    const b = buildProfile({ ...base, nodeCode: 'node-a', channelId: 2 });
+    const c = buildProfile({ ...base, nodeCode: 'node-b', channelId: 1 });
+    const d = buildProfile({ ...base, nodeCode: 'node-a', channelId: 1, sessionIndex: 1 });
+    const e = buildProfile({ ...base, nodeCode: 'node-a', channelId: 1, mode: 'session' });
+    assert.notStrictEqual(a.signature, b.signature);
+    assert.notStrictEqual(a.signature, c.signature);
+    assert.notStrictEqual(a.signature, d.signature);
+    assert.notStrictEqual(a.signature, e.signature);
+  });
+});
+
+describe('createProfile session mode', () => {
+  it('returns different UA for different sessionIndex', () => {
+    let idxA = null;
+    let idxB = null;
+    for (let i = 1; i < 200; i++) {
+      const r = seededRandom(`node-a:1:${i}`)();
+      if (r < 0.5 && idxA === null) idxA = i;
+      if (r >= 0.5 && idxB === null) idxB = i;
+      if (idxA !== null && idxB !== null) break;
+    }
+    assert.ok(idxA !== null && idxB !== null, 'could not find session indices on opposite sides of 0.5');
+    const a = createProfile({ nodeCode: 'node-a', channelId: 1, mode: 'session', sessionIndex: idxA });
+    const b = createProfile({ nodeCode: 'node-a', channelId: 1, mode: 'session', sessionIndex: idxB });
+    assert.notStrictEqual(a.userAgent, b.userAgent);
+  });
+
+  it('returns same UA for same sessionIndex', () => {
+    const a = createProfile({ nodeCode: 'node-a', channelId: 1, mode: 'session', sessionIndex: 5 });
+    const b = createProfile({ nodeCode: 'node-a', channelId: 1, mode: 'session', sessionIndex: 5 });
+    assert.strictEqual(a.userAgent, b.userAgent);
+  });
+});
+
+describe('pool caching', () => {
+  const originalUaEnv = process.env.CRAWLER_UA_POOL_PATH;
+  const originalLocaleEnv = process.env.CRAWLER_LOCALES;
+  let tempDir;
+
+  before(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pool-cache-'));
+  });
+
+  after(() => {
+    if (originalUaEnv === undefined) delete process.env.CRAWLER_UA_POOL_PATH;
+    else process.env.CRAWLER_UA_POOL_PATH = originalUaEnv;
+    if (originalLocaleEnv === undefined) delete process.env.CRAWLER_LOCALES;
+    else process.env.CRAWLER_LOCALES = originalLocaleEnv;
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    delete process.env.CRAWLER_UA_POOL_PATH;
+    delete process.env.CRAWLER_LOCALES;
+  });
+
+  it('caches UA pool based on CRAWLER_UA_POOL_PATH', () => {
+    const ua = 'Mozilla/5.0 (Cached/1.0)';
+    const poolPath = path.join(tempDir, 'cached.json');
+    fs.writeFileSync(poolPath, JSON.stringify([ua]));
+    process.env.CRAWLER_UA_POOL_PATH = poolPath;
+
+    const first = createProfile({ nodeCode: 'cache-a', channelId: 1 });
+    assert.strictEqual(first.userAgent, ua);
+
+    fs.unlinkSync(poolPath);
+    const second = createProfile({ nodeCode: 'cache-a', channelId: 1 });
+    assert.strictEqual(second.userAgent, ua);
+  });
+
+  it('caches locale pool based on CRAWLER_LOCALES', () => {
+    process.env.CRAWLER_LOCALES = 'en-US';
+    const first = createProfile({ nodeCode: 'cache-b', channelId: 1 });
+    assert.strictEqual(first.locale, 'en-US');
+
+    process.env.CRAWLER_LOCALES = 'de-DE';
+    const second = createProfile({ nodeCode: 'cache-b', channelId: 1 });
+    assert.strictEqual(second.locale, 'de-DE');
+
+    process.env.CRAWLER_LOCALES = 'en-US';
+    const third = createProfile({ nodeCode: 'cache-b', channelId: 1 });
+    assert.strictEqual(third.locale, 'en-US');
   });
 });

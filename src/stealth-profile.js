@@ -87,25 +87,80 @@ function weightedPick(pool, rand) {
   return pool[pool.length - 1];
 }
 
+const uaPoolCache = { key: null, value: null };
+const localePoolCache = { key: null, value: null };
+
 function parseUaPool() {
   const path = process.env.CRAWLER_UA_POOL_PATH;
   if (!path) return BUILTIN_UA_POOL;
+  if (uaPoolCache.key === path) return uaPoolCache.value;
+
   const fs = require('fs');
-  const raw = JSON.parse(fs.readFileSync(path, 'utf8'));
-  return raw.map(item => typeof item === 'string' ? { ua: item, weight: 1 } : item);
+  let raw;
+  try {
+    raw = fs.readFileSync(path, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw new Error(`UA pool file does not exist: ${path}`);
+    }
+    throw new Error(`Failed to read UA pool from ${path}: ${err.message}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Failed to parse UA pool JSON from ${path}: ${err.message}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`UA pool from ${path} must be a JSON array, got ${typeof parsed}`);
+  }
+
+  const pool = parsed.map((item, index) => {
+    if (typeof item === 'string') return { ua: item, weight: 1 };
+    if (item && typeof item === 'object') {
+      if (typeof item.ua !== 'string') {
+        throw new Error(`UA pool item at index ${index} is missing a valid "ua" string field`);
+      }
+      return item;
+    }
+    throw new Error(`UA pool item at index ${index} must be a string or an object with a "ua" field`);
+  });
+
+  uaPoolCache.key = path;
+  uaPoolCache.value = pool;
+  return pool;
 }
 
 function parseLocalePool() {
   const locales = process.env.CRAWLER_LOCALES;
   if (!locales) return BUILTIN_LOCALE_POOL;
+  if (localePoolCache.key === locales) return localePoolCache.value;
+
   const wanted = locales.split(',').map(s => s.trim());
-  return BUILTIN_LOCALE_POOL.filter(item => wanted.includes(item.locale));
+  const filtered = BUILTIN_LOCALE_POOL.filter(item => wanted.includes(item.locale));
+
+  if (filtered.length === 0) {
+    console.warn(`[stealth-profile] CRAWLER_LOCALES="${locales}" matched no built-in locales; falling back to built-in pool.`);
+    localePoolCache.key = locales;
+    localePoolCache.value = BUILTIN_LOCALE_POOL;
+    return BUILTIN_LOCALE_POOL;
+  }
+
+  localePoolCache.key = locales;
+  localePoolCache.value = filtered;
+  return filtered;
 }
 
 function derivePlatform(userAgent) {
   if (userAgent.includes('Windows')) return 'Win32';
   if (userAgent.includes('Macintosh')) return 'MacIntel';
+  if (userAgent.includes('Android')) return 'Linux armv8l';
+  if (userAgent.includes('iPhone') || userAgent.includes('iPad') || userAgent.includes('iPod')) return 'iPhone';
   if (userAgent.includes('Linux')) return 'Linux x86_64';
+  // Conservative fallback: most crawlers target desktop sites, so Win32 is the
+  // safest default when the UA does not contain a recognized platform token.
   return 'Win32';
 }
 
@@ -176,6 +231,10 @@ function buildProfile(fields) {
     platform: profile.platform,
     deviceMemory: profile.deviceMemory,
     hardwareConcurrency: profile.hardwareConcurrency,
+    nodeCode: profile.nodeCode,
+    channelId: profile.channelId,
+    sessionIndex: profile.sessionIndex,
+    mode: profile.mode,
   })).slice(0, 8);
   profile.uaHash = hash(profile.userAgent).slice(0, 8);
   return profile;
