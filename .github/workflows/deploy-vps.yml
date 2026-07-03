@@ -15,12 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug secrets
-        run: |
-          echo "VPS_HOST='${{ secrets.VPS_HOST }}'"
-          echo "VPS_USER='${{ secrets.VPS_USER }}'"
-          echo "VPS_SSH_KEY starts with: ${{ secrets.VPS_SSH_KEY }}"
-
       - name: Lowercase repository
         id: repo
         run: |
