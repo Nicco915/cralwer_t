@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const { PageCrawler, classifyGotoError } = require('./page-crawler');
+const { createProfile } = require('./stealth-profile');
 
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
 
 class Channel {
@@ -15,10 +15,14 @@ class Channel {
     this.currentTask = null;
     this.consecutiveFailures = 0;
     this.lastFailureWasProxy = false;
+    this.nodeCode = this.config.nodeCode || 'crawler-01';
+    this.stealthMode = this.config.stealthMode || 'channel';
+    this.sessionIndex = 0;
+    this.profile = this._createProfile();
     this.pageCrawler = new PageCrawler({
       baseUrl: this.config.baseUrl,
       imageDir: this.config.imageDir,
-      userAgent: this.config.userAgent || DEFAULT_USER_AGENT,
+      userAgent: this.profile.userAgent,
       maxImages: this.config.maxImages,
       cloudflareMaxWait: this.config.cloudflareMaxWait,
       minDelay: this.config.minDelay,
@@ -36,12 +40,24 @@ class Channel {
     this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
   }
 
+  _createProfile() {
+    return createProfile({
+      nodeCode: this.nodeCode,
+      channelId: this.id,
+      sessionIndex: this.sessionIndex,
+      mode: this.stealthMode,
+      fixedUserAgent: this.config.userAgent || null,
+    });
+  }
+
   _buildContextOptions() {
-    const userAgent = this.config.userAgent || DEFAULT_USER_AGENT;
-    const viewport = this.config.viewport || DEFAULT_VIEWPORT;
-    const locale = this.config.locale || 'en-GB';
-    const timezone = this.config.timezone || 'Europe/London';
-    const contextOptions = { userAgent, viewport, locale, timezoneId: timezone };
+    const { userAgent, viewport, locale, timezoneId } = this.profile;
+    const contextOptions = {
+      userAgent: this.config.userAgent || userAgent,
+      viewport: this.config.viewport || viewport,
+      locale: this.config.locale || locale,
+      timezoneId: this.config.timezone || timezoneId,
+    };
     if (this.config.proxy) {
       contextOptions.proxy = { server: this.config.proxy };
     }
@@ -55,6 +71,12 @@ class Channel {
       } catch (e) {
         // Ignore errors when context is already closed or browser is dead
       }
+    }
+
+    if (this.stealthMode === 'session') {
+      this.sessionIndex += 1;
+      this.profile = this._createProfile();
+      this.pageCrawler.userAgent = this.profile.userAgent;
     }
 
     const contextOptions = this._buildContextOptions();
@@ -86,17 +108,7 @@ class Channel {
   }
 
   getStealthScript() {
-    return `() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-GB', 'en'] });
-      window.chrome = { runtime: {} };
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters) =>
-        parameters.name === 'notifications' ?
-          Promise.resolve({ state: Notification.permission }) :
-          originalQuery(parameters);
-    }`;
+    return this.profile.stealthScript;
   }
 
   async init(browser, proxyOverride) {
