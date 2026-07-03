@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { hash, seededRandom, weightedPick } = require('../src/stealth-profile');
+const { hash, seededRandom, weightedPick, createProfile } = require('../src/stealth-profile');
 
 describe('hash', () => {
   it('returns sha256 hex of input', () => {
@@ -90,5 +90,41 @@ describe('weightedPick', () => {
     }
     const ratio = counts.a / counts.b;
     assert.ok(ratio > 2.5 && ratio < 3.5, `expected ratio ~3, got ${ratio} (counts: ${JSON.stringify(counts)})`);
+  });
+});
+
+describe('createProfile', () => {
+  it('returns a profile with required fields', () => {
+    const profile = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    assert.ok(profile.userAgent);
+    assert.ok(profile.viewport);
+    assert.ok(profile.locale);
+    assert.ok(profile.timezoneId);
+    assert.ok(profile.platform);
+    assert.ok(profile.languages);
+    assert.strictEqual(profile.mode, 'channel');
+  });
+
+  it('is deterministic for the same node/channel', () => {
+    const a = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    const b = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    assert.strictEqual(a.userAgent, b.userAgent);
+    assert.strictEqual(a.locale, b.locale);
+  });
+
+  it('differs across channels', () => {
+    const a = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    const b = createProfile({ nodeCode: 'node-a', channelId: 2 });
+    assert.notStrictEqual(a.userAgent, b.userAgent);
+  });
+
+  it('fixed mode returns the configured UA', () => {
+    const profile = createProfile({ mode: 'fixed', fixedUserAgent: 'Custom/1.0' });
+    assert.strictEqual(profile.userAgent, 'Custom/1.0');
+  });
+
+  it('fixed mode without fixedUserAgent falls back to default', () => {
+    const profile = createProfile({ mode: 'fixed' });
+    assert.ok(profile.userAgent.includes('Chrome/120'));
   });
 });
