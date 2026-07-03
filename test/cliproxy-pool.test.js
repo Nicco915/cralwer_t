@@ -21,14 +21,35 @@ function createPool(options = {}, assignmentsFile = null) {
 }
 
 describe('CliproxyPool', () => {
-  it('generates a sticky proxy URL per channel', async () => {
+  it('generates a sticky proxy URL per channel using provider-compatible defaults', async () => {
     const pool = createPool();
     const map = await pool.assign();
 
     assert.deepStrictEqual(Object.keys(map).sort(), ['ch-1', 'ch-2']);
-    assert.ok(map['ch-1'].startsWith('http://testuser-region-EU-sid-crawler-01-ch1-'));
+    assert.ok(
+      map['ch-1'].startsWith('http://testuser-country-EU-session-crawler-01-ch1-'),
+      `unexpected URL format: ${map['ch-1']}`
+    );
+    assert.ok(map['ch-1'].includes('-sticky-30'));
     assert.ok(map['ch-1'].includes(':testpass@test.cliproxy.io:1080'));
     assert.notStrictEqual(map['ch-1'], map['ch-2']);
+
+    try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
+  });
+
+  it('supports legacy username format via param name overrides', async () => {
+    const pool = createPool({
+      regionParamName: 'region',
+      sessionParamName: 'sid',
+      stickyParamName: 't',
+    });
+    const map = await pool.assign();
+
+    assert.ok(
+      map['ch-1'].startsWith('http://testuser-region-EU-sid-crawler-01-ch1-'),
+      `unexpected legacy URL format: ${map['ch-1']}`
+    );
+    assert.ok(map['ch-1'].includes('-t-30'));
 
     try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
   });

@@ -34,6 +34,45 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.kuaidailiProxyNum, 500);
   });
 
+  it('passes cliproxy config to service config', () => {
+    const config = buildServiceConfig({
+      cliproxyHost: 'us.cliproxy.io',
+      cliproxyPort: '3010',
+      cliproxyUsername: 'user',
+      cliproxyPassword: 'pass',
+      cliproxyRegion: 'EU',
+      cliproxyStickyMinutes: '120',
+      cliproxySessionPrefix: 'crawler-01',
+      cliproxyAssignmentsFile: './cliproxy.json',
+      cliproxyRegionParamName: 'country',
+      cliproxySessionParamName: 'session',
+      cliproxyStickyParamName: 'sticky',
+    });
+    assert.strictEqual(config.cliproxyHost, 'us.cliproxy.io');
+    assert.strictEqual(config.cliproxyPort, 3010);
+    assert.strictEqual(config.cliproxyUsername, 'user');
+    assert.strictEqual(config.cliproxyPassword, 'pass');
+    assert.strictEqual(config.cliproxyRegion, 'EU');
+    assert.strictEqual(config.cliproxyStickyMinutes, 120);
+    assert.strictEqual(config.cliproxySessionPrefix, 'crawler-01');
+    assert.strictEqual(config.cliproxyAssignmentsFile, './cliproxy.json');
+    assert.strictEqual(config.cliproxyRegionParamName, 'country');
+    assert.strictEqual(config.cliproxySessionParamName, 'session');
+    assert.strictEqual(config.cliproxyStickyParamName, 'sticky');
+  });
+
+  it('uses cliproxy defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.cliproxyHost, undefined);
+    assert.strictEqual(config.cliproxyPort, 1080);
+    assert.strictEqual(config.cliproxyRegion, 'EU');
+    assert.strictEqual(config.cliproxyStickyMinutes, 30);
+    assert.ok(config.cliproxyAssignmentsFile.includes('cliproxy-assignments.json'));
+    assert.strictEqual(config.cliproxyRegionParamName, 'country');
+    assert.strictEqual(config.cliproxySessionParamName, 'session');
+    assert.strictEqual(config.cliproxyStickyParamName, 'sticky');
+  });
+
   it('uses proxy pool defaults when not provided', () => {
     const config = buildServiceConfig({});
     assert.ok(config.proxyAssignmentsFile.includes('proxy-assignments.json'));

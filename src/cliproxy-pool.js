@@ -14,6 +14,10 @@ class CliproxyPool {
     this.channels = Number(options.channels || 1);
     this.assignmentsFile = options.assignmentsFile || path.resolve('./cliproxy-assignments.json');
     this.rotationCooldownMs = Number(options.rotationCooldownMs || 5 * 60 * 1000);
+    // 代理供应商对用户名参数命名不同：有的认 region/sid/t，当前供应商认 country/session/sticky
+    this.regionParamName = options.regionParamName || 'country';
+    this.sessionParamName = options.sessionParamName || 'session';
+    this.stickyParamName = options.stickyParamName || 'sticky';
     this.currentAssignments = {};
     this.nonces = {};
     this.lastRotation = {};
@@ -25,7 +29,7 @@ class CliproxyPool {
 
   buildProxyUrl(channelId, nonce) {
     const sid = `${this.sessionPrefix}-${channelId.replace('ch-', 'ch')}-${nonce}`;
-    const user = `${this.username}-region-${this.region}-sid-${sid}-t-${this.stickyMinutes}`;
+    const user = `${this.username}-${this.regionParamName}-${this.region}-${this.sessionParamName}-${sid}-${this.stickyParamName}-${this.stickyMinutes}`;
     return `http://${user}:${this.password}@${this.host}:${this.port}`;
   }
 
@@ -49,9 +53,9 @@ class CliproxyPool {
       const parsed = new URL(url);
       const user = parsed.username || '';
       const parts = user.split('-');
-      const tIndex = parts.lastIndexOf('t');
-      if (tIndex > 0 && /^[a-f0-9]{8}$/.test(parts[tIndex - 1])) {
-        return parts[tIndex - 1];
+      const stickyIndex = parts.lastIndexOf(this.stickyParamName);
+      if (stickyIndex > 0 && /^[a-f0-9]{8}$/.test(parts[stickyIndex - 1])) {
+        return parts[stickyIndex - 1];
       }
     } catch (e) {
       // ignore invalid URL

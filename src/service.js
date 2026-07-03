@@ -184,6 +184,9 @@ class CrawlerService {
         sessionPrefix: this.config.cliproxySessionPrefix,
         channels: this.config.channels,
         assignmentsFile: this.config.cliproxyAssignmentsFile,
+        regionParamName: this.config.cliproxyRegionParamName,
+        sessionParamName: this.config.cliproxySessionParamName,
+        stickyParamName: this.config.cliproxyStickyParamName,
       });
       await this.proxyPool.assign();
       this.startProxyRefresh();
