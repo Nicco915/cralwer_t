@@ -10,7 +10,10 @@ function buildServiceConfig(config) {
   return {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
     imageDir: config.imageDir || path.resolve('./output/images'),
-    userAgent: config.userAgent,
+    stealthMode: config.stealthMode || process.env.CRAWLER_STEALTH_MODE || 'channel',
+    userAgent: config.userAgent || process.env.CRAWLER_USER_AGENT,
+    uaPoolPath: config.uaPoolPath || process.env.CRAWLER_UA_POOL_PATH,
+    locales: config.locales || process.env.CRAWLER_LOCALES,
     viewport: config.viewport,
     locale: config.locale,
     timezone: config.timezone,

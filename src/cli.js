@@ -208,6 +208,10 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_IMAGE_UPLOAD_CONCURRENCY: 'imageUploadConcurrency',
     CRAWLER_IMAGE_UPLOAD_RETRIES: 'imageUploadRetries',
     CRAWLER_IMAGE_UPLOAD: 'enableImageUpload',
+    CRAWLER_STEALTH_MODE: 'stealthMode',
+    CRAWLER_USER_AGENT: 'userAgent',
+    CRAWLER_UA_POOL_PATH: 'uaPoolPath',
+    CRAWLER_LOCALES: 'locales',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {
