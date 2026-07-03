@@ -1,18 +1,68 @@
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
+const path = require('path');
+const os = require('os');
+const { chromium } = require('playwright');
 const { CrawlerService } = require('../src/service');
 
 describe('Service profile distribution', () => {
+  let browser;
+
+  before(async () => {
+    browser = await chromium.launch({ headless: true });
+  });
+
+  after(async () => {
+    if (browser) await browser.close();
+  });
+
   it('passes nodeCode and stealthMode to channels', () => {
-    const logs = [];
     const service = new CrawlerService({
       nodeCode: 'node-a',
       stealthMode: 'channel',
       channels: 2,
       imageDir: '/tmp/images',
     });
-    service.log = (msg) => logs.push(msg);
     assert.strictEqual(service.config.nodeCode, 'node-a');
     assert.strictEqual(service.config.stealthMode, 'channel');
+  });
+
+  it('initializes channels with nodeCode, stealthMode and profile', async () => {
+    const logs = [];
+    const service = new CrawlerService({
+      nodeCode: 'node-a',
+      stealthMode: 'channel',
+      channels: 2,
+      imageDir: path.join(os.tmpdir(), 'images-service-test'),
+    });
+    service.log = (...args) => logs.push(args.join(' '));
+    service.worker = { addChannel: () => {} };
+    service.browser = browser;
+
+    await service.initChannels();
+    try {
+      assert.strictEqual(service.channels.length, 2);
+
+      for (const channel of service.channels) {
+        assert.strictEqual(channel.nodeCode, 'node-a');
+        assert.strictEqual(channel.stealthMode, 'channel');
+        assert.ok(channel.profile);
+        assert.match(channel.profile.signature, /^[a-f0-9]{8}$/);
+        assert.match(channel.profile.uaHash, /^[a-f0-9]{8}$/);
+      }
+
+      const initLogs = logs.filter((msg) =>
+        typeof msg === 'string' && msg.includes('Channel') && msg.includes('profile=')
+      );
+      assert.strictEqual(initLogs.length, 2);
+      for (const msg of initLogs) {
+        assert.match(msg, /profile=[a-f0-9]{8}/);
+        assert.match(msg, /uaHash=[a-f0-9]{8}/);
+      }
+    } finally {
+      for (const channel of service.channels) {
+        await channel.close();
+      }
+    }
   });
 });
