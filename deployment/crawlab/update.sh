@@ -4,6 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 如果 .env 存在，读取环境变量
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
+# 同步 repo 代码（docker-compose.yml 也可能需要更新）
+cd /opt/crawler/repo && git pull origin main
+cd "$SCRIPT_DIR"
+
 IMAGE_TAG="${1:?请提供镜像 tag,例如 ./update.sh v1.0.0}"
 
 if [ -z "${CRAWLER_IMAGE_BASE:-}" ]; then
