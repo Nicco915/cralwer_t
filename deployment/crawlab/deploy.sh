@@ -2,9 +2,17 @@
 set -euo pipefail
 
 # 同步 VPS 上 repo 的最新代码（deploy.sh 通过软链接指向 /opt/crawler/repo/...）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 cd /opt/crawler/repo && git pull origin main
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 IMAGE_TAG="${1:?请提供镜像 tag,例如 ./deploy.sh v1.0.0}"
