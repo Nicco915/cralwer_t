@@ -39,6 +39,6 @@ describe('stealth script in browser context', () => {
 
   it('sets navigator.platform from profile', async () => {
     const platform = await page.evaluate(() => navigator.platform);
-    assert.ok(['Win32', 'MacIntel', 'Linux x86_64', 'iPad', 'iPhone'].includes(platform));
+    assert.strictEqual(platform, profile.platform);
   });
 });
