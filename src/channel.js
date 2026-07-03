@@ -71,7 +71,7 @@ class Channel {
     if (this.stealthMode === 'session') {
       this.sessionIndex += 1;
       this.profile = this._createProfile();
-      this.pageCrawler.userAgent = this.profile.userAgent;
+      this.pageCrawler.config.userAgent = this.profile.userAgent;
     }
 
     const contextOptions = this._buildContextOptions();
