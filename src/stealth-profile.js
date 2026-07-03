@@ -257,8 +257,37 @@ function buildProfile(fields) {
 }
 
 function generateStealthScript(profile) {
-  // placeholder, implemented in task 3
-  return `() => {}`;
+  const { languages, platform, deviceMemory, hardwareConcurrency, colorDepth, viewport } = profile;
+  return `(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+        { name: 'Native Client', filename: 'internal-nacl-plugin' },
+      ],
+    });
+    Object.defineProperty(navigator, 'mimeTypes', {
+      get: () => [
+        { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+        { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+      ],
+    });
+    Object.defineProperty(navigator, 'languages', { get: () => ${JSON.stringify(languages)} });
+    Object.defineProperty(navigator, 'platform', { get: () => ${JSON.stringify(platform)} });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => ${deviceMemory} });
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => ${hardwareConcurrency} });
+    Object.defineProperty(screen, 'colorDepth', { get: () => ${colorDepth} });
+    window.chrome = { runtime: {} };
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+      parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters);
+    const viewportWidth = ${viewport.width};
+    const viewportHeight = ${viewport.height};
+    Object.defineProperty(window, 'outerWidth', { get: () => viewportWidth });
+    Object.defineProperty(window, 'outerHeight', { get: () => viewportHeight + 85 });
+  })()`;
 }
 
 module.exports = {

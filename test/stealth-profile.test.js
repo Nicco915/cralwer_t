@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { hash, seededRandom, weightedPick, createProfile, buildProfile } = require('../src/stealth-profile');
+const { hash, seededRandom, weightedPick, createProfile, buildProfile, generateStealthScript } = require('../src/stealth-profile');
 
 describe('hash', () => {
   it('returns sha256 hex of input', () => {
@@ -352,5 +352,16 @@ describe('pool caching', () => {
     process.env.CRAWLER_LOCALES = 'en-US';
     const third = createProfile({ nodeCode: 'cache-b', channelId: 1 });
     assert.strictEqual(third.locale, 'en-US');
+  });
+});
+
+describe('generateStealthScript', () => {
+  it('returns a function string containing expected patches', () => {
+    const profile = createProfile({ nodeCode: 'node-a', channelId: 1 });
+    const script = generateStealthScript(profile);
+    assert.ok(script.includes("Object.defineProperty(navigator, 'webdriver'"));
+    assert.ok(script.includes("Object.defineProperty(navigator, 'languages'"));
+    assert.ok(script.includes("Object.defineProperty(navigator, 'platform'"));
+    assert.ok(script.includes('window.chrome = { runtime: {} }'));
   });
 });
