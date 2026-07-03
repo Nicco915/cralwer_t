@@ -52,8 +52,20 @@ describe('deployment/crawlab/update.sh', () => {
   it('pulls the repo before running docker compose', () => {
     const content = fs.readFileSync(scriptPath, 'utf-8');
     assert.ok(
-      content.includes('cd /opt/crawler/repo && git pull origin main'),
-      'should cd to /opt/crawler/repo and pull origin main'
+      content.includes('cd /opt/crawler/repo'),
+      'should cd to /opt/crawler/repo'
+    );
+    assert.ok(
+      content.includes('git -c safe.directory=/opt/crawler/repo fetch origin main'),
+      'should fetch origin main'
+    );
+    assert.ok(
+      content.includes('git -c safe.directory=/opt/crawler/repo update-ref refs/heads/main FETCH_HEAD'),
+      'should update local main to FETCH_HEAD'
+    );
+    assert.ok(
+      content.includes('git -c safe.directory=/opt/crawler/repo checkout -f main'),
+      'should force checkout main'
     );
   });
 });

@@ -8,23 +8,34 @@ const { execFileSync } = require('node:child_process');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const DEPLOY_SH = path.join(REPO_ROOT, 'deployment', 'crawlab', 'deploy.sh');
 
-test('deploy.sh sources .env at startup before git pull', () => {
+test('deploy.sh sources .env at startup before git sync', () => {
   const content = fs.readFileSync(DEPLOY_SH, 'utf-8');
-  const expectedBlock = `SCRIPT_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+  const gitSyncIndex = content.indexOf('cd /opt/crawler/repo');
+  assert.ok(gitSyncIndex > 0, 'should contain git sync block');
 
-if [ -f .env ]; then
-  set -a
-  source .env
-  set +a
-fi
-
-cd /opt/crawler/repo && git pull origin main
-
-cd "$SCRIPT_DIR"`;
+  const beforeGitSync = content.slice(0, gitSyncIndex);
   assert.ok(
-    content.includes(expectedBlock),
-    'deploy.sh 应在 git pull 之前先 source .env 文件'
+    beforeGitSync.includes('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'),
+    'should define SCRIPT_DIR before git sync'
+  );
+  assert.ok(
+    beforeGitSync.includes('set -a') &&
+    beforeGitSync.includes('source .env') &&
+    beforeGitSync.includes('set +a'),
+    'should source .env with set -a/source .env/set +a before git sync'
+  );
+
+  assert.ok(
+    content.includes('git -c safe.directory=/opt/crawler/repo fetch origin main'),
+    'should fetch origin main'
+  );
+  assert.ok(
+    content.includes('git -c safe.directory=/opt/crawler/repo update-ref refs/heads/main FETCH_HEAD'),
+    'should update local main to FETCH_HEAD'
+  );
+  assert.ok(
+    content.includes('git -c safe.directory=/opt/crawler/repo checkout -f main'),
+    'should force checkout main'
   );
 });
 

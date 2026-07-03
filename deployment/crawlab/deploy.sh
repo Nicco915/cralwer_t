@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# 同步 VPS 上 repo 的最新代码（deploy.sh 通过软链接指向 /opt/crawler/repo/...）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -11,8 +10,12 @@ if [ -f .env ]; then
   set +a
 fi
 
-cd /opt/crawler/repo && git -c safe.directory=/opt/crawler/repo pull origin main
-
+# 同步 VPS 上 repo 的最新代码（deploy.sh 通过软链接指向 /opt/crawler/repo/...）
+# 使用 fetch + update-ref + checkout -f 绕过 root 拥有的 .git/ORIG_HEAD 导致的 git pull 失败
+cd /opt/crawler/repo
+git -c safe.directory=/opt/crawler/repo fetch origin main
+git -c safe.directory=/opt/crawler/repo update-ref refs/heads/main FETCH_HEAD
+git -c safe.directory=/opt/crawler/repo checkout -f main
 cd "$SCRIPT_DIR"
 
 IMAGE_TAG="${1:?请提供镜像 tag,例如 ./deploy.sh v1.0.0}"

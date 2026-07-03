@@ -12,7 +12,11 @@ if [ -z "${CRAWLER_IMAGE_BASE:-}" ] && [ -f .env ]; then
 fi
 
 # 同步 repo 代码（docker-compose.yml 也可能需要更新）
-cd /opt/crawler/repo && git -c safe.directory=/opt/crawler/repo pull origin main
+# 使用 fetch + update-ref + checkout -f 绕过 root 拥有的 .git/ORIG_HEAD 导致的 git pull 失败
+cd /opt/crawler/repo
+git -c safe.directory=/opt/crawler/repo fetch origin main
+git -c safe.directory=/opt/crawler/repo update-ref refs/heads/main FETCH_HEAD
+git -c safe.directory=/opt/crawler/repo checkout -f main
 cd "$SCRIPT_DIR"
 
 IMAGE_TAG="${1:?请提供镜像 tag,例如 ./update.sh v1.0.0}"
