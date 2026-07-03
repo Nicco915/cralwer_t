@@ -4,7 +4,8 @@ const path = require('path');
 function loadEnvFile(cwd) {
   const envPath = path.join(cwd || process.cwd(), '.env');
   if (!fs.existsSync(envPath)) {
-    throw new Error(`.env file not found at ${envPath}. Please create it before starting the crawler.`);
+    // Docker 场景：env 已通过 env_file / environment 注入到 process.env，跳过文件加载
+    return;
   }
   const content = fs.readFileSync(envPath, 'utf-8');
   for (const line of content.split(/\r?\n/)) {
