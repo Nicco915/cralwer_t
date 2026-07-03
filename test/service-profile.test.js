@@ -27,6 +27,69 @@ describe('Service profile distribution', () => {
     assert.strictEqual(service.config.stealthMode, 'channel');
   });
 
+  it('prefers explicit non-nullish nodeCode/stealthMode over env vars', () => {
+    const originalNodeCode = process.env.CRAWLER_NODE_CODE;
+    const originalStealthMode = process.env.CRAWLER_STEALTH_MODE;
+    process.env.CRAWLER_NODE_CODE = 'env-node';
+    process.env.CRAWLER_STEALTH_MODE = 'env-mode';
+
+    try {
+      const service = new CrawlerService({
+        nodeCode: 'explicit-node',
+        stealthMode: 'explicit-mode',
+        channels: 2,
+        imageDir: '/tmp/images',
+      });
+      assert.strictEqual(service.config.nodeCode, 'explicit-node');
+      assert.strictEqual(service.config.stealthMode, 'explicit-mode');
+    } finally {
+      process.env.CRAWLER_NODE_CODE = originalNodeCode;
+      process.env.CRAWLER_STEALTH_MODE = originalStealthMode;
+    }
+  });
+
+  it('falls back to env vars when nodeCode/stealthMode are nullish', () => {
+    const originalNodeCode = process.env.CRAWLER_NODE_CODE;
+    const originalStealthMode = process.env.CRAWLER_STEALTH_MODE;
+    process.env.CRAWLER_NODE_CODE = 'env-node';
+    process.env.CRAWLER_STEALTH_MODE = 'env-mode';
+
+    try {
+      const service = new CrawlerService({
+        nodeCode: null,
+        stealthMode: undefined,
+        channels: 2,
+        imageDir: '/tmp/images',
+      });
+      assert.strictEqual(service.config.nodeCode, 'env-node');
+      assert.strictEqual(service.config.stealthMode, 'env-mode');
+    } finally {
+      process.env.CRAWLER_NODE_CODE = originalNodeCode;
+      process.env.CRAWLER_STEALTH_MODE = originalStealthMode;
+    }
+  });
+
+  it('falls back to defaults when nodeCode/stealthMode are nullish and env vars are unset', () => {
+    const originalNodeCode = process.env.CRAWLER_NODE_CODE;
+    const originalStealthMode = process.env.CRAWLER_STEALTH_MODE;
+    delete process.env.CRAWLER_NODE_CODE;
+    delete process.env.CRAWLER_STEALTH_MODE;
+
+    try {
+      const service = new CrawlerService({
+        nodeCode: undefined,
+        stealthMode: null,
+        channels: 2,
+        imageDir: '/tmp/images',
+      });
+      assert.strictEqual(service.config.nodeCode, 'crawler-01');
+      assert.strictEqual(service.config.stealthMode, 'channel');
+    } finally {
+      process.env.CRAWLER_NODE_CODE = originalNodeCode;
+      process.env.CRAWLER_STEALTH_MODE = originalStealthMode;
+    }
+  });
+
   it('initializes channels with nodeCode, stealthMode and profile', async () => {
     const logs = [];
     const service = new CrawlerService({
