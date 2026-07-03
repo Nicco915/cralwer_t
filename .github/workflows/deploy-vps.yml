@@ -61,4 +61,4 @@ jobs:
           script_stop: true
           script: |
             cd /opt/crawler
-            ./update.sh "${{ github.ref_name }}"
+            bash ./update.sh "${{ github.ref_name }}"
