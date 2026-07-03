@@ -61,4 +61,6 @@ jobs:
           script_stop: true
           script: |
             cd /opt/crawler
+            sed -i 's|ghcr.io/<GITHUB_OWNER>/<REPO>|ghcr.io/${{ steps.repo.outputs.lower }}|g' .env
+            grep -q '^CRAWLER_IMAGE_BASE=' .env || echo 'CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}' >> .env
             bash ./update.sh "${{ github.ref_name }}"
