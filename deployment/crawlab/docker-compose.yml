@@ -55,6 +55,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-1
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
@@ -86,6 +87,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-2
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
@@ -117,6 +119,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-3
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
@@ -148,6 +151,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-4
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
@@ -179,6 +183,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-5
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
@@ -210,6 +215,7 @@ services:
     image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
     container_name: hs-sku-crawler-6
     restart: unless-stopped
+    user: "1000:1000"
     env_file: .env
     environment:
       - CRAWLER_MODE=service
