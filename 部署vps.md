@@ -1,5 +1,329 @@
 # 海外 VPS Docker 部署手册
 
+## 常见问题与日常运维
+
+### 1. 切换生产接口
+
+`.env` 中当前配置：
+
+- `CRAWLER_TASK_URL=http://117.72.52.0/renren-api/classify/open/crawler/tasks`
+- `CRAWLER_CALLBACK_URL=http://117.72.52.0/renren-api/classify/open/crawler/callback`
+- `CRAWLER_IMAGE_UPLOAD_URL=http://47.92.233.36:8003/renren-api/classify/open/image/upload`
+
+其中 `117.72.52.0` 是测试环境；`47.92.233.36:8003` 是生产图片上传接口。切换到生产时，把 task 和 callback 地址替换为生产 IP 即可：
+
+```bash
+# 在 VPS 上编辑 .env
+nano /opt/crawler/.env
+```
+
+修改后示例：
+
+```bash
+CRAWLER_TASK_URL=http://<生产IP>/renren-api/classify/open/crawler/tasks
+CRAWLER_CALLBACK_URL=http://<生产IP>/renren-api/classify/open/crawler/callback
+# 图片上传已经是生产地址，无需改动
+CRAWLER_IMAGE_UPLOAD_URL=http://47.92.233.36:8003/renren-api/classify/open/image/upload
+```
+
+保存后重启生效：
+
+```bash
+cd /opt/crawler
+export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
+./deploy.sh v1.0.3
+```
+
+### 2. 爬取有效性检测
+
+#### 2.1 本地单 SKU 测试
+
+使用项目根目录的 `test-sku.js`，指定一个 SKU 测试完整爬取流程：
+
+```bash
+# 本地开发机
+export CRAWLER_BASE_URL=https://eur.vevor.com
+export CLIPROXY_USERNAME=your-username
+export CLIPROXY_PASSWORD=your-password
+export CLIPROXY_HOST=us.cliproxy.io
+export CLIPROXY_PORT=3010
+export CLIPROXY_REGION=EU
+
+node test-sku.js GXSBSJSGWLGXVOLJBV0
+```
+
+如果只想验证代理 IP 是否生效，可以加上 `--mock-upload` 走本地 mock 上传服务器：
+
+```bash
+node test-sku.js GXSBSJSGWLGXVOLJBV0 --mock-upload
+```
+
+#### 2.2 虚拟上下游接口测试
+
+启动本地 stub server，模拟上游任务分发和 callback：
+
+```bash
+# 一个终端启动 mock 上游
+node src/mock-server.js
+
+# 另一个终端运行爬虫服务
+export CRAWLER_MODE=service
+export CRAWLER_TASK_URL=http://127.0.0.1:3000/tasks
+export CRAWLER_CALLBACK_URL=http://127.0.0.1:3000/callback
+export CRAWLER_NODE_CODE=crawler-test
+node bin/run.js
+```
+
+#### 2.3 检查 stealth 是否生效
+
+在 VPS 容器中查看启动日志：
+
+```bash
+docker logs hs-sku-crawler-1 --tail 50 | grep -i stealth
+```
+
+正常应看到按节点+通道生成的 UA 指纹、locale 等信息。也可以通过健康检查接口确认浏览器已连接：
+
+```bash
+curl http://127.0.0.1:3001/health
+```
+
+返回中 `browserConnected: true` 表示浏览器上下文创建成功。
+
+### 3. 新增和删除节点
+
+#### 3.1 新增节点
+
+编辑 `deployment/crawlab/docker-compose.yml`，复制一段 `crawler-N` service 并修改：
+
+```yaml
+  crawler-7:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-7
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-07
+      - CRAWLER_HEALTH_PORT=3007
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-07
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3007:3007"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-07:/app/output
+      - ./images/crawler-07:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+```
+
+然后创建对应目录并部署：
+
+```bash
+cd /opt/crawler
+mkdir -p output/crawler-07 images/crawler-07
+chown -R crawler:crawler output/crawler-07 images/crawler-07
+export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
+./deploy.sh v1.0.3
+```
+
+#### 3.2 删除节点
+
+```bash
+cd /opt/crawler
+# 停止并删除容器
+docker compose rm -fs crawler-7
+# 可选：删除数据目录
+rm -rf output/crawler-07 images/crawler-07
+```
+
+> 删除节点前请到上游系统把对应的 `CRAWLER_NODE_CODE`（如 `crawler-07`）下线，避免任务分发到不存在的节点。
+
+### 4. Docker 日常操作
+
+#### 4.1 查看日志
+
+```bash
+# 单个容器实时日志
+docker logs -f hs-sku-crawler-1
+
+# 最近 100 行
+docker logs hs-sku-crawler-1 --tail 100
+
+# 所有 crawler 容器日志
+docker compose logs -f --tail 50 crawler-1 crawler-2 crawler-3
+```
+
+> 容器名是 `hs-sku-crawler-1` 到 `hs-sku-crawler-6`，不是 `crawler-01`。
+
+#### 4.2 查看状态
+
+```bash
+docker ps -a | grep crawler
+docker stats hs-sku-crawler-1 hs-sku-crawler-2
+```
+
+#### 4.3 重启单个节点
+
+```bash
+docker compose restart crawler-1
+```
+
+#### 4.4 进入容器排查
+
+```bash
+docker exec -it hs-sku-crawler-1 /bin/bash
+# 容器内查看环境变量
+env | grep CRAWLER_
+```
+
+### 5. 修改 crawler-01 命名
+
+节点名字有两处：
+
+1. **业务节点代码**（上报给上游的 ID）：修改 `docker-compose.yml` 中对应 service 的 `CRAWLER_NODE_CODE`
+2. **容器名**：修改 `container_name`
+
+例如把 `crawler-01` 改成 `eu-node-01`：
+
+```yaml
+  crawler-1:
+    container_name: hs-sku-eu-node-01
+    environment:
+      - CRAWLER_NODE_CODE=eu-node-01
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=eu-node-01
+```
+
+同时把挂载目录也改掉：
+
+```yaml
+    volumes:
+      - ./logs:/app/logs
+      - ./output/eu-node-01:/app/output
+      - ./images/eu-node-01:/app/images
+```
+
+然后创建目录并部署：
+
+```bash
+cd /opt/crawler
+mkdir -p output/eu-node-01 images/eu-node-01
+chown -R crawler:crawler output/eu-node-01 images/eu-node-01
+export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
+./deploy.sh v1.0.3
+```
+
+> 修改命名后，上游系统里也要同步注册新的 `CRAWLER_NODE_CODE`。
+
+### 6. 内存推荐
+
+当前 6 个 crawler 节点，每个限制 800MB，共约 4.8GB；加上 crawlab、mongo、redis 等基础服务约 1-1.5GB。目前 8GB 内存已使用 2GB，属于轻负载。
+
+推荐预留：
+
+| 节点数 | 推荐内存 | 说明 |
+|--------|---------|------|
+| 6 节点 | 6-8 GB | 当前配置，有余量 |
+| 12 节点 | 12-16 GB | 每个节点 800MB + 基础服务 |
+| 单节点测试 | 2 GB | 只跑 1 个 crawler |
+
+如果后续增加节点，按「节点数 × 1GB + 2GB 基础」估算。
+
+### 7. 未来升级步骤
+
+#### 7.1 自动升级（推荐）
+
+1. 本地提交代码并 push 到 `main`
+2. 打 tag 并推送：
+
+```bash
+git tag v1.0.4
+git push github v1.0.4
+```
+
+3. GitHub Actions 会自动构建镜像并部署到 VPS
+
+#### 7.2 手动升级
+
+```bash
+ssh root@<VPS_IP>
+cd /opt/crawler
+export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
+./deploy.sh v1.0.4
+```
+
+如果 `deploy.sh` 报 `safe.directory`：
+
+```bash
+chown -R root:root /opt/crawler/repo
+export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
+./deploy.sh v1.0.4
+chown -R crawler:crawler /opt/crawler/repo
+```
+
+#### 7.3 回滚
+
+```bash
+cd /opt/crawler
+./rollback.sh
+```
+
+`rollback.sh` 会读取 `.last_image` 中记录的上一版镜像并重启容器。
+
+### 8. 开启 Crawlab 监控
+
+Crawlab 已经作为 Docker Compose 服务运行，默认暴露在 VPS 的 `8080` 端口。
+
+#### 8.1 本地访问
+
+在 VPS 上直接访问：
+
+```bash
+curl http://127.0.0.1:8080
+```
+
+#### 8.2 远程访问
+
+如果要在本地浏览器查看，需要一条 SSH 隧道：
+
+```bash
+ssh -L 8080:127.0.0.1:8080 root@<VPS_IP>
+```
+
+然后在浏览器打开 `http://localhost:8080`。
+
+#### 8.3 放行防火墙（可选）
+
+如果希望通过公网直接访问 Crawlab：
+
+```bash
+ufw allow 8080/tcp
+# 或者在云厂商控制台放行 8080 端口
+```
+
+> 公网暴露 Crawlab 有安全风险，建议只通过 SSH 隧道或 VPN 访问。
+
+#### 8.4 查看 Crawlab 日志
+
+```bash
+docker logs -f crawlab
+```
+
+---
+
 本文档说明如何把 `hs-sku-crawler` 部署到海外 VPS（Virtual Private Server，虚拟专用服务器），并接入 Cliproxy 动态住宅代理，最终实现 eur.vevor.com 的稳定爬取。
 
 适用场景：希望摆脱本地 PM2（Process Manager 2，Node.js 进程管理工具）部署，让爬虫跑在与目标站点同区域的 VPS 上，借助住宅 IP 规避 Cloudflare 风控。
