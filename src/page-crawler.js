@@ -26,7 +26,7 @@ function encodeSkuForSearchPath(sku) {
 class PageCrawler {
   constructor(options) {
     this.config = resolveConfig(options);
-    this.userAgent = options?.userAgent || this.config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
+    this.userAgent = this.config.userAgent;
     this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
     this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
     this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];

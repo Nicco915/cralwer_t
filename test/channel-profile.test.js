@@ -47,7 +47,7 @@ describe('Channel profile integration', () => {
     await channel.recreateContext(browser);
     const secondUa = channel.browserContext._options.userAgent;
     assert.notStrictEqual(firstUa, secondUa);
-    assert.strictEqual(channel.pageCrawler.config.userAgent, secondUa);
+    assert.strictEqual(channel.pageCrawler.userAgent, secondUa);
     await channel.browserContext.close();
   });
 });
