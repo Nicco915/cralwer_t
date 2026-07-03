@@ -52,12 +52,7 @@ class Channel {
 
   _buildContextOptions() {
     const { userAgent, viewport, locale, timezoneId } = this.profile;
-    const contextOptions = {
-      userAgent: this.config.userAgent || userAgent,
-      viewport: this.config.viewport || viewport,
-      locale: this.config.locale || locale,
-      timezoneId: this.config.timezone || timezoneId,
-    };
+    const contextOptions = { userAgent, viewport, locale, timezoneId };
     if (this.config.proxy) {
       contextOptions.proxy = { server: this.config.proxy };
     }
