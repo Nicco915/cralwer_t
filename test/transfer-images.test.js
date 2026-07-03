@@ -935,10 +935,11 @@ describe('defaultStatePath', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'statepath-'));
     process.chdir(tmpDir);
     try {
+      const cwd = process.cwd();
       const p = defaultStatePath(path.join(tmpDir, 'some', 'dir'));
       const sep = path.sep.replace(/\\/g, '\\\\');
       assert.match(p, new RegExp(`\\.transfer-state${sep}[a-f0-9]{12}\\.ndjson$`));
-      assert.ok(p.startsWith(path.join(tmpDir, '.transfer-state') + path.sep));
+      assert.ok(p.startsWith(path.join(cwd, '.transfer-state') + path.sep));
     } finally {
       process.chdir(prevCwd);
       fs.rmSync(tmpDir, { recursive: true, force: true });
