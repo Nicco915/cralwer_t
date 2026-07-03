@@ -26,9 +26,11 @@ function maskProxyUrl(url) {
 
 class CrawlerService {
   constructor(config) {
-    this.config = config;
-    this.config.nodeCode = this.config.nodeCode || process.env.CRAWLER_NODE_CODE || 'crawler-01';
-    this.config.stealthMode = this.config.stealthMode || process.env.CRAWLER_STEALTH_MODE || 'channel';
+    this.config = {
+      nodeCode: process.env.CRAWLER_NODE_CODE || 'crawler-01',
+      stealthMode: process.env.CRAWLER_STEALTH_MODE || 'channel',
+      ...config,
+    };
     this.browser = null;
     this.channels = [];
     this.poller = null;
