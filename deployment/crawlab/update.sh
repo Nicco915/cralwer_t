@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 如果 .env 存在，读取环境变量
-if [ -f .env ]; then
+# 环境变量优先；手动部署未 export 时才读取 .env
+if [ -z "${CRAWLER_IMAGE_BASE:-}" ] && [ -f .env ]; then
   set -a
   source .env
   set +a

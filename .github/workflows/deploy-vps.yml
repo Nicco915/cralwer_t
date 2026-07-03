@@ -63,4 +63,5 @@ jobs:
             cd /opt/crawler
             sed -i 's|^CRAWLER_IMAGE_BASE=.*|CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}|' .env
             grep -q '^CRAWLER_IMAGE_BASE=' .env || echo 'CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}' >> .env
+            export CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}
             bash ./update.sh "${{ github.ref_name }}"
