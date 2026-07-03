@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# 同步 VPS 上 repo 的最新代码（deploy.sh 通过软链接指向 /opt/crawler/repo/...）
+cd /opt/crawler/repo && git pull origin main
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
