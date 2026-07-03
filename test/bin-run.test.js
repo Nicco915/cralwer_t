@@ -1,5 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
+const path = require('node:path');
 const { buildServiceConfig } = require('../bin/run');
 
 describe('bin/run service config', () => {
@@ -67,7 +68,7 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.cliproxyPort, 1080);
     assert.strictEqual(config.cliproxyRegion, 'EU');
     assert.strictEqual(config.cliproxyStickyMinutes, 30);
-    assert.ok(config.cliproxyAssignmentsFile.includes('cliproxy-assignments.json'));
+    assert.ok(config.cliproxyAssignmentsFile.includes(path.join('output', 'cliproxy-assignments.json')));
     assert.strictEqual(config.cliproxyRegionParamName, 'country');
     assert.strictEqual(config.cliproxySessionParamName, 'session');
     assert.strictEqual(config.cliproxyStickyParamName, 'sticky');
@@ -75,7 +76,7 @@ describe('bin/run service config', () => {
 
   it('uses proxy pool defaults when not provided', () => {
     const config = buildServiceConfig({});
-    assert.ok(config.proxyAssignmentsFile.includes('proxy-assignments.json'));
+    assert.ok(config.proxyAssignmentsFile.includes(path.join('output', 'proxy-assignments.json')));
     assert.strictEqual(config.proxyMachineIndex, 0);
     assert.strictEqual(config.proxyMachineTotal, 1);
     assert.strictEqual(config.proxyRefreshIntervalMs, 300000);
