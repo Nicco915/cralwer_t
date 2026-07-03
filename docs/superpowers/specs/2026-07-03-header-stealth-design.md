@@ -71,7 +71,7 @@ const profile = createProfile({
   hardwareConcurrency: 8,
   languages: ['en-GB', 'en'],
   stealthScript: '() => { ... }',
-  signature: 'a1b2c3d4', // profile 哈希摘要，用于日志
+  signature: 'a1b2c3d4', // 对 profile 关键字段做 sha256 后取前 8 位，用于日志
 }
 ```
 
@@ -84,7 +84,7 @@ const profile = createProfile({
 
 #### 确定性随机
 
-- `seed = hash(nodeCode + ':' + channelId + ':' + sessionIndex)`。
+- `seed = fnv1a(nodeCode + ':' + channelId + ':' + sessionIndex)`，使用确定性字符串哈希（如 `crypto.createHash('sha256').update(str).digest('hex')` 或 `fnv1a`）。
 - 同一节点同一通道重启后基础指纹稳定。
 - 不同节点、不同通道之间分散。
 - `mode='session'` 时每次 `recreateContext` 递增 `sessionIndex`，生成新指纹。
@@ -118,15 +118,25 @@ const profile = createProfile({
       ? Promise.resolve({ state: Notification.permission })
       : originalQuery(parameters);
 
-  // 新增/增强
-  Object.defineProperty(navigator, 'plugins', { get: () => [/* 与 UA 匹配的插件 */] });
-  Object.defineProperty(navigator, 'mimeTypes', { get: () => [/* 与插件匹配 */] });
-  Object.defineProperty(navigator, 'languages', { get: () => profile.languages });
-  Object.defineProperty(navigator, 'platform', { get: () => profile.platform });
-  Object.defineProperty(navigator, 'deviceMemory', { get: () => profile.deviceMemory });
-  Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => profile.hardwareConcurrency });
-  Object.defineProperty(screen, 'colorDepth', { get: () => profile.colorDepth });
-  // outerWidth/outerHeight 与 viewport + 浏览器 UI 高度自洽
+  // 新增/增强（以下 profile.* 在生成 stealthScript 时会被序列化为具体值）
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+      { name: 'Native Client', filename: 'internal-nacl-plugin' },
+    ],
+  });
+  Object.defineProperty(navigator, 'mimeTypes', {
+    get: () => [
+      { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+      { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: navigator.plugins[0] },
+    ],
+  });
+  Object.defineProperty(navigator, 'languages', { get: () => /* profile.languages JSON 序列化 */ });
+  Object.defineProperty(navigator, 'platform', { get: () => /* profile.platform JSON 序列化 */ });
+  Object.defineProperty(navigator, 'deviceMemory', { get: () => /* profile.deviceMemory JSON 序列化 */ });
+  Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => /* profile.hardwareConcurrency JSON 序列化 */ });
+  Object.defineProperty(screen, 'colorDepth', { get: () => /* profile.colorDepth JSON 序列化 */ });
+  // outerWidth/outerHeight：在 viewport 高度基础上加上浏览器 UI 高度（约 85-135px，按平台取固定值）
 };
 ```
 
@@ -142,7 +152,7 @@ const profile = createProfile({
 
 - 从 `this.config.nodeCode` 读取节点标识，默认 `crawler-01`。
 - 创建 Channel 时传入 `nodeCode` 和 `stealthMode`。
-- 启动日志增加：`[Node crawler-eu-01] Channel 1 profile=a1b2c3d4 uaHash=xxx`。
+- 启动日志增加：`[Node crawler-eu-01] Channel 1 profile=a1b2c3d4 uaHash=xxx`，其中 `uaHash` 为 `userAgent` 的 sha256 前 8 位。
 
 ### 4. 修改 `src/crawler.js`
 
@@ -160,9 +170,9 @@ const profile = createProfile({
 |---|---|---|
 | `CRAWLER_NODE_CODE` | `crawler-01` | 节点标识，已存在 |
 | `CRAWLER_STEALTH_MODE` | `channel` | `fixed` / `channel` / `session` |
-| `CRAWLER_USER_AGENT` | 空 | `fixed` 模式下强制使用的 UA |
+| `CRAWLER_USER_AGENT` | 空 | `fixed` 模式下强制使用的 UA；为空时回退到内置默认 UA |
 | `CRAWLER_UA_POOL_PATH` | 内置 | 自定义 UA 池 JSON 路径 |
-| `CRAWLER_LOCALES` | 内置 | 可选 locale/timezone 白名单，逗号分隔 |
+| `CRAWLER_LOCALES` | 内置 | 可选 locale/timezone 白名单，逗号分隔；未设置时使用内置列表 |
 
 #### 模式说明
 
