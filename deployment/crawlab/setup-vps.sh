@@ -57,10 +57,11 @@ ssh ${SSH_OPTS} "crawler@${VPS_IP}" "
 "
 
 echo ">>> 4. 初始化 .env"
-ssh ${SSH_OPTS} "crawler@${VPS_IP}" '
+ssh ${SSH_OPTS} "crawler@${VPS_IP}" "
   cd /opt/crawler
   cp .env.example .env
-'
+  sed -i 's|ghcr.io/<GITHUB_OWNER>/<REPO>|ghcr.io/${GITHUB_OWNER_LOWER}/${REPO_LOWER}|g' .env
+"
 
 echo ">>> 完成。请执行:"
 echo "    ssh crawler@${VPS_IP}"
