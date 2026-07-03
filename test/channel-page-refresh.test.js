@@ -59,7 +59,7 @@ describe('Channel page refresh', () => {
 
   it('recreateContext closes old context and creates new page with same options', async () => {
     const browser = createMockBrowser();
-    const channel = new Channel({ id: 1, config: { proxy: 'http://proxy:8080', userAgent: 'CustomAgent', viewport: { width: 1280, height: 720 }, locale: 'zh-CN', timezone: 'Asia/Shanghai' }, log: () => {} });
+    const channel = new Channel({ id: 1, config: { proxy: 'http://proxy:8080' }, log: () => {} });
 
     await channel.init(browser);
     const originalContext = channel.browserContext;
@@ -73,11 +73,11 @@ describe('Channel page refresh', () => {
     assert.notStrictEqual(channel.page, originalPage);
     assert.strictEqual(channel.page, newPage);
 
-    // Verify context options preserved
-    assert.strictEqual(channel.browserContext.options.userAgent, 'CustomAgent');
-    assert.deepStrictEqual(channel.browserContext.options.viewport, { width: 1280, height: 720 });
-    assert.strictEqual(channel.browserContext.options.locale, 'zh-CN');
-    assert.strictEqual(channel.browserContext.options.timezoneId, 'Asia/Shanghai');
+    // Verify context options come from profile
+    assert.strictEqual(channel.browserContext.options.userAgent, channel.profile.userAgent);
+    assert.deepStrictEqual(channel.browserContext.options.viewport, channel.profile.viewport);
+    assert.strictEqual(channel.browserContext.options.locale, channel.profile.locale);
+    assert.strictEqual(channel.browserContext.options.timezoneId, channel.profile.timezoneId);
     assert.deepStrictEqual(channel.browserContext.options.proxy, { server: 'http://proxy:8080' });
   });
 

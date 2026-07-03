@@ -26,7 +26,11 @@ function maskProxyUrl(url) {
 
 class CrawlerService {
   constructor(config) {
-    this.config = config;
+    this.config = {
+      ...config,
+      nodeCode: config?.nodeCode ?? process.env.CRAWLER_NODE_CODE ?? 'crawler-01',
+      stealthMode: config?.stealthMode ?? process.env.CRAWLER_STEALTH_MODE ?? 'channel',
+    };
     this.browser = null;
     this.channels = [];
     this.poller = null;
@@ -124,11 +128,14 @@ class CrawlerService {
           pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
           dataLayerMaxRetries: this.config.dataLayerMaxRetries,
           dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
+          nodeCode: this.config.nodeCode,
+          stealthMode: this.config.stealthMode,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),
       });
       await channel.init(this.browser);
+      this.log(`[Node ${this.config.nodeCode}] Channel ${i} profile=${channel.profile.signature} uaHash=${channel.profile.uaHash}`);
       this.channels.push(channel);
       this.worker.addChannel(channel);
     }

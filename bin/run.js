@@ -10,6 +10,7 @@ function buildServiceConfig(config) {
   return {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
     imageDir: config.imageDir || path.resolve('./output/images'),
+    stealthMode: config.stealthMode ?? 'channel',
     userAgent: config.userAgent,
     viewport: config.viewport,
     locale: config.locale,

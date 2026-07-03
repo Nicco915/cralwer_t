@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const subprocess = require('child_process');
 const { PageCrawler } = require('./page-crawler');
+const { createProfile } = require('./stealth-profile');
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
@@ -48,6 +49,9 @@ const DEFAULT_CONFIG = {
 
 function resolveConfig(config) {
   const cfg = { ...DEFAULT_CONFIG, ...(config || {}) };
+
+  cfg.nodeCode = cfg.nodeCode || process.env.CRAWLER_NODE_CODE || os.hostname() || 'crawler-01';
+  cfg.stealthMode = cfg.stealthMode || process.env.CRAWLER_STEALTH_MODE || 'channel';
 
   if (!cfg.inputExcel) {
     throw new Error('Missing required config: inputExcel');
@@ -519,25 +523,11 @@ ${result.product_specification || ''}`;
     }
   }
 
-  getStealthScript() {
-    return `() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-GB', 'en'] });
-      window.chrome = { runtime: {} };
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters) =>
-        parameters.name === 'notifications' ?
-          Promise.resolve({ state: Notification.permission }) :
-          originalQuery(parameters);
-    }`;
-  }
-
   async crawlSingleSku(sku, page, recreateContext) {
     const pageCrawler = new PageCrawler({
       baseUrl: this.config.baseUrl,
       imageDir: this.config.imageDir,
-      userAgent: this.config.userAgent,
+      userAgent: this.profile?.userAgent || this.config.userAgent,
       maxImages: this.config.maxImages,
       cloudflareMaxWait: this.config.cloudflareMaxWait,
       minDelay: this.config.minDelay,
@@ -581,10 +571,6 @@ ${result.product_specification || ''}`;
       resultPath,
       order,
       headless,
-      userAgent,
-      viewport,
-      locale,
-      timezone,
       browserPath,
       handleSignals,
       translationConcurrency,
@@ -697,14 +683,22 @@ ${result.product_specification || ''}`;
 
     const browser = await chromium.launch(launchOptions);
 
+    const profile = createProfile({
+      nodeCode: this.config.nodeCode,
+      channelId: 1,
+      mode: this.config.stealthMode,
+      fixedUserAgent: this.config.userAgent,
+    });
+    this.profile = profile;
+
     const context = await browser.newContext({
-      userAgent,
-      viewport,
-      locale,
-      timezoneId: timezone,
+      userAgent: profile.userAgent,
+      viewport: profile.viewport,
+      locale: profile.locale,
+      timezoneId: profile.timezoneId,
     });
 
-    await context.addInitScript(this.getStealthScript());
+    await context.addInitScript(profile.stealthScript);
     const page = await context.newPage();
 
     const translationQueue = this.createAsyncQueue(translationQueueCapacity);

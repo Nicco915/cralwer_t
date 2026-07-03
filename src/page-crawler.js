@@ -26,6 +26,7 @@ function encodeSkuForSearchPath(sku) {
 class PageCrawler {
   constructor(options) {
     this.config = resolveConfig(options);
+    this.userAgent = this.config.userAgent;
     this.gotoMaxRetries = options?.gotoMaxRetries !== undefined ? options.gotoMaxRetries : 3;
     this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
     this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
@@ -46,10 +47,9 @@ class PageCrawler {
   }
 
   downloadImage(url) {
-    const { userAgent } = this.config;
     return new Promise((resolve, reject) => {
       const client = url.startsWith('https:') ? https : http;
-      const req = client.get(url, { headers: { 'User-Agent': userAgent } }, (res) => {
+      const req = client.get(url, { headers: { 'User-Agent': this.userAgent } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           return this.downloadImage(res.headers.location).then(resolve).catch(reject);
         }
