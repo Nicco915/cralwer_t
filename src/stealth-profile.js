@@ -9,6 +9,21 @@ const LCG_MODULUS = 233280;
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
 
+const HASH_PREFIX_LENGTH = 8;
+
+const BUILTIN_DEVICE_MEMORY_POOL = [
+  { v: 4, weight: 15 },
+  { v: 8, weight: 50 },
+  { v: 16, weight: 35 },
+];
+
+const BUILTIN_HARDWARE_CONCURRENCY_POOL = [
+  { v: 4, weight: 15 },
+  { v: 8, weight: 55 },
+  { v: 12, weight: 20 },
+  { v: 16, weight: 10 },
+];
+
 const BUILTIN_UA_POOL = [
   { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36', weight: 30 },
   { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', weight: 20 },
@@ -45,10 +60,10 @@ function hash(str) {
 }
 
 function seededRandom(seed) {
-  // Use only the first 8 hex digits (32 bits) of the hash. The LCG modulus
-  // is small, so 32 bits of state are plenty; using fewer digits also avoids
-  // exceeding Number.MAX_SAFE_INTEGER during parseInt.
-  let state = parseInt(hash(seed).slice(0, 8), 16);
+  // Use only the first HASH_PREFIX_LENGTH hex digits (32 bits) of the hash.
+  // The LCG modulus is small, so 32 bits of state are plenty; using fewer
+  // digits also avoids exceeding Number.MAX_SAFE_INTEGER during parseInt.
+  let state = parseInt(hash(seed).slice(0, HASH_PREFIX_LENGTH), 16);
   return function next() {
     state = (state * LCG_MULTIPLIER + LCG_INCREMENT) % LCG_MODULUS;
     return state / LCG_MODULUS;
@@ -120,7 +135,7 @@ function parseUaPool() {
   const pool = parsed.map((item, index) => {
     if (typeof item === 'string') return { ua: item, weight: 1 };
     if (item && typeof item === 'object') {
-      if (typeof item.ua !== 'string') {
+      if (typeof item.ua !== 'string' || item.ua.trim().length === 0) {
         throw new Error(`UA pool item at index ${index} is missing a valid "ua" string field`);
       }
       return item;
@@ -157,7 +172,8 @@ function derivePlatform(userAgent) {
   if (userAgent.includes('Windows')) return 'Win32';
   if (userAgent.includes('Macintosh')) return 'MacIntel';
   if (userAgent.includes('Android')) return 'Linux armv8l';
-  if (userAgent.includes('iPhone') || userAgent.includes('iPad') || userAgent.includes('iPod')) return 'iPhone';
+  if (userAgent.includes('iPad')) return 'iPad';
+  if (userAgent.includes('iPhone') || userAgent.includes('iPod')) return 'iPhone';
   if (userAgent.includes('Linux')) return 'Linux x86_64';
   // Conservative fallback: most crawlers target desktop sites, so Win32 is the
   // safest default when the UA does not contain a recognized platform token.
@@ -184,8 +200,8 @@ function createProfile({
   const uaItem = weightedPick(uaPool, rand);
   const localeItem = weightedPick(localePool, rand);
   const viewportItem = weightedPick(BUILTIN_VIEWPORT_POOL, rand);
-  const deviceMemory = weightedPick([{ v: 4, weight: 15 }, { v: 8, weight: 50 }, { v: 16, weight: 35 }], rand).v;
-  const hardwareConcurrency = weightedPick([{ v: 4, weight: 15 }, { v: 8, weight: 55 }, { v: 12, weight: 20 }, { v: 16, weight: 10 }], rand).v;
+  const deviceMemory = weightedPick(BUILTIN_DEVICE_MEMORY_POOL, rand).v;
+  const hardwareConcurrency = weightedPick(BUILTIN_HARDWARE_CONCURRENCY_POOL, rand).v;
 
   return buildProfile({
     userAgent: uaItem.ua,
@@ -222,7 +238,6 @@ function buildProfileFromUa(userAgent, meta) {
 
 function buildProfile(fields) {
   const profile = { ...fields };
-  profile.stealthScript = generateStealthScript(profile);
   profile.signature = hash(JSON.stringify({
     userAgent: profile.userAgent,
     viewport: profile.viewport,
@@ -235,8 +250,9 @@ function buildProfile(fields) {
     channelId: profile.channelId,
     sessionIndex: profile.sessionIndex,
     mode: profile.mode,
-  })).slice(0, 8);
-  profile.uaHash = hash(profile.userAgent).slice(0, 8);
+  })).slice(0, HASH_PREFIX_LENGTH);
+  profile.uaHash = hash(profile.userAgent).slice(0, HASH_PREFIX_LENGTH);
+  profile.stealthScript = generateStealthScript(profile);
   return profile;
 }
 

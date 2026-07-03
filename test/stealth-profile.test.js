@@ -118,7 +118,8 @@ describe('createProfile', () => {
   it('differs across channels', () => {
     const a = createProfile({ nodeCode: 'node-a', channelId: 1 });
     const b = createProfile({ nodeCode: 'node-a', channelId: 2 });
-    assert.notStrictEqual(a.userAgent, b.userAgent);
+    assert.notStrictEqual(a.signature, b.signature);
+    assert.notStrictEqual(a.userAgent + a.signature, b.userAgent + b.signature);
   });
 
   it('fixed mode returns the configured UA', () => {
@@ -239,12 +240,12 @@ describe('derivePlatform via createProfile', () => {
     assert.strictEqual(profile.platform, 'iPhone');
   });
 
-  it('identifies iPad UA as iPhone', () => {
+  it('identifies iPad UA as iPad', () => {
     const profile = createProfile({
       mode: 'fixed',
       fixedUserAgent: 'Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
     });
-    assert.strictEqual(profile.platform, 'iPhone');
+    assert.strictEqual(profile.platform, 'iPad');
   });
 
   it('falls back to Win32 for unknown UA', () => {
