@@ -28,6 +28,7 @@ class Channel {
     this.pageCrawler = new PageCrawler({
       baseUrl: this.config.baseUrl,
       imageDir: this.config.imageDir,
+      diagnosticDir: this.config.diagnosticDir,
       userAgent: this.profile.userAgent,
       maxImages: this.config.maxImages,
       cloudflareMaxWait: this.config.cloudflareMaxWait,

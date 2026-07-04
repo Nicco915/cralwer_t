@@ -6,6 +6,7 @@ const http = require('http');
 const DEFAULT_CONFIG = {
   baseUrl: 'https://eur.vevor.com',
   imageDir: './output/images',
+  diagnosticDir: process.env.CRAWLER_DIAGNOSTIC_DIR || '',
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
   maxImages: 5,
   cloudflareMaxWait: 45,
@@ -125,6 +126,11 @@ class PageCrawler {
       return result;
     } catch (e) {
       this.log(`[${sku}] dataLayer wait timeout/error: ${e.message}`);
+      try {
+        await captureDiagnostics(page, sku, 'dataLayer-timeout', this.config.diagnosticDir);
+      } catch (diagErr) {
+        this.log(`[${sku}] diagnostic capture failed: ${diagErr.message}`);
+      }
       return ['', ''];
     }
   }
@@ -506,4 +512,81 @@ async function gotoWithRetry(page, url, options) {
   throw lastError;
 }
 
-module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath };
+async function captureDiagnostics(page, sku, label, outputDir) {
+  if (!outputDir) {
+    return null;
+  }
+
+  const now = new Date();
+  const dateDir = now.toISOString().slice(0, 10);
+  const dir = path.join(outputDir, dateDir);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const ts = now.toISOString().replace(/[:.]/g, '-');
+  const baseName = `${ts}-${label}-${sku}`;
+  const meta = {
+    sku,
+    label,
+    timestamp: now.toISOString(),
+    title: '',
+    url: '',
+    screenshot: null,
+    htmlSnippet: null,
+    ipInfo: null,
+  };
+
+  try {
+    meta.title = await page.title().catch(() => '');
+  } catch (e) {
+    meta.titleError = e.message;
+  }
+
+  try {
+    meta.url = page.url();
+  } catch (e) {
+    meta.urlError = e.message;
+  }
+
+  try {
+    const screenshotPath = path.join(dir, `${baseName}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    meta.screenshot = screenshotPath;
+  } catch (e) {
+    meta.screenshotError = e.message;
+  }
+
+  try {
+    const html = await page.content();
+    const snippetPath = path.join(dir, `${baseName}.html`);
+    fs.writeFileSync(snippetPath, html.slice(0, 8000));
+    meta.htmlSnippet = snippetPath;
+  } catch (e) {
+    meta.htmlError = e.message;
+  }
+
+  try {
+    const ipInfo = await page.evaluate(() => {
+      try {
+        return fetch('https://ipinfo.io/json')
+          .then(r => r.json())
+          .catch(err => ({ error: err.message }));
+      } catch (err) {
+        return { error: err.message };
+      }
+    });
+    meta.ipInfo = ipInfo;
+  } catch (e) {
+    meta.ipInfo = { error: e.message };
+  }
+
+  try {
+    const metaPath = path.join(dir, `${baseName}.json`);
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+  } catch (e) {
+    // Best-effort diagnostics; do not let metadata write failures propagate.
+  }
+
+  return meta;
+}
+
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath, captureDiagnostics };

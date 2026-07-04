@@ -1,6 +1,9 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { PageCrawler, encodeSkuForSearchPath } = require('../src/page-crawler');
+const { PageCrawler, encodeSkuForSearchPath, captureDiagnostics } = require('../src/page-crawler');
 
 function createMockPage(opts = {}) {
   let currentUrl = opts.url || '';
@@ -244,5 +247,50 @@ describe('PageCrawler.crawlSingleSku search URL encoding', () => {
     assert.strictEqual(visitedUrls.length, 2);
     assert.strictEqual(visitedUrls[0], 'https://eur.vevor.com/s/A%2D123');
     assert.strictEqual(visitedUrls[1], 'https://eur.vevor.com/p/A-123');
+  });
+});
+
+describe('captureDiagnostics', () => {
+  it('saves screenshot, html snippet, and metadata when outputDir is set', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-test-'));
+    const page = {
+      title: async () => 'Challenge Page',
+      url: () => 'https://eur.vevor.com/s/TEST-123',
+      screenshot: async ({ path: screenshotPath }) => {
+        fs.writeFileSync(screenshotPath, 'fake-png');
+      },
+      content: async () => '<html><body>robot check</body></html>',
+      evaluate: async () => ({ ip: '198.51.100.1', country: 'US' }),
+    };
+
+    const meta = await captureDiagnostics(page, 'TEST-123', 'dataLayer-timeout', tmpDir);
+
+    try {
+      assert.ok(meta, 'should return metadata');
+      assert.strictEqual(meta.title, 'Challenge Page');
+      assert.strictEqual(meta.url, 'https://eur.vevor.com/s/TEST-123');
+      assert.ok(meta.screenshot, 'screenshot path should be set');
+      assert.ok(fs.existsSync(meta.screenshot), 'screenshot file should exist');
+      assert.ok(meta.htmlSnippet, 'html snippet path should be set');
+      assert.ok(fs.existsSync(meta.htmlSnippet), 'html snippet file should exist');
+      assert.deepStrictEqual(meta.ipInfo, { ip: '198.51.100.1', country: 'US' });
+
+      const jsonPath = path.join(path.dirname(meta.screenshot), path.basename(meta.screenshot, '.png') + '.json');
+      assert.ok(fs.existsSync(jsonPath), 'metadata json should exist');
+      const saved = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      assert.strictEqual(saved.sku, 'TEST-123');
+      assert.strictEqual(saved.label, 'dataLayer-timeout');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null and does nothing when outputDir is empty', async () => {
+    const page = {
+      title: async () => { throw new Error('should not be called'); },
+      url: () => 'https://example.com',
+    };
+    const meta = await captureDiagnostics(page, 'SKU', 'timeout', '');
+    assert.strictEqual(meta, null);
   });
 });

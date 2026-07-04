@@ -112,6 +112,7 @@ class CrawlerService {
         config: {
           baseUrl: this.config.baseUrl,
           imageDir: this.config.imageDir,
+          diagnosticDir: this.config.diagnosticDir ? path.join(this.config.diagnosticDir, this.config.nodeCode) : undefined,
           userAgent: this.config.userAgent,
           viewport: this.config.viewport,
           locale: this.config.locale,

@@ -10,6 +10,7 @@ function buildServiceConfig(config) {
   return {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
     imageDir: config.imageDir || path.resolve('./output/images'),
+    diagnosticDir: config.diagnosticDir || process.env.CRAWLER_DIAGNOSTIC_DIR || path.resolve('./output/diagnostics'),
     stealthMode: config.stealthMode ?? 'channel',
     adaptiveTimeoutThreshold: config.adaptiveTimeoutThreshold !== undefined ? Number(config.adaptiveTimeoutThreshold) : 1,
     adaptiveRecoverySuccesses: config.adaptiveRecoverySuccesses !== undefined ? Number(config.adaptiveRecoverySuccesses) : 3,
