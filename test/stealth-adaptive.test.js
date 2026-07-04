@@ -128,4 +128,27 @@ describe('Channel adaptive stealth mode', () => {
     assert.strictEqual(channel.stealthMode, 'channel');
     assert.strictEqual(channel.effectiveStealthMode, 'channel');
   });
+
+  it('switches to session after consecutive dataLayer failures', async () => {
+    const logs = [];
+    const channel = new Channel({
+      id: 1,
+      config: {
+        nodeCode: 'crawler-01',
+        stealthMode: 'adaptive',
+        adaptiveTimeoutThreshold: 2,
+        adaptiveDataLayerThreshold: 2,
+      },
+      log: (msg) => logs.push(msg),
+    });
+
+    await channel.init(browser);
+    channel.dataLayerFailureCount = 2;
+    channel.updateAdaptiveState('not_found', false, true);
+    assert.strictEqual(channel.effectiveStealthMode, 'channel');
+
+    channel.updateAdaptiveState('not_found', false, true);
+    assert.strictEqual(channel.effectiveStealthMode, 'session');
+    assert.ok(logs.some(msg => msg.includes('dataLayer failures')));
+  });
 });

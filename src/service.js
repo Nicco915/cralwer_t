@@ -132,6 +132,8 @@ class CrawlerService {
           stealthMode: this.config.stealthMode,
           adaptiveTimeoutThreshold: this.config.adaptiveTimeoutThreshold,
           adaptiveRecoverySuccesses: this.config.adaptiveRecoverySuccesses,
+          adaptiveDataLayerThreshold: this.config.adaptiveDataLayerThreshold,
+          dataLayerProxyRotationThreshold: this.config.dataLayerProxyRotationThreshold,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),
@@ -189,6 +191,7 @@ class CrawlerService {
         regionParamName: this.config.cliproxyRegionParamName,
         sessionParamName: this.config.cliproxySessionParamName,
         stickyParamName: this.config.cliproxyStickyParamName,
+        rotationCooldownMs: this.config.cliproxyRotationCooldownMs,
       });
       await this.proxyPool.assign();
       this.startProxyRefresh();
@@ -395,9 +398,12 @@ class CrawlerService {
     for (const channel of this.channels) {
       const healthy = await channel.isHealthy();
       const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
-      if (!healthy || proxyFailed) {
+      const dataLayerRequiresRotation = channel.needsProxyRotation();
+      if (!healthy || proxyFailed || dataLayerRequiresRotation) {
         if (proxyFailed) {
           this.log(`[SERVICE] Channel ${channel.id} has ${channel.consecutiveFailures} consecutive proxy failures, rotating proxy`);
+        } else if (dataLayerRequiresRotation) {
+          this.log(`[SERVICE] Channel ${channel.id} has ${channel.dataLayerFailureCount} consecutive dataLayer failures, rotating proxy`);
         } else {
           this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
         }
@@ -408,6 +414,7 @@ class CrawlerService {
             this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
             channel.consecutiveFailures = 0;
             channel.lastFailureWasProxy = false;
+            channel.dataLayerFailureCount = 0;
             await channel.reinit(this.browser, newProxy);
             const stillUnhealthy = !(await channel.isHealthy());
             if (!stillUnhealthy) {

@@ -123,10 +123,16 @@ describe('bin/run service config', () => {
       stealthMode: 'adaptive',
       adaptiveTimeoutThreshold: '3',
       adaptiveRecoverySuccesses: '5',
+      adaptiveDataLayerThreshold: '2',
+      dataLayerProxyRotationThreshold: '3',
+      cliproxyRotationCooldownMs: '60000',
     });
     assert.strictEqual(config.stealthMode, 'adaptive');
     assert.strictEqual(config.adaptiveTimeoutThreshold, 3);
     assert.strictEqual(config.adaptiveRecoverySuccesses, 5);
+    assert.strictEqual(config.adaptiveDataLayerThreshold, 2);
+    assert.strictEqual(config.dataLayerProxyRotationThreshold, 3);
+    assert.strictEqual(config.cliproxyRotationCooldownMs, 60000);
   });
 
   it('uses adaptive stealth defaults when not provided', () => {
@@ -134,6 +140,9 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.stealthMode, 'channel');
     assert.strictEqual(config.adaptiveTimeoutThreshold, 2);
     assert.strictEqual(config.adaptiveRecoverySuccesses, 3);
+    assert.strictEqual(config.adaptiveDataLayerThreshold, 2);
+    assert.strictEqual(config.dataLayerProxyRotationThreshold, 2);
+    assert.strictEqual(config.cliproxyRotationCooldownMs, 120000);
   });
 });
 

@@ -20,6 +20,7 @@ class Channel {
     this.effectiveStealthMode = this.stealthMode === 'adaptive' ? 'channel' : this.stealthMode;
     this.adaptiveTimeoutThreshold = this.config.adaptiveTimeoutThreshold !== undefined ? this.config.adaptiveTimeoutThreshold : 2;
     this.adaptiveRecoverySuccesses = this.config.adaptiveRecoverySuccesses !== undefined ? this.config.adaptiveRecoverySuccesses : 3;
+    this.adaptiveDataLayerThreshold = this.config.adaptiveDataLayerThreshold !== undefined ? this.config.adaptiveDataLayerThreshold : 2;
     this.consecutiveTimeouts = 0;
     this.consecutiveSuccesses = 0;
     this.sessionIndex = 0;
@@ -43,6 +44,7 @@ class Channel {
     this.headedFallback = options.config && options.config.headedFallback !== false;
     this.dataLayerFailureCount = 0;
     this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
+    this.dataLayerProxyRotationThreshold = this.config.dataLayerProxyRotationThreshold !== undefined ? this.config.dataLayerProxyRotationThreshold : 2;
   }
 
   _createProfile() {
@@ -103,16 +105,19 @@ class Channel {
     return this.page;
   }
 
-  updateAdaptiveState(status, isTimeout) {
+  updateAdaptiveState(status, isTimeout, dataLayerFailed) {
     if (this.stealthMode !== 'adaptive') {
       return;
     }
 
-    if (isTimeout) {
+    const dataLayerStreakHit = dataLayerFailed && this.dataLayerFailureCount >= this.adaptiveDataLayerThreshold;
+
+    if (isTimeout || dataLayerStreakHit) {
       this.consecutiveTimeouts += 1;
       this.consecutiveSuccesses = 0;
       if (this.consecutiveTimeouts >= this.adaptiveTimeoutThreshold && this.effectiveStealthMode !== 'session') {
-        this.log(`[Channel ${this.id}] Adaptive: switching to session mode after ${this.consecutiveTimeouts} consecutive timeouts`);
+        const reason = isTimeout ? 'timeouts' : 'dataLayer failures';
+        this.log(`[Channel ${this.id}] Adaptive: switching to session mode after ${this.consecutiveTimeouts} consecutive ${reason}`);
         this.effectiveStealthMode = 'session';
       }
       return;
@@ -132,6 +137,10 @@ class Channel {
       // recovery successes, but they also break the timeout streak.
       this.consecutiveSuccesses = 0;
     }
+  }
+
+  needsProxyRotation() {
+    return this.dataLayerFailureCount >= this.dataLayerProxyRotationThreshold;
   }
 
   async refreshPage() {
@@ -268,7 +277,7 @@ class Channel {
         this.dataLayerFailureCount = 0;
       }
       const isTimeoutResult = result && /Timeout \d+ms exceeded/.test(result.error || '');
-      this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult);
+      this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult, result && result.dataLayerFailed);
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,
@@ -289,7 +298,7 @@ class Channel {
       if (isTimeout) {
         e.status = 'timeout';
       }
-      this.updateAdaptiveState(e.status || 'error', isTimeout);
+      this.updateAdaptiveState(e.status || 'error', isTimeout, false);
       throw e;
     } finally {
       this.currentTask = null;
