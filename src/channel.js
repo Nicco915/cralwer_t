@@ -42,6 +42,7 @@ class Channel {
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;
     this.headedBrowserLauncher = options.headedBrowserLauncher || null;
     this.headedFallback = options.config && options.config.headedFallback !== false;
+    this.onTaskComplete = options.onTaskComplete || null;
     this.dataLayerFailureCount = 0;
     this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
     this.dataLayerProxyRotationThreshold = this.config.dataLayerProxyRotationThreshold !== undefined ? this.config.dataLayerProxyRotationThreshold : 2;
@@ -307,6 +308,13 @@ class Channel {
         await this.refreshPageIfNeeded();
       } catch (refreshErr) {
         this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
+      }
+      if (this.onTaskComplete) {
+        try {
+          await this.onTaskComplete();
+        } catch (e) {
+          this.log(`[Channel ${this.id}] onTaskComplete error: ${e.message}`);
+        }
       }
     }
   }

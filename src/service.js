@@ -136,6 +136,7 @@ class CrawlerService {
           dataLayerProxyRotationThreshold: this.config.dataLayerProxyRotationThreshold,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
+        onTaskComplete: () => this.checkChannelForRotation(channel),
         log: this.log.bind(this),
       });
       await channel.init(this.browser);
@@ -387,6 +388,44 @@ class CrawlerService {
     }
   }
 
+  async checkChannelForRotation(channel) {
+    if (channel.busy) {
+      return;
+    }
+
+    const healthy = await channel.isHealthy();
+    const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
+    const dataLayerRequiresRotation = channel.needsProxyRotation();
+    if (!healthy || proxyFailed || dataLayerRequiresRotation) {
+      if (proxyFailed) {
+        this.log(`[SERVICE] Channel ${channel.id} has ${channel.consecutiveFailures} consecutive proxy failures, rotating proxy`);
+      } else if (dataLayerRequiresRotation) {
+        this.log(`[SERVICE] Channel ${channel.id} has ${channel.dataLayerFailureCount} consecutive dataLayer failures, rotating proxy`);
+      } else {
+        this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
+      }
+      if (this.proxyPool) {
+        try {
+          const channelId = `ch-${channel.id}`;
+          const newProxy = await this.proxyPool.nextForChannel(channelId);
+          this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
+          channel.consecutiveFailures = 0;
+          channel.lastFailureWasProxy = false;
+          channel.dataLayerFailureCount = 0;
+          await channel.reinit(this.browser, newProxy);
+          const stillUnhealthy = !(await channel.isHealthy());
+          if (!stillUnhealthy) {
+            this.log(`[SERVICE] Channel ${channel.id} recovered after proxy rotation`);
+            return;
+          }
+        } catch (e) {
+          this.log(`[SERVICE] Proxy rotation failed for channel ${channel.id}:`, e.message);
+        }
+      }
+      await this.restartBrowser();
+    }
+  }
+
   async runHealthCheck() {
     const browserHealthy = this.browser && this.browser.isConnected();
     if (!browserHealthy) {
@@ -396,43 +435,7 @@ class CrawlerService {
     }
 
     for (const channel of this.channels) {
-      if (channel.busy) {
-        // Do not reinitialize a channel while it is processing a task;
-        // reinit closes the browser context and aborts the in-flight crawl.
-        continue;
-      }
-      const healthy = await channel.isHealthy();
-      const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
-      const dataLayerRequiresRotation = channel.needsProxyRotation();
-      if (!healthy || proxyFailed || dataLayerRequiresRotation) {
-        if (proxyFailed) {
-          this.log(`[SERVICE] Channel ${channel.id} has ${channel.consecutiveFailures} consecutive proxy failures, rotating proxy`);
-        } else if (dataLayerRequiresRotation) {
-          this.log(`[SERVICE] Channel ${channel.id} has ${channel.dataLayerFailureCount} consecutive dataLayer failures, rotating proxy`);
-        } else {
-          this.log(`[SERVICE] Channel ${channel.id} unhealthy detected`);
-        }
-        if (this.proxyPool) {
-          try {
-            const channelId = `ch-${channel.id}`;
-            const newProxy = await this.proxyPool.nextForChannel(channelId);
-            this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
-            channel.consecutiveFailures = 0;
-            channel.lastFailureWasProxy = false;
-            channel.dataLayerFailureCount = 0;
-            await channel.reinit(this.browser, newProxy);
-            const stillUnhealthy = !(await channel.isHealthy());
-            if (!stillUnhealthy) {
-              this.log(`[SERVICE] Channel ${channel.id} recovered after proxy rotation`);
-              continue;
-            }
-          } catch (e) {
-            this.log(`[SERVICE] Proxy rotation failed for channel ${channel.id}:`, e.message);
-          }
-        }
-        await this.restartBrowser();
-        return;
-      }
+      await this.checkChannelForRotation(channel);
     }
   }
 
