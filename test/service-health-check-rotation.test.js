@@ -1,0 +1,58 @@
+const { describe, it } = require('node:test');
+const assert = require('node:assert');
+const { CrawlerService } = require('../src/service');
+
+function createService() {
+  const service = new CrawlerService({
+    nodeCode: 'test-node',
+    channels: 1,
+    imageDir: '/tmp/test-health-rotation',
+  });
+  service.browser = { isConnected: () => true };
+  service.proxyPool = {
+    nextForChannel: async () => 'http://new-proxy:8080',
+  };
+  return service;
+}
+
+describe('CrawlerService runHealthCheck proxy rotation', () => {
+  it('skips reinit when channel is busy', async () => {
+    const service = createService();
+    let reinitCalled = false;
+    const channel = {
+      id: 1,
+      busy: true,
+      dataLayerFailureCount: 5,
+      consecutiveFailures: 0,
+      lastFailureWasProxy: false,
+      needsProxyRotation: () => true,
+      isHealthy: async () => true,
+      reinit: async () => { reinitCalled = true; },
+    };
+    service.channels = [channel];
+
+    await service.runHealthCheck();
+
+    assert.strictEqual(reinitCalled, false, 'busy channel should not be reinitialized');
+  });
+
+  it('reinitializes idle channel when dataLayer rotation is needed', async () => {
+    const service = createService();
+    let reinitCalled = false;
+    const channel = {
+      id: 1,
+      busy: false,
+      dataLayerFailureCount: 5,
+      consecutiveFailures: 0,
+      lastFailureWasProxy: false,
+      needsProxyRotation: () => true,
+      isHealthy: async () => true,
+      reinit: async () => { reinitCalled = true; },
+    };
+    service.channels = [channel];
+
+    await service.runHealthCheck();
+
+    assert.strictEqual(reinitCalled, true, 'idle channel with dataLayer failures should be reinitialized');
+  });
+});

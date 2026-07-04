@@ -396,6 +396,11 @@ class CrawlerService {
     }
 
     for (const channel of this.channels) {
+      if (channel.busy) {
+        // Do not reinitialize a channel while it is processing a task;
+        // reinit closes the browser context and aborts the in-flight crawl.
+        continue;
+      }
       const healthy = await channel.isHealthy();
       const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
       const dataLayerRequiresRotation = channel.needsProxyRotation();
