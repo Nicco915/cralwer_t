@@ -240,6 +240,11 @@ class Channel {
     this.currentTask = task;
 
     try {
+      const delay = this.pageCrawler.randomDelay();
+      if (delay > 0) {
+        this.log(`[Channel ${this.id}] waiting ${(delay / 1000).toFixed(1)}s before task ${task.crawlerTaskId}`);
+        await this.pageCrawler.sleep(delay);
+      }
       this.log(`[Channel ${this.id}] start task ${task.crawlerTaskId} sku ${task.sku}`);
       let result;
       let usedHeadedFallback = false;
