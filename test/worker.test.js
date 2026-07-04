@@ -24,6 +24,7 @@ describe('Worker', () => {
         product_url: '',
         error: '',
       })),
+      ...options,
     };
   }
 
@@ -128,6 +129,45 @@ describe('Worker', () => {
       await worker.drain();
       assert.strictEqual(worker.inFlightTaskIds.has('1'), false);
       assert.strictEqual(worker.taskQueue.length, 0);
+    });
+  });
+
+  describe('channel onTaskComplete callback', () => {
+    it('is called after push completes and before channel becomes idle', async () => {
+      const pushed = [];
+      const events = [];
+      const worker = createWorker({
+        pusher: {
+          push: async (result) => {
+            events.push('push-start');
+            pushed.push(result);
+            events.push('push-end');
+          },
+        },
+      });
+      const channel = createChannel({
+        id: 1,
+        crawl: async () => ({
+          status: 'success',
+          sku: 'A',
+          product_name: '',
+          features_details: '',
+          product_specification: '',
+          product_url: '',
+          error: '',
+        }),
+        onTaskComplete: async () => {
+          events.push('onTaskComplete');
+          assert.strictEqual(channel.busy, true, 'channel should still be busy during onTaskComplete');
+        },
+      });
+      worker.addChannel(channel);
+      worker.pushTasks([{ crawlerTaskId: 1n, sku: 'A' }]);
+      worker.start();
+      await worker.drain();
+      assert.strictEqual(pushed.length, 1);
+      assert.deepStrictEqual(events, ['push-start', 'push-end', 'onTaskComplete']);
+      assert.strictEqual(channel.busy, false);
     });
   });
 });

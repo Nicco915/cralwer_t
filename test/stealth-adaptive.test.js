@@ -151,4 +151,127 @@ describe('Channel adaptive stealth mode', () => {
     assert.strictEqual(channel.effectiveStealthMode, 'session');
     assert.ok(logs.some(msg => msg.includes('dataLayer failures')));
   });
+
+  it('recreates browser context when adaptive switches to session after dataLayer failure', async () => {
+    let newContextCount = 0;
+    let closeCount = 0;
+    const trackingBrowser = {
+      isConnected() { return true; },
+      async newContext() {
+        newContextCount++;
+        return {
+          browser: () => this,
+          async addInitScript() {},
+          async newPage() { return { close: async () => {} }; },
+          async close() { closeCount++; },
+        };
+      },
+      async close() {},
+    };
+
+    const channel = new Channel({
+      id: 1,
+      config: {
+        nodeCode: 'crawler-01',
+        stealthMode: 'adaptive',
+        adaptiveTimeoutThreshold: 1,
+        adaptiveDataLayerThreshold: 1,
+        dataLayerProxyRotationThreshold: 99,
+      },
+      log: () => {},
+    });
+
+    await channel.init(trackingBrowser);
+    const initialProfile = channel.profile.signature;
+
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      status: 'not_found',
+      sku: 'TEST',
+      product_name: '',
+      features_details: '',
+      product_specification: '',
+      product_url: '',
+      error: '',
+      dataLayerFailed: true,
+    });
+
+    await channel.crawl({ crawlerTaskId: 1n, sku: 'TEST' });
+
+    assert.strictEqual(channel.effectiveStealthMode, 'session');
+    assert.strictEqual(newContextCount, 2, 'expected context to be recreated');
+    assert.strictEqual(closeCount, 1, 'expected old context to be closed');
+    assert.notStrictEqual(channel.profile.signature, initialProfile);
+  });
+
+  it('recreates browser context when adaptive switches back to channel after successes', async () => {
+    let newContextCount = 0;
+    let closeCount = 0;
+    const trackingBrowser = {
+      isConnected() { return true; },
+      async newContext() {
+        newContextCount++;
+        return {
+          browser: () => this,
+          async addInitScript() {},
+          async newPage() { return { close: async () => {} }; },
+          async close() { closeCount++; },
+        };
+      },
+      async close() {},
+    };
+
+    const channel = new Channel({
+      id: 1,
+      config: {
+        nodeCode: 'crawler-01',
+        stealthMode: 'adaptive',
+        adaptiveTimeoutThreshold: 1,
+        adaptiveRecoverySuccesses: 2,
+        dataLayerProxyRotationThreshold: 99,
+      },
+      log: () => {},
+    });
+
+    await channel.init(trackingBrowser);
+    channel.updateAdaptiveState('timeout', true);
+    await channel.recreateContext(trackingBrowser);
+    assert.strictEqual(channel.effectiveStealthMode, 'session');
+
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      status: 'success',
+      sku: 'TEST',
+      product_name: 'Test',
+      features_details: '',
+      product_specification: '',
+      product_url: 'https://example.com',
+      error: '',
+    });
+
+    newContextCount = 0;
+    closeCount = 0;
+
+    await channel.crawl({ crawlerTaskId: 1n, sku: 'TEST' });
+    assert.strictEqual(channel.effectiveStealthMode, 'session');
+
+    await channel.crawl({ crawlerTaskId: 2n, sku: 'TEST' });
+    assert.strictEqual(channel.effectiveStealthMode, 'channel');
+    assert.ok(newContextCount >= 1, 'expected context to be recreated after switching back to channel');
+    assert.ok(closeCount >= 1, 'expected old context to be closed');
+  });
+
+  it('needsProxyRotation returns true when dataLayerFailureCount reaches threshold=1', () => {
+    const channel = new Channel({
+      id: 1,
+      config: {
+        nodeCode: 'crawler-01',
+        stealthMode: 'channel',
+        dataLayerProxyRotationThreshold: 1,
+      },
+      log: () => {},
+    });
+
+    assert.strictEqual(channel.needsProxyRotation(), false);
+    channel.dataLayerFailureCount = 1;
+    assert.strictEqual(channel.needsProxyRotation(), true);
+  });
 });

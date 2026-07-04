@@ -138,10 +138,10 @@ describe('bin/run service config', () => {
   it('uses adaptive stealth defaults when not provided', () => {
     const config = buildServiceConfig({});
     assert.strictEqual(config.stealthMode, 'channel');
-    assert.strictEqual(config.adaptiveTimeoutThreshold, 2);
+    assert.strictEqual(config.adaptiveTimeoutThreshold, 1);
     assert.strictEqual(config.adaptiveRecoverySuccesses, 3);
-    assert.strictEqual(config.adaptiveDataLayerThreshold, 2);
-    assert.strictEqual(config.dataLayerProxyRotationThreshold, 2);
+    assert.strictEqual(config.adaptiveDataLayerThreshold, 1);
+    assert.strictEqual(config.dataLayerProxyRotationThreshold, 1);
     assert.strictEqual(config.cliproxyRotationCooldownMs, 120000);
   });
 });

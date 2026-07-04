@@ -1,51 +1,8 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { Channel } = require('../src/channel');
 const { CrawlerService } = require('../src/service');
 
-function createMockBrowser() {
-  return {
-    isConnected() { return true; },
-    async newContext() {
-      return {
-        browser: () => this,
-        async addInitScript() {},
-        async newPage() { return { close: async () => {} }; },
-        async close() {},
-      };
-    },
-    async close() {},
-  };
-}
-
-const browser = createMockBrowser();
-
 describe('Task-complete proxy rotation', () => {
-  it('Channel calls onTaskComplete after crawl finishes', async () => {
-    let called = false;
-    const channel = new Channel({
-      id: 1,
-      config: { nodeCode: 'crawler-01' },
-      onTaskComplete: () => { called = true; },
-      log: () => {},
-    });
-
-    await channel.init(browser);
-    channel.pageCrawler.crawlSingleSku = async () => ({
-      status: 'success',
-      sku: 'TEST',
-      product_name: 'Test',
-      features_details: '',
-      product_specification: '',
-      product_url: 'https://example.com',
-      error: '',
-    });
-
-    await channel.crawl({ crawlerTaskId: 1n, sku: 'TEST' });
-
-    assert.strictEqual(called, true);
-  });
-
   it('CrawlerService rotates proxy when channel needs rotation after task complete', async () => {
     const service = new CrawlerService({
       nodeCode: 'test-node',

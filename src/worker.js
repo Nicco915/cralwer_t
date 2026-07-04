@@ -116,14 +116,22 @@ class Worker {
       }
     })();
 
-    this.pendingPushes.add(pushPromise);
-    pushPromise.finally(() => {
+    const taskPromise = pushPromise.finally(async () => {
+      if (channel.onTaskComplete) {
+        try {
+          await channel.onTaskComplete();
+        } catch (e) {
+          this.log(`[Worker] channel onTaskComplete error: ${e.message}`);
+        }
+      }
       channel.busy = false;
-      this.pendingPushes.delete(pushPromise);
+      this.pendingPushes.delete(taskPromise);
       if (taskIdKey !== null) {
         this.inFlightTaskIds.delete(taskIdKey);
       }
     });
+
+    this.pendingPushes.add(taskPromise);
   }
 
   async loop() {

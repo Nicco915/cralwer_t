@@ -46,6 +46,7 @@ class Channel {
     this.dataLayerFailureCount = 0;
     this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
     this.dataLayerProxyRotationThreshold = this.config.dataLayerProxyRotationThreshold !== undefined ? this.config.dataLayerProxyRotationThreshold : 2;
+    this.profileStale = false;
   }
 
   _createProfile() {
@@ -120,6 +121,7 @@ class Channel {
         const reason = isTimeout ? 'timeouts' : 'dataLayer failures';
         this.log(`[Channel ${this.id}] Adaptive: switching to session mode after ${this.consecutiveTimeouts} consecutive ${reason}`);
         this.effectiveStealthMode = 'session';
+        this.profileStale = true;
       }
       return;
     }
@@ -132,6 +134,9 @@ class Channel {
         this.log(`[Channel ${this.id}] Adaptive: switching back to channel mode after ${this.consecutiveSuccesses} consecutive successes`);
         this.effectiveStealthMode = 'channel';
         this.sessionIndex = 0;
+        this.profile = this._createProfile();
+        this.pageCrawler.userAgent = this.profile.userAgent;
+        this.profileStale = true;
       }
     } else {
       // Other failures (not_found, sku_mismatch, error) do not count toward
@@ -309,11 +314,15 @@ class Channel {
       } catch (refreshErr) {
         this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
       }
-      if (this.onTaskComplete) {
+      if (this.profileStale) {
         try {
-          await this.onTaskComplete();
+          const browser = this.browserContext ? this.browserContext.browser() : null;
+          if (browser && browser.isConnected()) {
+            await this.recreateContext(browser);
+            this.profileStale = false;
+          }
         } catch (e) {
-          this.log(`[Channel ${this.id}] onTaskComplete error: ${e.message}`);
+          this.log(`[Channel ${this.id}] context recreate after adaptive switch failed: ${e.message}`);
         }
       }
     }
