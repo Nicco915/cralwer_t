@@ -156,10 +156,6 @@ class Channel {
   }
 
   async crawl(task) {
-    if (this.busy) {
-      throw new Error(`Channel ${this.id} is busy`);
-    }
-    this.busy = true;
     this.currentTask = task;
 
     try {
@@ -227,7 +223,6 @@ class Channel {
       }
       throw e;
     } finally {
-      this.busy = false;
       this.currentTask = null;
       this.tasksSincePageRefresh++;
       try {
