@@ -107,7 +107,21 @@ class Channel {
       }
     }
     if (this.browserContext) {
-      this.page = await this.browserContext.newPage();
+      const browser = this.browserContext.browser();
+      if (browser && browser.isConnected()) {
+        this.page = await this.browserContext.newPage();
+      } else {
+        // Browser disconnected: do not try to create a new page on a dead
+        // context, which can hang indefinitely. Close the context and let the
+        // service reinitialize the channel after restart.
+        try {
+          await this.browserContext.close();
+        } catch (e) {
+          // Ignore errors when context is already closed
+        }
+        this.browserContext = null;
+        this.page = null;
+      }
     }
     this.tasksSincePageRefresh = 0;
   }
