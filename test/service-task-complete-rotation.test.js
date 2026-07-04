@@ -68,4 +68,38 @@ describe('Task-complete proxy rotation', () => {
 
     assert.strictEqual(rotated, false);
   });
+
+  it('sets reinitializing flag during proxy rotation', async () => {
+    const service = new CrawlerService({
+      nodeCode: 'test-node',
+      channels: 1,
+      imageDir: '/tmp/test-task-complete-reinit-flag',
+    });
+
+    service.browser = { isConnected: () => true };
+    service.proxyPool = {
+      nextForChannel: async () => 'http://new-proxy:8080',
+    };
+
+    const flags = [];
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      dataLayerFailureCount: 3,
+      consecutiveFailures: 0,
+      lastFailureWasProxy: false,
+      needsProxyRotation: () => true,
+      isHealthy: async () => true,
+      reinit: async () => {
+        flags.push(channel.reinitializing);
+      },
+    };
+    service.channels = [channel];
+
+    await service.checkChannelForRotation(channel);
+
+    assert.deepStrictEqual(flags, [true]);
+    assert.strictEqual(channel.reinitializing, false);
+  });
 });

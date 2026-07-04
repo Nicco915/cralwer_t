@@ -47,6 +47,7 @@ class Channel {
     this.dataLayerFailureThreshold = this.config.dataLayerFailureThreshold !== undefined ? this.config.dataLayerFailureThreshold : 3;
     this.dataLayerProxyRotationThreshold = this.config.dataLayerProxyRotationThreshold !== undefined ? this.config.dataLayerProxyRotationThreshold : 2;
     this.profileStale = false;
+    this.reinitializing = false;
   }
 
   _createProfile() {

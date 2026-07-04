@@ -89,15 +89,9 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
       // Reset callback
       callbackReceived = null;
 
-      // Simulate browser crash by abruptly closing the browser connection.
-      // Playwright 1.60 does not expose browser.process() for Chromium, so
-      // we cannot send SIGKILL directly; close() still makes isConnected()
-      // false and exercises the same restart code path.
-      assert.ok(service.browser, 'browser should exist');
-      assert.ok(service.browser.isConnected(), 'browser should be connected');
-      await service.browser.close();
-
-      // Wait for health check to detect and restart
+      // The failed crawl leaves the channel unhealthy, so the service will
+      // auto-restart the browser. Wait for the restart to complete before
+      // pushing the next task.
       const restartStart = Date.now();
       while ((!service.browser || !service.browser.isConnected()) && Date.now() - restartStart < 30000) {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -120,10 +114,19 @@ describe('Browser crash recovery', { timeout: 120000 }, () => {
       assert.strictEqual(callbackReceived.nodeToken, 'test-token');
       assert.strictEqual(callbackReceived.success, false);
       assert.ok(callbackReceived.errorMessage && callbackReceived.errorMessage.length > 0);
+
+      // The second failed crawl also triggers an auto-restart. Wait for it to
+      // settle before stopping the service so shutdown does not race with
+      // restart and leave dangling Playwright handles.
+      const settleStart = Date.now();
+      while (service.restartPromise && Date.now() - settleStart < 30000) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     } finally {
       if (service) {
         await service.stop();
       }
+      server.closeAllConnections && server.closeAllConnections();
       server.close();
     }
   });

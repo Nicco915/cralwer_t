@@ -406,6 +406,7 @@ class CrawlerService {
       }
       if (this.proxyPool) {
         try {
+          channel.reinitializing = true;
           const channelId = `ch-${channel.id}`;
           const newProxy = await this.proxyPool.nextForChannel(channelId);
           this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
@@ -420,6 +421,8 @@ class CrawlerService {
           }
         } catch (e) {
           this.log(`[SERVICE] Proxy rotation failed for channel ${channel.id}:`, e.message);
+        } finally {
+          channel.reinitializing = false;
         }
       }
       await this.restartBrowser();
@@ -451,6 +454,11 @@ class CrawlerService {
         this.worker.stop();
         await this.worker.drain();
 
+        if (this.shuttingDown) {
+          this.log('[SERVICE] Shutdown in progress, aborting browser restart');
+          return;
+        }
+
         for (const channel of this.channels) {
           await channel.close();
         }
@@ -464,6 +472,11 @@ class CrawlerService {
 
         if (this.proxyPool) {
           try { await this.proxyPool.refresh(); } catch (e) { this.log('[PROXY] refresh on restart failed:', e.message); }
+        }
+
+        if (this.shuttingDown) {
+          this.log('[SERVICE] Shutdown in progress, aborting browser restart');
+          return;
         }
 
         await this.initBrowser();

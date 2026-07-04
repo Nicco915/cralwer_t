@@ -56,7 +56,7 @@ class Worker {
   }
 
   getIdleChannel() {
-    return this.channels.find(c => !c.busy);
+    return this.channels.find(c => !c.busy && !c.reinitializing);
   }
 
   async runTask(task, channel) {
@@ -117,17 +117,17 @@ class Worker {
     })();
 
     const taskPromise = pushPromise.finally(async () => {
+      channel.busy = false;
+      this.pendingPushes.delete(taskPromise);
+      if (taskIdKey !== null) {
+        this.inFlightTaskIds.delete(taskIdKey);
+      }
       if (channel.onTaskComplete) {
         try {
           await channel.onTaskComplete();
         } catch (e) {
           this.log(`[Worker] channel onTaskComplete error: ${e.message}`);
         }
-      }
-      channel.busy = false;
-      this.pendingPushes.delete(taskPromise);
-      if (taskIdKey !== null) {
-        this.inFlightTaskIds.delete(taskIdKey);
       }
     });
 

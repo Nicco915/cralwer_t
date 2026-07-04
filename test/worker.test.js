@@ -133,7 +133,7 @@ describe('Worker', () => {
   });
 
   describe('channel onTaskComplete callback', () => {
-    it('is called after push completes and before channel becomes idle', async () => {
+    it('is called after push completes and after channel becomes idle', async () => {
       const pushed = [];
       const events = [];
       const worker = createWorker({
@@ -158,7 +158,7 @@ describe('Worker', () => {
         }),
         onTaskComplete: async () => {
           events.push('onTaskComplete');
-          assert.strictEqual(channel.busy, true, 'channel should still be busy during onTaskComplete');
+          assert.strictEqual(channel.busy, false, 'channel should be idle during onTaskComplete so rotation checks are not skipped');
         },
       });
       worker.addChannel(channel);
@@ -168,6 +168,17 @@ describe('Worker', () => {
       assert.strictEqual(pushed.length, 1);
       assert.deepStrictEqual(events, ['push-start', 'push-end', 'onTaskComplete']);
       assert.strictEqual(channel.busy, false);
+    });
+
+    it('does not assign tasks to a reinitializing channel', async () => {
+      const worker = createWorker();
+      const channel = createChannel({
+        id: 1,
+        busy: false,
+        reinitializing: true,
+      });
+      worker.addChannel(channel);
+      assert.strictEqual(worker.getIdleChannel(), undefined);
     });
   });
 });
