@@ -5,11 +5,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "9666:9666"
     environment:
-      - CRAWLAB_NODE_MASTER=y
+      - CRAWLAB_NODE_MASTER=Y
       - CRAWLAB_MONGO_HOST=mongo
       - CRAWLAB_REDIS_HOST=redis
       - CRAWLAB_LOG_LEVEL=info
+      - CRAWLAB_GRPC_SERVER_ADDRESS=0.0.0.0:9666
+      - CRAWLAB_SERVER_HOST=0.0.0.0
     volumes:
       - crawlab-data:/data
       - ./logs:/app/logs:ro

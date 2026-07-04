@@ -25,6 +25,13 @@ describe('deployment/crawlab/docker-compose.yml', () => {
     assert.ok(content.includes('"8080:8080"'), 'should expose crawlab 8080');
   });
 
+  it('configures crawlab as master node with grpc server', () => {
+    assert.ok(content.includes('CRAWLAB_NODE_MASTER=Y'), 'should set master flag to uppercase Y');
+    assert.ok(content.includes('CRAWLAB_GRPC_SERVER_ADDRESS=0.0.0.0:9666'), 'should set grpc server bind address');
+    assert.ok(content.includes('CRAWLAB_SERVER_HOST=0.0.0.0'), 'should set server host to 0.0.0.0');
+    assert.ok(content.includes('"9666:9666"'), 'should expose grpc port 9666');
+  });
+
   it('binds crawler health ports to 127.0.0.1', () => {
     assert.ok(content.includes('"127.0.0.1:3001:3001"'), 'should bind crawler-1 health port');
     assert.ok(content.includes('"127.0.0.1:3006:3006"'), 'should bind crawler-6 health port');
