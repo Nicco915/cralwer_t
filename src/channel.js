@@ -17,6 +17,11 @@ class Channel {
     this.lastFailureWasProxy = false;
     this.nodeCode = this.config.nodeCode || 'crawler-01';
     this.stealthMode = this.config.stealthMode || 'channel';
+    this.effectiveStealthMode = this.stealthMode === 'adaptive' ? 'channel' : this.stealthMode;
+    this.adaptiveTimeoutThreshold = this.config.adaptiveTimeoutThreshold !== undefined ? this.config.adaptiveTimeoutThreshold : 2;
+    this.adaptiveRecoverySuccesses = this.config.adaptiveRecoverySuccesses !== undefined ? this.config.adaptiveRecoverySuccesses : 3;
+    this.consecutiveTimeouts = 0;
+    this.consecutiveSuccesses = 0;
     this.sessionIndex = 0;
     this.profile = this._createProfile();
     this.pageCrawler = new PageCrawler({
@@ -45,7 +50,7 @@ class Channel {
       nodeCode: this.nodeCode,
       channelId: this.id,
       sessionIndex: this.sessionIndex,
-      mode: this.stealthMode,
+      mode: this.effectiveStealthMode,
       fixedUserAgent: this.config.userAgent || null,
     });
   }
@@ -84,7 +89,7 @@ class Channel {
       }
     }
 
-    if (this.stealthMode === 'session') {
+    if (this.effectiveStealthMode === 'session') {
       this.sessionIndex += 1;
       this.profile = this._createProfile();
       this.pageCrawler.userAgent = this.profile.userAgent;
@@ -96,6 +101,37 @@ class Channel {
     await this.browserContext.addInitScript(this.getStealthScript());
     this.page = await this.browserContext.newPage();
     return this.page;
+  }
+
+  updateAdaptiveState(status, isTimeout) {
+    if (this.stealthMode !== 'adaptive') {
+      return;
+    }
+
+    if (isTimeout) {
+      this.consecutiveTimeouts += 1;
+      this.consecutiveSuccesses = 0;
+      if (this.consecutiveTimeouts >= this.adaptiveTimeoutThreshold && this.effectiveStealthMode !== 'session') {
+        this.log(`[Channel ${this.id}] Adaptive: switching to session mode after ${this.consecutiveTimeouts} consecutive timeouts`);
+        this.effectiveStealthMode = 'session';
+      }
+      return;
+    }
+
+    this.consecutiveTimeouts = 0;
+
+    if (status === 'success') {
+      this.consecutiveSuccesses += 1;
+      if (this.effectiveStealthMode === 'session' && this.consecutiveSuccesses >= this.adaptiveRecoverySuccesses) {
+        this.log(`[Channel ${this.id}] Adaptive: switching back to channel mode after ${this.consecutiveSuccesses} consecutive successes`);
+        this.effectiveStealthMode = 'channel';
+        this.sessionIndex = 0;
+      }
+    } else {
+      // Other failures (not_found, sku_mismatch, error) do not count toward
+      // recovery successes, but they also break the timeout streak.
+      this.consecutiveSuccesses = 0;
+    }
   }
 
   async refreshPage() {
@@ -231,6 +267,8 @@ class Channel {
       if (result && result.status === 'success') {
         this.dataLayerFailureCount = 0;
       }
+      const isTimeoutResult = result && /Timeout \d+ms exceeded/.test(result.error || '');
+      this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult);
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,
@@ -251,6 +289,7 @@ class Channel {
       if (isTimeout) {
         e.status = 'timeout';
       }
+      this.updateAdaptiveState(e.status || 'error', isTimeout);
       throw e;
     } finally {
       this.currentTask = null;

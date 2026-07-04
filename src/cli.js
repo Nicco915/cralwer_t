@@ -59,6 +59,9 @@ const FLAG_MAP = {
   'page-refresh-after-tasks': 'pageRefreshAfterTasks',
   'data-layer-max-retries': 'dataLayerMaxRetries',
   'data-layer-failure-threshold': 'dataLayerFailureThreshold',
+  'stealth-mode': 'stealthMode',
+  'adaptive-timeout-threshold': 'adaptiveTimeoutThreshold',
+  'adaptive-recovery-successes': 'adaptiveRecoverySuccesses',
   'kuaidaili-secret-id': 'kuaidailiSecretId',
   'kuaidaili-secret-key': 'kuaidailiSecretKey',
   'kuaidaili-proxy-type': 'kuaidailiProxyType',
@@ -214,6 +217,8 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_IMAGE_UPLOAD: 'enableImageUpload',
     CRAWLER_STEALTH_MODE: 'stealthMode',
     CRAWLER_USER_AGENT: 'userAgent',
+    CRAWLER_ADAPTIVE_TIMEOUT_THRESHOLD: 'adaptiveTimeoutThreshold',
+    CRAWLER_ADAPTIVE_RECOVERY_SUCCESSES: 'adaptiveRecoverySuccesses',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {

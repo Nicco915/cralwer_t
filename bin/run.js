@@ -11,6 +11,8 @@ function buildServiceConfig(config) {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
     imageDir: config.imageDir || path.resolve('./output/images'),
     stealthMode: config.stealthMode ?? 'channel',
+    adaptiveTimeoutThreshold: config.adaptiveTimeoutThreshold !== undefined ? Number(config.adaptiveTimeoutThreshold) : 2,
+    adaptiveRecoverySuccesses: config.adaptiveRecoverySuccesses !== undefined ? Number(config.adaptiveRecoverySuccesses) : 3,
     userAgent: config.userAgent,
     viewport: config.viewport,
     locale: config.locale,

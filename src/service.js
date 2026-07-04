@@ -130,6 +130,8 @@ class CrawlerService {
           dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
           nodeCode: this.config.nodeCode,
           stealthMode: this.config.stealthMode,
+          adaptiveTimeoutThreshold: this.config.adaptiveTimeoutThreshold,
+          adaptiveRecoverySuccesses: this.config.adaptiveRecoverySuccesses,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         log: this.log.bind(this),

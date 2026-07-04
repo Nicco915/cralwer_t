@@ -117,6 +117,24 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.imageUploadConcurrency, 2);
     assert.strictEqual(config.imageUploadRetries, 3);
   });
+
+  it('passes adaptive stealth config to service config', () => {
+    const config = buildServiceConfig({
+      stealthMode: 'adaptive',
+      adaptiveTimeoutThreshold: '3',
+      adaptiveRecoverySuccesses: '5',
+    });
+    assert.strictEqual(config.stealthMode, 'adaptive');
+    assert.strictEqual(config.adaptiveTimeoutThreshold, 3);
+    assert.strictEqual(config.adaptiveRecoverySuccesses, 5);
+  });
+
+  it('uses adaptive stealth defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.stealthMode, 'channel');
+    assert.strictEqual(config.adaptiveTimeoutThreshold, 2);
+    assert.strictEqual(config.adaptiveRecoverySuccesses, 3);
+  });
 });
 
 describe('loadEnvFile', () => {
