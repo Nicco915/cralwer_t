@@ -11,7 +11,7 @@ describe('.github/workflows/deploy-vps.yml', () => {
   });
 
   it('triggers on tag push', () => {
-    const content = fs.readFileSync(workflowPath, 'utf-8');
+    const content = fs.readFileSync(workflowPath, 'utf-8').replace(/\r\n/g, '\n');
     assert.ok(content.includes("tags:\n      - 'v*'"), 'should trigger on v* tags');
   });
 
