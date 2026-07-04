@@ -246,6 +246,70 @@ services:
     networks:
       - crawler-net
 
+  crawler-7:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-7
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-07
+      - CRAWLER_HEALTH_PORT=3007
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-07
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3007:3007"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-07:/app/output
+      - ./images/crawler-07:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
+  crawler-8:
+    image: ${CRAWLER_IMAGE:?未设置 CRAWLER_IMAGE 环境变量}
+    container_name: hs-sku-crawler-8
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      - CRAWLER_MODE=service
+      - CRAWLER_NODE_CODE=crawler-08
+      - CRAWLER_HEALTH_PORT=3008
+      - CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-08
+      - CRAWLER_HEADED_FALLBACK=false
+    ports:
+      - "127.0.0.1:3008:3008"
+    volumes:
+      - ./logs:/app/logs
+      - ./output/crawler-08:/app/output
+      - ./images/crawler-08:/app/images
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 800M
+        reservations:
+          cpus: '0.2'
+          memory: 400M
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crawler-net
+
 volumes:
   crawlab-data:
   mongo-data:

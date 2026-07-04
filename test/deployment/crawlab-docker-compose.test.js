@@ -19,6 +19,8 @@ describe('deployment/crawlab/docker-compose.yml', () => {
     assert.ok(content.includes('redis:'), 'should define redis service');
     assert.ok(content.includes('crawler-1:'), 'should define crawler-1 service');
     assert.ok(content.includes('crawler-6:'), 'should define crawler-6 service');
+    assert.ok(content.includes('crawler-7:'), 'should define crawler-7 service');
+    assert.ok(content.includes('crawler-8:'), 'should define crawler-8 service');
   });
 
   it('exposes crawlab on port 8080', () => {
@@ -35,21 +37,29 @@ describe('deployment/crawlab/docker-compose.yml', () => {
   it('binds crawler health ports to 127.0.0.1', () => {
     assert.ok(content.includes('"127.0.0.1:3001:3001"'), 'should bind crawler-1 health port');
     assert.ok(content.includes('"127.0.0.1:3006:3006"'), 'should bind crawler-6 health port');
+    assert.ok(content.includes('"127.0.0.1:3007:3007"'), 'should bind crawler-7 health port');
+    assert.ok(content.includes('"127.0.0.1:3008:3008"'), 'should bind crawler-8 health port');
   });
 
   it('sets unique CRAWLER_HEALTH_PORT per node', () => {
     assert.ok(content.includes('CRAWLER_HEALTH_PORT=3001'), 'should set crawler-1 health port');
     assert.ok(content.includes('CRAWLER_HEALTH_PORT=3006'), 'should set crawler-6 health port');
+    assert.ok(content.includes('CRAWLER_HEALTH_PORT=3007'), 'should set crawler-7 health port');
+    assert.ok(content.includes('CRAWLER_HEALTH_PORT=3008'), 'should set crawler-8 health port');
   });
 
   it('sets unique CRAWLER_NODE_CODE per node', () => {
     assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-01'), 'should set crawler-1 node code');
     assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-06'), 'should set crawler-6 node code');
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-07'), 'should set crawler-7 node code');
+    assert.ok(content.includes('CRAWLER_NODE_CODE=crawler-08'), 'should set crawler-8 node code');
   });
 
   it('sets unique CRAWLER_CLIPROXY_SESSION_PREFIX per node', () => {
     assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01'), 'should set crawler-1 session prefix');
     assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-06'), 'should set crawler-6 session prefix');
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-07'), 'should set crawler-7 session prefix');
+    assert.ok(content.includes('CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-08'), 'should set crawler-8 session prefix');
   });
 
   it('shares logs volume with crawlab read-only', () => {
@@ -59,6 +69,8 @@ describe('deployment/crawlab/docker-compose.yml', () => {
   it('uses per-node output and image directories', () => {
     assert.ok(content.includes('./output/crawler-01:/app/output'), 'crawler-1 should have isolated output dir');
     assert.ok(content.includes('./images/crawler-06:/app/images'), 'crawler-6 should have isolated images dir');
+    assert.ok(content.includes('./output/crawler-07:/app/output'), 'crawler-7 should have isolated output dir');
+    assert.ok(content.includes('./images/crawler-08:/app/images'), 'crawler-8 should have isolated images dir');
   });
 
   it('uses a shared crawler-net network', () => {
