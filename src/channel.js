@@ -54,7 +54,23 @@ class Channel {
     const { userAgent, viewport, locale, timezoneId } = this.profile;
     const contextOptions = { userAgent, viewport, locale, timezoneId };
     if (this.config.proxy) {
-      contextOptions.proxy = { server: this.config.proxy };
+      // Playwright/Chromium 在 Linux 下无法正确识别嵌在 URL 中的代理凭据，
+      // 必须拆成 server / username / password 三个字段传递。
+      let proxyUrl = this.config.proxy;
+      if (!/^https?:\/\//i.test(proxyUrl)) {
+        proxyUrl = `http://${proxyUrl}`;
+      }
+      const parsed = new URL(proxyUrl);
+      const proxyConfig = {
+        server: parsed.port ? `${parsed.protocol}//${parsed.hostname}:${parsed.port}` : `${parsed.protocol}//${parsed.hostname}`,
+      };
+      if (parsed.username) {
+        proxyConfig.username = decodeURIComponent(parsed.username);
+      }
+      if (parsed.password) {
+        proxyConfig.password = decodeURIComponent(parsed.password);
+      }
+      contextOptions.proxy = proxyConfig;
     }
     return contextOptions;
   }
