@@ -9,6 +9,7 @@ class CliproxyPool {
     this.username = options.username;
     this.password = options.password;
     this.region = options.region || 'EU';
+    this.asn = options.asn || '';
     this.stickyMinutes = Number(options.stickyMinutes || 30);
     this.sessionPrefix = options.sessionPrefix || 'crawler';
     this.channels = Number(options.channels || 1);
@@ -16,6 +17,7 @@ class CliproxyPool {
     this.rotationCooldownMs = Number(options.rotationCooldownMs || 5 * 60 * 1000);
     // 代理供应商对用户名参数命名不同：有的认 region/sid/t，当前供应商认 country/session/sticky
     this.regionParamName = options.regionParamName || 'country';
+    this.asnParamName = options.asnParamName || 'asn';
     this.sessionParamName = options.sessionParamName || 'session';
     this.stickyParamName = options.stickyParamName || 'sticky';
     this.currentAssignments = {};
@@ -29,7 +31,11 @@ class CliproxyPool {
 
   buildProxyUrl(channelId, nonce) {
     const sid = `${this.sessionPrefix}-${channelId.replace('ch-', 'ch')}-${nonce}`;
-    const user = `${this.username}-${this.regionParamName}-${this.region}-${this.sessionParamName}-${sid}-${this.stickyParamName}-${this.stickyMinutes}`;
+    let user = `${this.username}-${this.regionParamName}-${this.region}`;
+    if (this.asn) {
+      user += `-${this.asnParamName}-${this.asn}`;
+    }
+    user += `-${this.sessionParamName}-${sid}-${this.stickyParamName}-${this.stickyMinutes}`;
     return `http://${user}:${this.password}@${this.host}:${this.port}`;
   }
 

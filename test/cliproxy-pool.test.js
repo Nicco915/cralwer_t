@@ -54,6 +54,26 @@ describe('CliproxyPool', () => {
     try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
   });
 
+  it('supports ASN parameter in username when configured', async () => {
+    const pool = createPool({
+      regionParamName: 'region',
+      asn: 'AS12897',
+      asnParamName: 'asn',
+      sessionParamName: 'sid',
+      stickyParamName: 't',
+      stickyMinutes: 5,
+    });
+    const map = await pool.assign();
+
+    assert.ok(
+      map['ch-1'].startsWith('http://testuser-region-EU-asn-AS12897-sid-crawler-01-ch1-'),
+      `unexpected ASN URL format: ${map['ch-1']}`
+    );
+    assert.ok(map['ch-1'].includes('-t-5'));
+
+    try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
+  });
+
   it('reuses previous assignment on restart', async () => {
     const assignmentsFile = path.join(os.tmpdir(), `cliproxy-${Date.now()}.json`);
     const pool1 = createPool({}, assignmentsFile);
