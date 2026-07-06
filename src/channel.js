@@ -271,7 +271,11 @@ class Channel {
       } catch (e) {
         const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
-        const isDataLayerError = e.message && (/^DATA_LAYER_NEVER_PUSHED/.test(e.message) || /^DATA_LAYER_MISSING/.test(e.message));
+        const isDataLayerError = e.message && (
+          /^DATA_LAYER_NEVER_PUSHED/.test(e.message) ||
+          /^DATA_LAYER_MISSING/.test(e.message) ||
+          /^CF_CHALLENGE_UNRESOLVED/.test(e.message)
+        );
         if ((isTimeout || isRetryableNetwork) && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless request failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
