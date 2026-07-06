@@ -11,6 +11,7 @@ const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { ImageUploader } = require('./image-uploader');
+const { createStdoutLogger, createFileLogger, createBroadcastLogger } = require('./logger');
 
 function maskProxyUrl(url) {
   if (!url) return url;
@@ -45,10 +46,18 @@ class CrawlerService {
     this.proxyRefreshTimer = null;
     this.healthServer = null;
     this.healthServerStartTime = null;
+    this.logger = createBroadcastLogger([
+      createStdoutLogger({ nodeCode: this.config.nodeCode }),
+      createFileLogger({
+        nodeCode: this.config.nodeCode,
+        logDir: this.config.customLogDir || path.resolve('./logs'),
+      }),
+    ]);
   }
 
   log(...args) {
-    console.log(...args);
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    this.logger.info('service', msg, {});
   }
 
   ensureImageDir() {
@@ -203,7 +212,17 @@ class CrawlerService {
     }
   }
 
-  async start() {
+  async start(options = {}) {
+    if (options.customLogDir) {
+      this.config.customLogDir = options.customLogDir;
+      this.logger = createBroadcastLogger([
+        createStdoutLogger({ nodeCode: this.config.nodeCode }),
+        createFileLogger({
+          nodeCode: this.config.nodeCode,
+          logDir: options.customLogDir,
+        }),
+      ]);
+    }
     this.log('[SERVICE] Starting crawler service...');
     this.ensureImageDir();
 
