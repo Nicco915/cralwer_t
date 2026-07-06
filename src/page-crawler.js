@@ -107,6 +107,52 @@ class PageCrawler {
   }
 
   async extractProductUrlFromDataLayer(page, sku, timeoutMs = 20000) {
+    // Fast-path: 一次同步 evaluate，立即判定业务结果。
+    // - 无结果（result_number === 0） → 直接返回 ['', '']，不浪费等待时间
+    // - 有结果且 sku 在 goods_list_params → 立即返回 [url, title]
+    // - 有结果但 sku 不在列表（IP/反爬）→ 进 slow-path 慢等待
+    // - dataLayer 从未出现 → 抛 DATA_LAYER_NEVER_PUSHED，让上层换 IP
+    try {
+      const fast = await page.evaluate((s) => {
+        const dl = window.dataLayer;
+        if (!dl) return { state: 'no_dataLayer' };
+        for (const item of dl) {
+          const search = item?.search;
+          if (!search) continue;
+          if (search.result_number === 0) {
+            return { state: 'not_found' };
+          }
+          if (search.goods_list_params && search.goods_list_params[s]) {
+            const hit = search.goods_list_params[s];
+            return { state: 'found', url: hit.goodsUrl || '', title: hit.title || '' };
+          }
+          if (typeof search.result_number === 'number' && search.result_number > 0) {
+            return { state: 'dataLayer_missing' };
+          }
+        }
+        return { state: 'no_dataLayer' };
+      }, sku);
+
+      if (fast.state === 'no_dataLayer') {
+        const err = new Error('DATA_LAYER_NEVER_PUSHED');
+        this.log(`[${sku}] dataLayer fast-path: never pushed`);
+        throw err;
+      }
+      if (fast.state === 'not_found') {
+        this.log(`[${sku}] dataLayer fast-path: result_number=0`);
+        return ['', ''];
+      }
+      if (fast.state === 'found') {
+        return [fast.url, fast.title];
+      }
+      // fast.state === 'dataLayer_missing' → 进 slow-path
+    } catch (e) {
+      if (e.message === 'DATA_LAYER_NEVER_PUSHED') throw e;
+      // fast-path 自身出错（evaluate 抛异常） → 保守进 slow-path
+    }
+
+    // Slow-path: result_number > 0 但目标 sku 不在列表里。
+    // 这种是 IP/反爬场景，等久一点看看是否补齐。
     try {
       await page.waitForFunction((s) => {
         if (typeof window === 'undefined' || !window.dataLayer) return false;
@@ -125,13 +171,14 @@ class PageCrawler {
 
       return result;
     } catch (e) {
-      this.log(`[${sku}] dataLayer wait timeout/error: ${e.message}`);
+      this.log(`[${sku}] dataLayer slow-path timeout/error: ${e.message}`);
       try {
         await captureDiagnostics(page, sku, 'dataLayer-timeout', this.config.diagnosticDir);
       } catch (diagErr) {
         this.log(`[${sku}] diagnostic capture failed: ${diagErr.message}`);
       }
-      return ['', ''];
+      const err = new Error('DATA_LAYER_MISSING: ' + e.message);
+      throw err;
     }
   }
 

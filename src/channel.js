@@ -268,10 +268,30 @@ class Channel {
       } catch (e) {
         const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
+        const isDataLayerError = e.message && (/^DATA_LAYER_NEVER_PUSHED/.test(e.message) || /^DATA_LAYER_MISSING/.test(e.message));
         if ((isTimeout || isRetryableNetwork) && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless request failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
           usedHeadedFallback = true;
+        } else if (isDataLayerError) {
+          // dataLayer 异常通常意味着 IP/反爬问题，原地 retry 无效。
+          // 翻译成 not_found 并累计 dataLayerFailureCount，让 service 换 IP。
+          this.log(`[Channel ${this.id}] ${e.message}; treating as not_found, requesting proxy rotation`);
+          this.dataLayerFailureCount++;
+          if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
+            this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+          }
+          result = {
+            sku: task.sku,
+            product_name: '',
+            product_url: '',
+            features_details: '',
+            product_specification: '',
+            image_paths: '',
+            status: 'not_found',
+            error: e.message,
+            dataLayerFailed: true,
+          };
         } else {
           throw e;
         }
