@@ -348,8 +348,16 @@ class PageCrawler {
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
         if (!passed) {
-          result.status = 'error';
-          result.error = 'Cloudflare challenge not resolved automatically';
+          try {
+            await captureDiagnostics(page, sku, 'cf-challenge', this.config.diagnosticDir);
+          } catch (diagErr) {
+            this.log(`[${sku}] CF diagnostic capture failed: ${diagErr.message}`);
+          }
+          result.status = 'not_found';
+          result.error = 'CF_CHALLENGE_UNRESOLVED';
+          result.dataLayerFailed = true;
+          result.cfChallengeFailed = true;
+          this.log(`[${sku}] Cloudflare challenge not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
           return result;
         }
       }
@@ -396,8 +404,16 @@ class PageCrawler {
       if (await this.isCloudflareChallenge(page)) {
         const passed = await this.waitForCloudflare(page, sku);
         if (!passed) {
-          result.status = 'error';
-          result.error = 'Cloudflare challenge on product page not resolved';
+          try {
+            await captureDiagnostics(page, sku, 'cf-challenge-product', this.config.diagnosticDir);
+          } catch (diagErr) {
+            this.log(`[${sku}] CF diagnostic capture (product) failed: ${diagErr.message}`);
+          }
+          result.status = 'not_found';
+          result.error = 'CF_CHALLENGE_UNRESOLVED';
+          result.dataLayerFailed = true;
+          result.cfChallengeFailed = true;
+          this.log(`[${sku}] Cloudflare challenge on product page not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
           return result;
         }
       }
