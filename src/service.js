@@ -135,6 +135,7 @@ class CrawlerService {
           adaptiveRecoverySuccesses: this.config.adaptiveRecoverySuccesses,
           adaptiveDataLayerThreshold: this.config.adaptiveDataLayerThreshold,
           dataLayerProxyRotationThreshold: this.config.dataLayerProxyRotationThreshold,
+          cliproxyRotationCooldownMs: this.config.cliproxyRotationCooldownMs,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         onTaskComplete: () => this.checkChannelForRotation(channel),
@@ -417,6 +418,8 @@ class CrawlerService {
           channel.lastFailureWasProxy = false;
           channel.dataLayerFailureCount = 0;
           await channel.reinit(this.browser, newProxy);
+          // 记录 IP 轮换时间戳，让 channel.maybeTriggerReinstall 知道当前处于 cooldown
+          channel.recordIpRotation();
           const stillUnhealthy = !(await channel.isHealthy());
           if (!stillUnhealthy) {
             this.log(`[SERVICE] Channel ${channel.id} recovered after proxy rotation`);

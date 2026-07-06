@@ -142,7 +142,7 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.adaptiveRecoverySuccesses, 3);
     assert.strictEqual(config.adaptiveDataLayerThreshold, 1);
     assert.strictEqual(config.dataLayerProxyRotationThreshold, 1);
-    assert.strictEqual(config.cliproxyRotationCooldownMs, 120000);
+    assert.strictEqual(config.cliproxyRotationCooldownMs, 30000);
   });
 });
 

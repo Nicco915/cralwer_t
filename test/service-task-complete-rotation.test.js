@@ -28,6 +28,7 @@ describe('Task-complete proxy rotation', () => {
       needsProxyRotation: () => true,
       isHealthy: async () => true,
       reinit: async () => {},
+      recordIpRotation: () => {},
     };
     service.channels = [channel];
 
@@ -61,6 +62,7 @@ describe('Task-complete proxy rotation', () => {
       needsProxyRotation: () => false,
       isHealthy: async () => true,
       reinit: async () => {},
+      recordIpRotation: () => {},
     };
     service.channels = [channel];
 
@@ -94,6 +96,7 @@ describe('Task-complete proxy rotation', () => {
       reinit: async () => {
         flags.push(channel.reinitializing);
       },
+      recordIpRotation: () => {},
     };
     service.channels = [channel];
 

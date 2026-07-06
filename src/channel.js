@@ -49,6 +49,9 @@ class Channel {
     this.dataLayerProxyRotationThreshold = this.config.dataLayerProxyRotationThreshold !== undefined ? this.config.dataLayerProxyRotationThreshold : 2;
     this.profileStale = false;
     this.reinitializing = false;
+    // 上次换 IP 的时间戳（毫秒）。0 表示从未换过。
+    // 用于在 cliproxy cooldown 期内避免重复 reinstall（耗资源但 IP 没变）。
+    this.lastIpRotationAt = 0;
   }
 
   _createProfile() {
@@ -275,11 +278,18 @@ class Channel {
           usedHeadedFallback = true;
         } else if (isDataLayerError) {
           // dataLayer 异常通常意味着 IP/反爬问题，原地 retry 无效。
-          // 翻译成 not_found 并累计 dataLayerFailureCount，让 service 换 IP。
+          // 翻译成 not_found 并累计 dataLayerFailureCount。
+          // 受 cooldown 限制：cooldown 期内不再 reinstall（耗资源但 IP 没变），
+          // 由 service.checkChannelForRotation 在 cooldown 解除后自动换 IP。
           this.log(`[Channel ${this.id}] ${e.message}; treating as not_found, requesting proxy rotation`);
           this.dataLayerFailureCount++;
           if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
             this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+          }
+          const cooldownMs = this.config.cliproxyRotationCooldownMs || 30000;
+          const didReinstall = await this.maybeTriggerReinstall(cooldownMs);
+          if (!didReinstall) {
+            this.log(`[Channel ${this.id}] cooldown active, skipping reinstall (failures=${this.dataLayerFailureCount})`);
           }
           result = {
             sku: task.sku,
@@ -390,6 +400,31 @@ class Channel {
   async reinit(browser, proxyOverride) {
     await this.close();
     await this.init(browser, proxyOverride);
+  }
+
+  // 由 service 在每次真正换 IP 后调用，记录时间戳。
+  // DATA_LAYER_* 失败路径调用 maybeTriggerReinstall，会参考这个时间戳
+  // 决定是否真的 reinstall（在 cooldown 内即使失败也不 reinstall）。
+  recordIpRotation() {
+    this.lastIpRotationAt = Date.now();
+  }
+
+  // 在 cooldown 期内失败时调用：返回 true 表示已 reinstall（cooldown 已过），
+  // false 表示跳过 reinstall（cooldown 仍在，IP 不会变）。
+  // 调用方应无条件递增 dataLayerFailureCount。
+  async maybeTriggerReinstall(cooldownMs) {
+    const now = Date.now();
+    if (this.lastIpRotationAt > 0 && (now - this.lastIpRotationAt) < cooldownMs) {
+      return false;
+    }
+    if (this.browserContext) {
+      const browser = this.browserContext.browser();
+      if (browser) {
+        await this.reinit(browser);
+        this.recordIpRotation();
+      }
+    }
+    return true;
   }
 
   async close() {

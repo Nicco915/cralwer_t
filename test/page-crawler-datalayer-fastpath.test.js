@@ -114,4 +114,80 @@ describe('PageCrawler.extractProductUrlFromDataLayer fast-path', () => {
     assert.strictEqual(evaluates, 1);
     assert.strictEqual(waitFns, 1);
   });
+
+  it('saves diagnostics when DATA_LAYER_NEVER_PUSHED', async () => {
+    // fast-path 抛错前应当保存诊断，标签为 dataLayer-never-pushed
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-never-'));
+    try {
+      const page = createDataLayerPage({
+        dataLayerAt: () => null,
+      });
+      // 记录 screenshot 调用以确认诊断执行了
+      const screenshots = [];
+      page.screenshot = async ({ path }) => { screenshots.push(path); return path; };
+      const htmlSnippets = [];
+      page.content = async () => { htmlSnippets.push('html'); return '<html></html>'; };
+      const crawler = new PageCrawler({ diagnosticDir: tmpDir });
+
+      await assert.rejects(
+        crawler.extractProductUrlFromDataLayer(page, 'STUB-SKU', 20000),
+        /DATA_LAYER_NEVER_PUSHED/
+      );
+
+      // 诊断文件应该被创建（captureDiagnostics 写入 outputDir/YYYY-MM-DD/）
+      const allFiles = [];
+      (function walk(d) {
+        for (const f of fs.readdirSync(d)) {
+          const p = path.join(d, f);
+          const st = fs.statSync(p);
+          if (st.isDirectory()) walk(p);
+          else allFiles.push(p);
+        }
+      })(tmpDir);
+      assert.ok(allFiles.some(f => f.includes('dataLayer-never-pushed-STUB-SKU')),
+        `should write diagnostic file, got: ${allFiles.join(',')}`);
+      assert.ok(screenshots.length > 0, 'screenshot should be taken');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('labels DATA_LAYER_MISSING diagnostic with "dataLayer-missing" (not "dataLayer-timeout")', async () => {
+    // slow-path 抛错前的诊断标签要区分，不能再用旧的 dataLayer-timeout
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-missing-'));
+    try {
+      const page = createDataLayerPage({
+        dataLayerAt: () => [{ search: { result_number: 5, goods_list_params: null } }],
+      });
+      const crawler = new PageCrawler({ diagnosticDir: tmpDir });
+
+      await assert.rejects(
+        crawler.extractProductUrlFromDataLayer(page, 'GHOST-SKU', 20000),
+        /DATA_LAYER_MISSING/
+      );
+
+      const allFiles = [];
+      (function walk(d) {
+        for (const f of fs.readdirSync(d)) {
+          const p = path.join(d, f);
+          const st = fs.statSync(p);
+          if (st.isDirectory()) walk(p);
+          else allFiles.push(p);
+        }
+      })(tmpDir);
+      assert.ok(allFiles.some(f => f.includes('dataLayer-missing-GHOST-SKU')),
+        `should write diagnostic file with new label, got: ${allFiles.join(',')}`);
+      // 不应该再用旧标签
+      assert.ok(!allFiles.some(f => f.includes('dataLayer-timeout-GHOST-SKU')),
+        `should NOT use legacy dataLayer-timeout label, got: ${allFiles.join(',')}`);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

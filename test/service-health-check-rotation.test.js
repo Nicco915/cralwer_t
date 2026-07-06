@@ -28,6 +28,7 @@ describe('CrawlerService runHealthCheck proxy rotation', () => {
       needsProxyRotation: () => true,
       isHealthy: async () => true,
       reinit: async () => { reinitCalled = true; },
+      recordIpRotation: () => {},
     };
     service.channels = [channel];
 
@@ -48,6 +49,7 @@ describe('CrawlerService runHealthCheck proxy rotation', () => {
       needsProxyRotation: () => true,
       isHealthy: async () => true,
       reinit: async () => { reinitCalled = true; },
+      recordIpRotation: () => {},
     };
     service.channels = [channel];
 

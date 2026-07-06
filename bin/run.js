@@ -68,7 +68,7 @@ function buildServiceConfig(config) {
     cliproxyAsnParamName: config.cliproxyAsnParamName || 'asn',
     cliproxySessionParamName: config.cliproxySessionParamName || 'session',
     cliproxyStickyParamName: config.cliproxyStickyParamName || 'sticky',
-    cliproxyRotationCooldownMs: config.cliproxyRotationCooldownMs !== undefined ? Number(config.cliproxyRotationCooldownMs) : 120000,
+    cliproxyRotationCooldownMs: config.cliproxyRotationCooldownMs !== undefined ? Number(config.cliproxyRotationCooldownMs) : 30000,
     adaptiveDataLayerThreshold: config.adaptiveDataLayerThreshold !== undefined ? Number(config.adaptiveDataLayerThreshold) : 1,
     dataLayerProxyRotationThreshold: config.dataLayerProxyRotationThreshold !== undefined ? Number(config.dataLayerProxyRotationThreshold) : 1,
     imageUploadUrl: config.imageUploadUrl || '',

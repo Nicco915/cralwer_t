@@ -134,8 +134,13 @@ class PageCrawler {
       }, sku);
 
       if (fast.state === 'no_dataLayer') {
-        const err = new Error('DATA_LAYER_NEVER_PUSHED');
         this.log(`[${sku}] dataLayer fast-path: never pushed`);
+        try {
+          await captureDiagnostics(page, sku, 'dataLayer-never-pushed', this.config.diagnosticDir);
+        } catch (diagErr) {
+          this.log(`[${sku}] diagnostic capture failed: ${diagErr.message}`);
+        }
+        const err = new Error('DATA_LAYER_NEVER_PUSHED');
         throw err;
       }
       if (fast.state === 'not_found') {
@@ -173,7 +178,7 @@ class PageCrawler {
     } catch (e) {
       this.log(`[${sku}] dataLayer slow-path timeout/error: ${e.message}`);
       try {
-        await captureDiagnostics(page, sku, 'dataLayer-timeout', this.config.diagnosticDir);
+        await captureDiagnostics(page, sku, 'dataLayer-missing', this.config.diagnosticDir);
       } catch (diagErr) {
         this.log(`[${sku}] diagnostic capture failed: ${diagErr.message}`);
       }
@@ -209,8 +214,25 @@ class PageCrawler {
 
   async extractProductUrlWithRetry(page, sku) {
     const maxAttempts = this.dataLayerMaxRetries + 1;
+    let lastDataLayerError = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const [productUrl, productName] = await this.extractProductUrlFromDataLayer(page, sku);
+      let productUrl = '';
+      let productName = '';
+      let dataLayerThrew = false;
+      try {
+        [productUrl, productName] = await this.extractProductUrlFromDataLayer(page, sku);
+      } catch (e) {
+        // DATA_LAYER_NEVER_PUSHED / DATA_LAYER_MISSING：标记后仍尝试 HTML 兜底
+        // (channel 也会捕获这个错误做换 IP 决策，但只要 HTML 能拿到结果就算 success)
+        if (e.message && /^DATA_LAYER_/.test(e.message)) {
+          dataLayerThrew = true;
+          lastDataLayerError = e;
+          this.log(`[${sku}] dataLayer error: ${e.message}, trying HTML fallback`);
+        } else {
+          throw e;
+        }
+      }
+
       if (productUrl) {
         return { productUrl, productName, dataLayerFailed: false };
       }
@@ -219,6 +241,12 @@ class PageCrawler {
       if (htmlUrl) {
         this.log(`[${sku}] Found from HTML regex: ${htmlUrl}`);
         return { productUrl: htmlUrl, productName: htmlName, dataLayerFailed: true };
+      }
+
+      // 第一次 dataLayer 抛错后 HTML 也没救，且 attempt 走完了 → 重抛原 dataLayer 错误
+      // 让 channel 知道这次需要换 IP；否则会被 caller 翻译成 not_found 但 channel 不会触发换 IP
+      if (dataLayerThrew && attempt === maxAttempts - 1) {
+        throw lastDataLayerError;
       }
     }
     return { productUrl: '', productName: '', dataLayerFailed: true };
