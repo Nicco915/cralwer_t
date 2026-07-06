@@ -422,9 +422,12 @@ class Channel {
       if (browser) {
         await this.reinit(browser);
         this.recordIpRotation();
+        return true;
       }
     }
-    return true;
+    // 没有 browser context（理论上不应发生），保守返回 false，
+    // 让上层不要误以为已 reinstall。
+    return false;
   }
 
   async close() {

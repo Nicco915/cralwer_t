@@ -360,6 +360,16 @@ docker logs hs-sku-crawler-5 2>&1 | grep 'cooldown active'
 docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' | wc -l
 ```
 
+##### 已知次要风险（未修，仅观察）
+
+| # | 现象 | 影响 | 后续处理 |
+|---|---|---|---|
+| 3 | `profileStale=true` 触发的第二次 reinstall 会和 `maybeTriggerReinstall` 串联 | 多一次 context 创建，但 cooldown 仍生效 | 观察；如出现资源压力再加优化 |
+| 4 | headless 失败后 headed fallback 也失败 → 双重 reinstall | 罕见场景（同 IP 双重问题） | 观察 |
+| 6 | 业务无结果 SKU 也会递增 `dataLayerFailureCount`（预存 bug） | 多次无结果 SKU 累积可能触发换 IP | 不在本次范围，下次单独修 |
+| 10 | `service.checkChannelForRotation` 路径绕过 channel cooldown（仍会 reinstall 旧 IP） | 30s 内可能 reinstall 旧 IP 浪费 | 建议下次改动：让 service 也读 `channel.lastIpRotationAt` |
+| 11 | 双重 reinstall 用同一 IP（仅 profile 切换有意义） | 浪费但 session 切换有效 | 观察 |
+
 ### 8. 开启 Crawlab 监控
 
 Crawlab 已经作为 Docker Compose 服务运行，默认暴露在 VPS 的 `8080` 端口。
