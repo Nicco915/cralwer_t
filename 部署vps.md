@@ -283,6 +283,83 @@ cd /opt/crawler
 
 `rollback.sh` 会读取 `.last_image` 中记录的上一版镜像并重启容器。
 
+#### 7.4 dataLayer 快速短路与换 IP：两个 commit 的 revert 预案
+
+本批次上线的两笔提交（**未推送镜像**，仅在工作区提交）属于行为变更，必须保留 revert 路径：
+
+| Commit | 简称 | 改动 | 风险等级 |
+|---|---|---|---|
+| `6f3e778` | fast-path 启用 | `extractProductUrlFromDataLayer` 改 fast-path + slow-path；channel 把 `DATA_LAYER_*` 翻成 not_found；service 借此换 IP | ⚠️ 高 |
+| `a0d72ef` | 兜底补丁 | 保留 HTML fallback；失败补诊断；channel cooldown 内不 reinstall；默认 cooldown 30s | ⚠️ 中 |
+
+##### 何时触发 revert（症状 + 操作）
+
+| 线上症状 | 操作 |
+|---|---|
+| not_found 比例显著上升，特别是以前能 success 的 SKU 现在 not_found | `git revert a0d72ef && git revert 6f3e778`，重新 build 镜像 |
+| `Channel has N consecutive dataLayer failures, rotating proxy` 日志每 10s 刷屏 | `git revert a0d72ef`，回退 cooldown 优化那一层（保留 fast-path） |
+| proxy 消耗异常加速（cliproxy 后台配额告警） | `git revert a0d72ef`，再调大 `CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS` 到 60000 |
+| 诊断目录里**只有** `dataLayer-never-pushed`/`dataLayer-missing`，没有 `dataLayer-timeout`，排查困难 | 暂时性：仍能 revert `a0d72ef` 恢复旧标签 |
+| 怀疑 dataLayer 异常但 channel 没换 IP（IP 仍然坏） | `git revert a0d72ef`，回退 cooldown 闸门 |
+
+##### 单 commit revert 操作
+
+```bash
+# 1. 确认 commit hash
+git log --oneline | head -5
+
+# 2. 在代码层 revert（生成一个新的 commit 撤销原 commit）
+cd /opt/crawler
+git revert 6f3e778     # 只回退 fast-path 启用层
+# 或者
+git revert a0d72ef    # 只回退兜底补丁层（保留 fast-path）
+# 或者
+git revert a0d72ef && git revert 6f3e778  # 全部回退到 7.3 之前的状态
+
+# 3. 重新构建并推送镜像
+./build.sh && ./deploy.sh
+
+# 4. 重启容器（必要时）
+docker restart hs-sku-crawler-1 hs-sku-crawler-2 hs-sku-crawler-3 hs-sku-crawler-4 \
+                   hs-sku-crawler-5 hs-sku-crawler-6 hs-sku-crawler-7 hs-sku-crawler-8
+```
+
+##### 关键代码位置（便于事后排查）
+
+| 关注点 | 文件:行 | 说明 |
+|---|---|---|
+| fast-path 抛错 | `src/page-crawler.js` ~line 130 | `DATA_LAYER_NEVER_PUSHED` 立即抛 |
+| slow-path 抛错 | `src/page-crawler.js` ~line 180 | `DATA_LAYER_MISSING` 抛 |
+| HTML fallback 兜底 | `src/page-crawler.js` ~line 230 | `extractProductUrlWithRetry` catch DATA_LAYER_* |
+| channel 翻译 | `src/channel.js` ~line 280 | 把 DATA_LAYER_* 翻成 not_found + `maybeTriggerReinstall` |
+| cooldown 闸门 | `src/channel.js` `maybeTriggerReinstall` | cooldown 期内不 reinstall |
+| service 换 IP 触发 | `src/service.js` `checkChannelForRotation` | cooldown 解除后自动换 |
+
+##### 推荐调整（部署镜像时同时改）
+
+容器里 `CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000` 是显示覆盖，**新默认值已经是 30s**。建议同步把容器环境变量改为 `30000`，避免冷启动后第一次仍走 120s 老逻辑：
+
+```bash
+# docker-compose.yml 或部署脚本里
+CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=30000
+```
+
+##### 排查时的快速诊断
+
+```bash
+# 1. 看最近一次换 IP 何时发生
+docker logs hs-sku-crawler-5 2>&1 | grep 'rotating channel'
+
+# 2. 看 dataLayer 异常频率（按 SKU 分组）
+docker exec hs-sku-crawler-5 ls /app/logs/diagnostics/crawler-05/$(date -u +%Y-%m-%d)/ | grep -oE 'dataLayer-[a-z-]+' | sort | uniq -c
+
+# 3. 看 cooldown 期内被跳过的 reinstall
+docker logs hs-sku-crawler-5 2>&1 | grep 'cooldown active'
+
+# 4. 看 not_found 是否含 DATA_LAYER_*
+docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' | wc -l
+```
+
 ### 8. 开启 Crawlab 监控
 
 Crawlab 已经作为 Docker Compose 服务运行，默认暴露在 VPS 的 `8080` 端口。
