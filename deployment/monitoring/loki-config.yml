@@ -40,9 +40,5 @@ limits_config:
   ingestion_burst_size_mb: 32
   max_entries_limit_per_query: 5000
 
-query_range:
-  results_cache:
-    cache:
-      embedded:
-        enabled: true
-        max_size_mb: 100
+# query_range results_cache disabled: Loki 2.9 schema 不支持 cache.embedded 写法
+# 如需启用，使用 Loki 2.9 的 results_cache.results_cache_config 配置

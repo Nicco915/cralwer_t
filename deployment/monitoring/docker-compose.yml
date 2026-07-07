@@ -3,8 +3,10 @@ services:
     image: grafana/loki:2.9.8
     container_name: monitoring-loki
     restart: unless-stopped
-    user: "1000:1000"
+    user: "0:0"
     command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "127.0.0.1:3100:3100"
     volumes:
       - ./loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
@@ -21,7 +23,7 @@ services:
     image: grafana/promtail:2.9.8
     container_name: monitoring-promtail
     restart: unless-stopped
-    user: "1000:1000"
+    user: "0:0"
     command: -config.file=/etc/promtail/promtail-docker.yml
     volumes:
       - ./promtail-docker.yml:/etc/promtail/promtail-docker.yml:ro
@@ -38,7 +40,7 @@ services:
     image: grafana/grafana:10.4.14
     container_name: monitoring-grafana
     restart: unless-stopped
-    user: "1000:1000"
+    user: "0:0"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -59,7 +61,7 @@ services:
     image: prom/prometheus:v2.51.2
     container_name: monitoring-prometheus
     restart: unless-stopped
-    user: "1000:1000"
+    user: "0:0"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=31d
@@ -73,7 +75,7 @@ services:
     image: prom/blackbox-exporter:v0.25.0
     container_name: monitoring-blackbox
     restart: unless-stopped
-    user: "1000:1000"
+    user: "0:0"
     command: --config.file=/etc/blackbox/blackbox.yml
     volumes:
       - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro

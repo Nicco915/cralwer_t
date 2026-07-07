@@ -38,29 +38,28 @@ scrape_configs:
           app: crawler
           job: docker
           nodeCode: crawler-host
-        __path__: /app/logs/crawler-*.log
-
-pipeline_stages:
-  - match:
-      selector: '{app="crawler"}'
-      stages:
-        - regex:
-            expression: '"time":"(?P<time>[^"]+)"'
-        - regex:
-            expression: '"level":"(?P<level>[^"]+)"'
-        - regex:
-            expression: '"component":"(?P<component>[^"]+)"'
-        - regex:
-            expression: '"msg":"(?P<msg>[^"]+)"'
-        - regex:
-            expression: '"sku":"(?P<sku>[^"]+)"'
-        - regex:
-            expression: '"status":"(?P<status>[^"]+)"'
-        - regex:
-            expression: '"error":"(?P<error>[^"]+)"'
-        - regex:
-            expression: '"durationMs":(?P<durationMs>\d+)'
-        - regex:
-            expression: '"channelId":(?P<channelId>\d+)'
-        - regex:
-            expression: '"crawlerTaskId":(?P<crawlerTaskId>\d+)'
+          __path__: /app/logs/crawler-*.log
+    pipeline_stages:
+      - match:
+          selector: '{app="crawler"}'
+          stages:
+            - regex:
+                expression: '"time":"(?P<time>[^"]+)"'
+            - regex:
+                expression: '"level":"(?P<level>[^"]+)"'
+            - regex:
+                expression: '"component":"(?P<component>[^"]+)"'
+            - regex:
+                expression: '"msg":"(?P<msg>[^"]+)"'
+            - regex:
+                expression: '"sku":"(?P<sku>[^"]+)"'
+            - regex:
+                expression: '"status":"(?P<status>[^"]+)"'
+            - regex:
+                expression: '"error":"(?P<error>[^"]+)"'
+            - regex:
+                expression: '"durationMs":(?P<durationMs>\d+)'
+            - regex:
+                expression: '"channelId":(?P<channelId>\d+)'
+            - regex:
+                expression: '"crawlerTaskId":(?P<crawlerTaskId>\d+)'
