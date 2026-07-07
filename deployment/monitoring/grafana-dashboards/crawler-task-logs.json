@@ -41,7 +41,7 @@
       ],
       "options": {
         "showTime": true,
-        "showLabels": true,
+        "showLabels": false,
         "wrapLogMessage": true
       }
     }
