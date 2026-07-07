@@ -60,7 +60,7 @@ scrape_configs:
           app: crawler
           job: $JobName
           nodeCode: $NodeCode
-        __path__: $LogDir\crawler-*.log
+          __path__: $LogDir\crawler-*.log
     pipeline_stages:
       - match:
           selector: '{app="crawler"}'
