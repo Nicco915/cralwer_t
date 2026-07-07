@@ -6,7 +6,7 @@ services:
     user: "0:0"
     command: -config.file=/etc/loki/loki-config.yml
     ports:
-      - "127.0.0.1:3100:3100"
+      - "100.111.251.108:3100:3100"
     volumes:
       - ./loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
