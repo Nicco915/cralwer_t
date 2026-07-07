@@ -44,6 +44,10 @@ scrape_configs:
       - labels:
           level:
           component:
+      # 非 JSON 日志（如 [Poller] fetched 0 task(s)）会留下 __error__ 标签，清理掉避免 Grafana 显示红色
+      - labeldrop:
+          - __error__
+          - __error_details__
 
   - job_name: crawler-host-logs
     static_configs:
@@ -64,3 +68,6 @@ scrape_configs:
       - labels:
           level:
           component:
+      - labeldrop:
+          - __error__
+          - __error_details__
