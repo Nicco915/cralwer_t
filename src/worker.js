@@ -5,6 +5,7 @@ class Worker {
     this.pusher = options.pusher;
     this.imageUploader = options.imageUploader || null;
     this.log = options.log || console.log;
+    this.logger = options.logger || null;
     this.running = false;
     this.pendingPushes = new Set();
     this.loopPromise = null;
@@ -61,10 +62,12 @@ class Worker {
 
   async runTask(task, channel) {
     const taskIdKey = this.getTaskIdKey(task);
+    const startedAt = Date.now();
+    let retries = 0;
+    let result = null;
     channel.busy = true;
 
     const pushPromise = (async () => {
-      let result = null;
       try {
         this.log(`[Worker] Assigning task ${task.crawlerTaskId} sku ${task.sku} to channel ${channel.id}`);
         result = await channel.crawl(task);
@@ -97,26 +100,39 @@ class Worker {
           }
         }
       } catch (e) {
+        retries = 1;  // 触发了 fallback error push
         this.log(`[Worker] Push failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
+        const errorResult = {
+          ...result,
+          status: 'error',
+          error: e.message,
+        };
         try {
-          await this.pusher.push({
-            crawlerTaskId: task.crawlerTaskId,
-            sku: task.sku,
-            status: 'error',
-            product_name: '',
-            features_details: '',
-            product_specification: '',
-            product_url: '',
-            error: e.message,
-          });
+          await this.pusher.push(errorResult);
           this.log(`[Worker] Error status pushed for task ${task.crawlerTaskId}`);
         } catch (pushErr) {
           this.log(`[Worker] failed to push error result for task ${task.crawlerTaskId}: ${pushErr.message}`);
         }
+        result = errorResult;  // 更新 result，让后续 logger 看到最终语义
       }
     })();
 
     const taskPromise = pushPromise.finally(async () => {
+      if (this.logger) {
+        try {
+          this.logger.info('task', 'finished', {
+            crawlerTaskId: result?.crawlerTaskId,
+            sku: result?.sku,
+            status: result?.status,
+            error: result?.error || '',
+            durationMs: Date.now() - startedAt,
+            retries,
+            channelId: channel.id,
+          });
+        } catch (e) {
+          this.log(`[Worker] Failed to write task event log: ${e.message}`);
+        }
+      }
       channel.busy = false;
       this.pendingPushes.delete(taskPromise);
       if (taskIdKey !== null) {
@@ -132,6 +148,7 @@ class Worker {
     });
 
     this.pendingPushes.add(taskPromise);
+    return taskPromise;
   }
 
   async loop() {
