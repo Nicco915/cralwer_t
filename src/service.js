@@ -46,6 +46,7 @@ class CrawlerService {
     this.proxyRefreshTimer = null;
     this.healthServer = null;
     this.healthServerStartTime = null;
+    this.heartbeatTimer = null;
     this.logger = createBroadcastLogger([
       createStdoutLogger({ nodeCode: this.config.nodeCode }),
       createFileLogger({
@@ -408,6 +409,27 @@ class CrawlerService {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
+    }
+  }
+
+  startHeartbeat() {
+    if (this.heartbeatTimer) return;
+    const startedAt = Date.now();
+    this.heartbeatTimer = setInterval(() => {
+      this.logger.info('heartbeat', 'alive', {
+        uptime: Math.floor((Date.now() - startedAt) / 1000),
+        channels: this.channels.length,
+        pending: this.worker ? this.worker.taskQueue.length : 0,
+        running: this.worker ? this.worker.channels.filter(c => c.busy).length : 0,
+        browserConnected: this.browser ? this.browser.isConnected() : false,
+      });
+    }, (this.config.heartbeatInterval || 30) * 1000);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 
