@@ -41,7 +41,6 @@ scrape_configs:
             msg: msg
             ctx: ctx
             id: id
-            time: 't["$date"]'
       - labels:
           level:
           component:
@@ -62,7 +61,6 @@ scrape_configs:
             msg: msg
             ctx: ctx
             id: id
-            time: 't["$date"]'
       - labels:
           level:
           component:
