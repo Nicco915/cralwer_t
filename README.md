@@ -657,6 +657,28 @@ export CRAWLER_IMAGE_BASE=ghcr.io/your-org/hs-sku-crawler
 ./rollback.sh
 ```
 
+## Loki 监控
+
+容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控，详见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md` 与 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
+
+### VPS 部署
+
+```bash
+cd /opt/crawler
+docker compose -f deployment/monitoring/docker-compose.yml up -d
+```
+
+### Windows 部署（每台）
+
+```powershell
+.\deployment\windows\install-promtail.ps1 -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" -NodeCode "crawler-09"
+.\deployment\windows\install-windows-exporter.ps1
+```
+
+### Grafana 访问
+
+仅内网（绑定 Tailscale IP）：`http://100.x.x.V:3000`，默认账号 `admin` / 密码取自 `GRAFANA_ADMIN_PASSWORD`。
+
 ## Output
 
 - `{output}/vevor_result.xlsx` — main results

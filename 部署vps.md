@@ -370,43 +370,61 @@ docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' 
 | 10 | `service.checkChannelForRotation` 路径绕过 channel cooldown（仍会 reinstall 旧 IP） | 30s 内可能 reinstall 旧 IP 浪费 | 建议下次改动：让 service 也读 `channel.lastIpRotationAt` |
 | 11 | 双重 reinstall 用同一 IP（仅 profile 切换有意义） | 浪费但 session 切换有效 | 观察 |
 
-### 8. 开启 Crawlab 监控
+### 8. 部署监控栈（Loki + Promtail + Grafana）
 
-Crawlab 已经作为 Docker Compose 服务运行，默认暴露在 VPS 的 `8080` 端口。
+容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控，详见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md` 与 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
 
-#### 8.1 本地访问
-
-在 VPS 上直接访问：
+#### 8.1 VPS 端启动监控栈
 
 ```bash
-curl http://127.0.0.1:8080
+cd /opt/crawler
+docker compose -f deployment/monitoring/docker-compose.yml up -d
 ```
 
-#### 8.2 远程访问
+启动后包含的服务：
 
-如果要在本地浏览器查看，需要一条 SSH 隧道：
+- `loki`：日志聚合，默认监听 `3100`，仅绑定 Tailscale 内网 IP
+- `promtail`：抓取本机 crawler 容器日志，推送至 Loki
+- `grafana`：可视化与告警，默认监听 `3000`，仅绑定 Tailscale 内网 IP
+
+#### 8.2 Grafana 访问
+
+仅内网（绑定 Tailscale IP）：`http://100.x.x.V:3000`，默认账号 `admin` / 密码取自 `.env` 中的 `GRAFANA_ADMIN_PASSWORD`。
+
+如需在本地浏览器查看，通过 SSH 隧道转发：
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 root@<VPS_IP>
+ssh -L 3000:127.0.0.1:3000 root@<VPS_IP>
 ```
 
-然后在浏览器打开 `http://localhost:8080`。
+然后在浏览器打开 `http://localhost:3000`。
 
-#### 8.3 放行防火墙（可选）
+#### 8.3 Windows 节点安装（每台）
 
-如果希望通过公网直接访问 Crawlab：
-
-```bash
-ufw allow 8080/tcp
-# 或者在云厂商控制台放行 8080 端口
+```powershell
+.\deployment\windows\install-promtail.ps1 -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" -NodeCode "crawler-09"
+.\deployment\windows\install-windows-exporter.ps1
 ```
 
-> 公网暴露 Crawlab 有安全风险，建议只通过 SSH 隧道或 VPN 访问。
+`install-promtail.ps1` 会创建 NSSM 托管的 Promtail 服务，把 PM2 日志、Crawler stdout/stderr 推送到指定 Loki 地址；`install-windows-exporter.ps1` 安装 windows-exporter 暴露 Prometheus 指标。
 
-#### 8.4 查看 Crawlab 日志
+#### 8.4 放行防火墙（可选）
+
+如果希望通过公网直接访问 Grafana：
 
 ```bash
-docker logs -f crawlab
+ufw allow 3000/tcp
+# 或者在云厂商控制台放行 3000 端口
+```
+
+> 公网暴露 Grafana 有安全风险，建议只通过 SSH 隧道、Tailscale 或 VPN 访问。
+
+#### 8.5 查看监控栈日志
+
+```bash
+docker compose -f deployment/monitoring/docker-compose.yml logs -f loki
+docker compose -f deployment/monitoring/docker-compose.yml logs -f promtail
+docker compose -f deployment/monitoring/docker-compose.yml logs -f grafana
 ```
 
 ---
@@ -843,7 +861,11 @@ su - crawler -c "cd /opt/crawler/repo/deployment/crawlab && ./deploy.sh v1.0.0"
 
 1. 打开 `http://<VPS_IP>:8080`
 2. 进入「节点」→「添加节点」
-3. 节点地址填 `http://crawler:3000/health`
+3. 每个 crawler 节点单独添加，节点地址按以下规则：
+   - `crawler-1` → `http://crawler-1:3001/health`
+   - `crawler-2` → `http://crawler-2:3002/health`
+   - ...
+   - `crawler-8` → `http://crawler-8:3008/health`
 4. 轮询间隔 30 秒
 
 ### 11.3 GitHub Actions 自动发布
