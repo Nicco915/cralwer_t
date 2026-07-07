@@ -81,6 +81,7 @@ services:
       - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
     networks:
       - monitoring-net
+      - crawler-net
 
   node-exporter:
     image: prom/node-exporter:v1.7.0
@@ -104,3 +105,6 @@ volumes:
 networks:
   monitoring-net:
     driver: bridge
+  crawler-net:
+    external: true
+    name: crawler_crawler-net
