@@ -280,6 +280,7 @@ class CrawlerService {
     this.log(`[SERVICE] Running with nodeCode=${this.config.nodeCode}, channels=${this.config.channels}`);
 
     this.startHealthCheck();
+    this.startHeartbeat();
     await this.startHealthServer();
     this.registerSignalHandlers();
   }
@@ -290,6 +291,7 @@ class CrawlerService {
     this.log('[SERVICE] Shutting down gracefully...');
 
     this.stopHealthCheck();
+    this.stopHeartbeat();
     this.stopProxyRefresh();
     if (this.healthServer) {
       this.healthServer.close();
