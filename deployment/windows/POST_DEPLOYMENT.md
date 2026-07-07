@@ -102,6 +102,34 @@ Invoke-WebRequest -Uri "http://117.72.52.0/renren-api/classify/open/crawler/task
 
 **通过标准：** 返回 HTTP 200。即使业务返回码非 0，也说明网络可达。
 
+### 1.7 检查监控组件
+
+如果已按 `deployment\windows\README.md` 安装 Promtail 和 windows_exporter，验证以下内容：
+
+```powershell
+# Promtail 服务
+nssm status Promtail
+Get-Content C:\promtail\promtail.log -Tail 20
+
+# windows_exporter 服务
+Get-Service windows_exporter
+
+# Loki 连通性（从 Windows 到 VPS 的 Tailscale IP）
+Test-NetConnection 100.111.251.108 -Port 3100
+```
+
+**通过标准：**
+
+- `nssm status Promtail` 返回 `SERVICE_RUNNING`
+- `windows_exporter` 状态为 `Running`
+- `Test-NetConnection` 显示 `TcpTestSucceeded : True`
+
+然后在 Grafana "Crawler · 节点心跳" 面板确认该 `nodeCode` 出现，并用 LogQL 检查心跳：
+
+```logql
+{app="crawler"} | json | component="heartbeat" | nodeCode="<你的CRAWLER_NODE_CODE>"
+```
+
 ---
 
 ## 2. 生产环境日常操作

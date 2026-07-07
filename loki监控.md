@@ -75,33 +75,126 @@ CrawlerService 每 heartbeatInterval 秒 → logger.info('heartbeat', 'alive', {
 
 ## 2. 部署步骤
 
+### 2.0 前置条件：Tailscale 网络
+
+所有监控端口（Loki `3100`、Grafana `3000`）默认只监听 Tailscale IP，不暴露公网。
+
+#### 2.0.1 VPS 安装 Tailscale
+
+以 root 执行：
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --accept-dns=false --ssh
+```
+
+命令行会输出登录链接，在浏览器里用 Tailscale 账号授权。完成后查看 Tailscale IP：
+
+```bash
+tailscale ip -4
+```
+
+当前 VPS 的 Tailscale IP：
+
+```
+100.111.251.108
+```
+
+#### 2.0.2 Windows 节点安装 Tailscale
+
+在每台 Windows 服务器上下载安装：
+https://tailscale.com/download/windows
+
+登录**同一个 Tailscale 账号**后，Windows 机器即可通过 `100.111.251.108` 访问 VPS 上的 Loki。
+
+---
+
 ### 2.1 VPS（Ubuntu）
 
 ```bash
-cd /opt/crawler
+cd /opt/crawler/repo
 git pull  # 拉取最新代码
-echo "GRAFANA_ADMIN_PASSWORD=<选一个强密码>" >> .env  # 必填，无 fallback
+
+# 确保 .env 里有 Grafana 密码
+echo "GRAFANA_ADMIN_PASSWORD=<选一个强密码>" >> deployment/monitoring/.env
+
 docker compose -f deployment/monitoring/docker-compose.yml up -d
 ```
+
+> 注意：`docker-compose.yml` 中 Loki 端口已绑定到 Tailscale IP `100.111.251.108:3100`，不会监听公网。
 
 验证：
 
 ```bash
-curl -s http://127.0.0.1:3100/ready  # 应该返回 "ready"
-curl -s http://127.0.0.1:3000/api/health  # 应该返回 {"database":"ok",...}
-curl -s http://127.0.0.1:9090/targets  # 浏览器看 Blackbox 8 目标全 UP
+# Loki 健康检查
+curl -s http://100.111.251.108:3100/ready
+
+# Grafana 健康检查（容器内）
+docker exec monitoring-grafana wget --spider -q http://127.0.0.1:3000/api/health && echo "grafana ok"
+
+# Promtail 是否正常挂载 Docker 目标
+docker logs --tail 20 monitoring-promtail
 ```
 
 首次启动后，等 30-60 秒让 Loki 索引完成。
 
+#### 2.1.1 Grafana 本地访问：SSH 隧道
+
+Grafana 只监听 Tailscale 内网。如果你当前电脑不在 Tailscale 网络里，可通过 SSH 隧道访问。
+
+**推荐：SSH 密钥登录**
+
+本地生成密钥对：
+
+```bash
+ssh-keygen -t ed25519 -C "crawler-grafana" -f ~/.ssh/id_ed25519_grafana
+```
+
+把公钥上传到 VPS：
+
+```bash
+cat ~/.ssh/id_ed25519_grafana.pub
+```
+
+在 VPS root 会话里追加：
+
+```bash
+mkdir -p /home/crawler/.ssh
+echo '<粘贴公钥>' >> /home/crawler/.ssh/authorized_keys
+chown -R crawler:crawler /home/crawler/.ssh
+chmod 700 /home/crawler/.ssh
+chmod 600 /home/crawler/.ssh/authorized_keys
+```
+
+然后在本地 `~/.ssh/config` 添加：
+
+```ssh-config
+Host crawler-grafana
+    HostName 162.211.228.20
+    User crawler
+    IdentityFile ~/.ssh/id_ed25519_grafana
+    LocalForward 3000 127.0.0.1:3000
+```
+
+之后只需：
+
+```bash
+ssh crawler-grafana
+```
+
+浏览器打开 http://localhost:3000，账号 `admin`，密码见 `deployment/monitoring/.env` 里的 `GRAFANA_ADMIN_PASSWORD`。
+
 ### 2.2 每台 Windows
 
 ```powershell
-# 1. 安装 Tailscale（如果还没装）：https://tailscale.com/download/windows
-# 2. 安装 Promtail
+# 1. 安装 Tailscale：https://tailscale.com/download/windows
+#    登录同一个 Tailscale 账号
+
+# 2. 用管理员 PowerShell 安装 Promtail
 .\deployment\windows\install-promtail.ps1 `
-  -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" `
-  -NodeCode "crawler-09"
+  -LokiUrl "http://100.111.251.108:3100/loki/api/v1/push" `
+  -NodeCode "crawler-09" `
+  -LogDir "D:\crawler\logs"
 
 # 3. 安装 windows_exporter（节点资源监控）
 .\deployment\windows\install-windows-exporter.ps1
@@ -113,9 +206,11 @@ pm2 restart ecosystem.config.js
 `install-promtail.ps1` 自动完成：
 - 检测/安装 NSSM
 - 下载 Promtail 2.9.8
-- 写 promtail.yml（含 pipeline stages 抽字段）
+- 写 `C:\promtail\promtail.yml`（含 pipeline stages 抽字段）
 - 注册为 Windows 服务
 - 防火墙开 9080 给 Tailscale 网段
+
+> 如果日志目录不是 `D:\crawler\logs`，改 `-LogDir` 参数。`NodeCode` 建议按 `crawler-09` .. `crawler-14` 命名。
 
 ### 2.3 业务容器（Crawler）
 
@@ -127,13 +222,25 @@ pm2 restart ecosystem.config.js
 
 ### 3.1 访问 Grafana
 
-仅 Tailscale 内网访问：
+**方式一：Tailscale 内网直接访问**
+
+如果你本地电脑已加入同一个 Tailscale 网络：
 
 ```
-http://100.x.x.V:3000
+http://100.111.251.108:3000
 ```
 
-默认账号 `admin`，密码来自 `GRAFANA_ADMIN_PASSWORD` 环境变量。
+**方式二：SSH 隧道（本地电脑不在 Tailscale 网络时）**
+
+配置好 `~/.ssh/config` 里的 `Host crawler-grafana`（见 2.1.1）后：
+
+```bash
+ssh crawler-grafana
+```
+
+然后浏览器打开 http://localhost:3000。
+
+默认账号 `admin`，密码来自 `deployment/monitoring/.env` 里的 `GRAFANA_ADMIN_PASSWORD`。
 
 ### 3.2 四张仪表盘（位于 Crawler 文件夹）
 

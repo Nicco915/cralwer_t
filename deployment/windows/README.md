@@ -73,6 +73,79 @@ deployment\windows\setup-pm2-service.ps1
 
 注意：执行前请确保 crawler 已在 PM2 中运行。
 
+## 监控组件安装
+
+crawler 业务日志与节点资源指标通过 Loki + Promtail + Grafana 统一监控。首次部署业务后，还需要在每台 Windows 服务器上安装监控组件。
+
+### 前置条件
+
+- 已在 VPS 上部署监控栈，详见项目根目录 `loki监控.md`
+- VPS 的 Tailscale IP 当前为：`100.111.251.108`
+- Windows 服务器已安装 Tailscale 并登录**同一个 Tailscale 账号**：https://tailscale.com/download/windows
+
+### 安装 Promtail（推送日志到 Loki）
+
+以管理员 PowerShell 执行：
+
+```powershell
+cd C:\hs-sku-crawler
+.\deployment\windows\install-promtail.ps1 `
+  -LokiUrl "http://100.111.251.108:3100/loki/api/v1/push" `
+  -NodeCode "crawler-09" `
+  -LogDir "C:\hs-sku-crawler\logs"
+```
+
+参数说明：
+- `-LokiUrl`：VPS 上 Loki 的推送地址
+- `-NodeCode`：节点唯一标识，建议 Windows PM2 节点用 `crawler-09` .. `crawler-14`
+- `-LogDir`：crawler 日志目录，默认 `C:\promtail\logs`，建议改成业务实际目录
+
+脚本会自动完成：
+- 检测/安装 NSSM
+- 下载 Promtail 2.9.8
+- 生成 `C:\promtail\promtail.yml`
+- 注册为 Windows 服务 `Promtail`
+- 防火墙放行 9080 给 Tailscale 网段
+
+验证服务：
+
+```powershell
+nssm status Promtail
+Get-Content C:\promtail\promtail.log -Tail 20
+```
+
+### 安装 windows_exporter（节点资源监控）
+
+以管理员 PowerShell 执行：
+
+```powershell
+cd C:\hs-sku-crawler
+.\deployment\windows\install-windows-exporter.ps1
+```
+
+脚本会自动：
+- 下载 windows_exporter MSI
+- 安装并启动服务
+- 防火墙放行 9182 给 Tailscale 网段
+
+验证：
+
+```powershell
+Get-Service windows_exporter
+```
+
+### 监控安装后验证
+
+1. 在 Grafana 的 "Crawler · 节点心跳" 面板看到该 `nodeCode`
+2. 在 "Crawler · 节点资源" 面板看到 Windows 节点的 CPU/内存/磁盘
+3. 运行以下 LogQL 看该节点是否有心跳日志：
+
+```logql
+{app="crawler"} | json | component="heartbeat" | nodeCode="crawler-09"
+```
+
+---
+
 ## 后续更新
 
 在已部署的服务器上，执行 `update.ps1`：

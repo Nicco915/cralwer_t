@@ -372,37 +372,65 @@ docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' 
 
 ### 8. 部署监控栈（Loki + Promtail + Grafana）
 
-容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控，详见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md` 与 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
+容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控。完整安装说明见项目根目录 [`loki监控.md`](../../loki监控.md)。
 
 #### 8.1 VPS 端启动监控栈
 
 ```bash
-cd /opt/crawler
+cd /opt/crawler/repo
 docker compose -f deployment/monitoring/docker-compose.yml up -d
 ```
 
 启动后包含的服务：
 
-- `loki`：日志聚合，默认监听 `3100`，仅绑定 Tailscale 内网 IP
+- `loki`：日志聚合，监听 `100.111.251.108:3100`，仅 Tailscale 内网可访问
 - `promtail`：抓取本机 crawler 容器日志，推送至 Loki
-- `grafana`：可视化与告警，默认监听 `3000`，仅绑定 Tailscale 内网 IP
+- `grafana`：可视化与告警，监听 `127.0.0.1:3000`，需通过 SSH 隧道或 Tailscale 访问
+
+当前 VPS Tailscale IP：
+
+```
+100.111.251.108
+```
 
 #### 8.2 Grafana 访问
 
-仅内网（绑定 Tailscale IP）：`http://100.x.x.V:3000`，默认账号 `admin` / 密码取自 `.env` 中的 `GRAFANA_ADMIN_PASSWORD`。
+**Tailscale 内网访问：**
 
-如需在本地浏览器查看，通过 SSH 隧道转发：
-
-```bash
-ssh -L 3000:127.0.0.1:3000 root@<VPS_IP>
+```
+http://100.111.251.108:3000
 ```
 
-然后在浏览器打开 `http://localhost:3000`。
+**本地浏览器通过 SSH 隧道访问：**
+
+推荐配置 SSH 密钥登录，在本地 `~/.ssh/config` 添加：
+
+```ssh-config
+Host crawler-grafana
+    HostName 162.211.228.20
+    User crawler
+    IdentityFile ~/.ssh/id_ed25519_grafana
+    LocalForward 3000 127.0.0.1:3000
+```
+
+然后：
+
+```bash
+ssh crawler-grafana
+```
+
+浏览器打开 http://localhost:3000，账号 `admin`，密码取自 `deployment/monitoring/.env` 中的 `GRAFANA_ADMIN_PASSWORD`。
 
 #### 8.3 Windows 节点安装（每台）
 
+确保 Windows 服务器已安装 Tailscale 并登录同一账号，然后以管理员 PowerShell 执行：
+
 ```powershell
-.\deployment\windows\install-promtail.ps1 -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" -NodeCode "crawler-09"
+.\deployment\windows\install-promtail.ps1 `
+  -LokiUrl "http://100.111.251.108:3100/loki/api/v1/push" `
+  -NodeCode "crawler-09" `
+  -LogDir "C:\hs-sku-crawler\logs"
+
 .\deployment\windows\install-windows-exporter.ps1
 ```
 
