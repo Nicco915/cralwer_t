@@ -15,7 +15,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "sum(rate({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [5m])) / sum(rate({app=\"crawler\"} | json | component=\"task\" | status=~\".+\" [5m]))",
+          "expr": "sum(rate({app=\"crawler\"} | json | drop __error__, __error_details__ | component=\"task\" | status=\"error\" [5m])) / sum(rate({app=\"crawler\"} | json | drop __error__, __error_details__ | component=\"task\" | status=~\".+\" [5m]))",
           "refId": "A",
           "legendFormat": "失败率"
         }
@@ -36,7 +36,7 @@
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 12 },
       "targets": [
         {
-          "expr": "topk(10, sum by (sku) (count_over_time({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [24h])))",
+          "expr": "topk(10, sum by (sku) (count_over_time({app=\"crawler\"} | json | drop __error__, __error_details__ | component=\"task\" | status=\"error\" [24h])))",
           "refId": "A",
           "format": "table"
         }
@@ -50,7 +50,7 @@
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 12 },
       "targets": [
         {
-          "expr": "sum by (error) (count_over_time({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [24h]))",
+          "expr": "sum by (error) (count_over_time({app=\"crawler\"} | json | drop __error__, __error_details__ | component=\"task\" | status=\"error\" [24h]))",
           "refId": "A",
           "legendFormat": "{{error}}"
         }

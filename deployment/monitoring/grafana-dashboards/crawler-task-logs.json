@@ -35,7 +35,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{app=\"crawler\"} | json | sku=~\"$sku\" | nodeCode=~\"$nodeCode\"",
+          "expr": "{app=\"crawler\"} | json | drop __error__, __error_details__ | sku=~\"$sku\" | nodeCode=~\"$nodeCode\"",
           "refId": "A"
         }
       ],
