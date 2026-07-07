@@ -255,6 +255,7 @@ class CrawlerService {
       pusher: this.pusher,
       imageUploader,
       log: this.log.bind(this),
+      logger: this.logger,
     });
 
     this.poller = new Poller({
