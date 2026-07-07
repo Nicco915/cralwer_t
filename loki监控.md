@@ -1,0 +1,287 @@
+# Loki 监控使用说明
+
+> 用 Loki + Promtail + Grafana 替代 `deployment/crawlab/`，统一 8 个 Docker 节点与 6 台 Windows PM2 节点的日志聚合、失败率与失败 SKU 排行视图。
+
+详细设计见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md`。
+实现计划见 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
+
+---
+
+## 1. 设计要点
+
+### 1.1 架构
+
+```
+┌─────────────── Windows PM2 节点（每台 6 个）──────────────┐
+│  PM2: crawler                                               │
+│   └─ stdout/stderr → logs/crawler-*.log（结构化 JSON）       │
+│  Promtail.exe（NSSM 服务）                                  │
+│   └─ 抓 logs/crawler-*.log → POST Loki                     │
+└───────────────────────────┬──────────────────────────────┘
+                            │ 出站 https://100.x.x.V:3100
+                            ▼
+┌──────────────── VPS（Ubuntu，Docker 主机）───────────────┐
+│  Loki        :3100   监听 Tailscale IP                     │
+│  Promtail    抓 docker.sock 容器日志 + ./logs              │
+│  Grafana     :3000   监听 Tailscale IP（仅内网）            │
+│  Prometheus  :9090   抓 Blackbox + node-exporter           │
+│  Blackbox    :9115   主动探各节点 /health                 │
+│  crawler-1..8:3001..3008                                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 1.2 数据流
+
+业务事件流：
+
+```
+CrawlerService.runTask() 捕获 task result
+  → logger.info('task', 'finished', { sku, status, error, durationMs, ... })
+       ↓
+   stdout（容器/Promtail docker.sock 抓）──────→ Loki
+       ↓
+   file append（logs/crawler.jsonl，Promtail mount 抓）──→ Loki
+       ↓
+   Promtail pipeline 抽字段（sku/status/error/...）成为 Loki label
+       ↓
+   Grafana query 用这些 label 聚合
+```
+
+心跳流：
+
+```
+CrawlerService 每 heartbeatInterval 秒 → logger.info('heartbeat', 'alive', {...})
+       ↓
+   Loki 中可见 {component="heartbeat", nodeCode="crawler-XX"}
+       ↓
+   Grafana 仪表盘 "Crawler · 节点心跳" 用 time() - last_heartbeat 计算"最后心跳距今"
+       ↓
+   超过 5 分钟 → Grafana Alert critical 告警
+```
+
+### 1.3 节点命名
+
+| 环境 | 命名 |
+|---|---|
+| Docker 容器 | `crawler-01` .. `crawler-08`（端口 3001..3008） |
+| Windows PM2 | `crawler-09` .. `crawler-14`（端口 9999） |
+
+### 1.4 网络假设
+
+- **默认**：所有监控端口仅监听 Tailscale IP（`100.64.0.0/10`），Grafana 仅内网访问
+- **备选**：公网 IP 白名单（VPS 公网 IP 变了要重改防火墙规则）
+
+---
+
+## 2. 部署步骤
+
+### 2.1 VPS（Ubuntu）
+
+```bash
+cd /opt/crawler
+git pull  # 拉取最新代码
+echo "GRAFANA_ADMIN_PASSWORD=<选一个强密码>" >> .env  # 必填，无 fallback
+docker compose -f deployment/monitoring/docker-compose.yml up -d
+```
+
+验证：
+
+```bash
+curl -s http://127.0.0.1:3100/ready  # 应该返回 "ready"
+curl -s http://127.0.0.1:3000/api/health  # 应该返回 {"database":"ok",...}
+curl -s http://127.0.0.1:9090/targets  # 浏览器看 Blackbox 8 目标全 UP
+```
+
+首次启动后，等 30-60 秒让 Loki 索引完成。
+
+### 2.2 每台 Windows
+
+```powershell
+# 1. 安装 Tailscale（如果还没装）：https://tailscale.com/download/windows
+# 2. 安装 Promtail
+.\deployment\windows\install-promtail.ps1 `
+  -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" `
+  -NodeCode "crawler-09"
+
+# 3. 安装 windows_exporter（节点资源监控）
+.\deployment\windows\install-windows-exporter.ps1
+
+# 4. 重启 PM2 业务（让 logger 立即生效）
+pm2 restart ecosystem.config.js
+```
+
+`install-promtail.ps1` 自动完成：
+- 检测/安装 NSSM
+- 下载 Promtail 2.9.8
+- 写 promtail.yml（含 pipeline stages 抽字段）
+- 注册为 Windows 服务
+- 防火墙开 9080 给 Tailscale 网段
+
+### 2.3 业务容器（Crawler）
+
+业务容器代码已含心跳与 task event 埋点（commit `ba8f21d` 及之前）。无需额外操作，PM2 / Docker 重启业务即生效。
+
+---
+
+## 3. 使用方法
+
+### 3.1 访问 Grafana
+
+仅 Tailscale 内网访问：
+
+```
+http://100.x.x.V:3000
+```
+
+默认账号 `admin`，密码来自 `GRAFANA_ADMIN_PASSWORD` 环境变量。
+
+### 3.2 四张仪表盘（位于 Crawler 文件夹）
+
+| 仪表盘 | 用途 | 关键查询 |
+|---|---|---|
+| **Crawler · 节点心跳** | 节点在线状态 + Blackbox 探活 | `time() - max by (nodeCode) (timestamp({app="crawler"} \| json \| component="heartbeat" \| nodeCode=~".+"))` |
+| **Crawler · 失败率与 SKU 排行** | 5 分钟失败率曲线 + top10 失败 SKU + 失败原因分布 | `sum(rate({app="crawler"} \| json \| component="task" \| status="error" [5m])) / sum(rate(... status=~".+" [5m]))` |
+| **Crawler · 单 SKU 任务日志** | 输入 SKU 看完整任务日志 + 节点过滤 | `{app="crawler"} \| json \| sku=~"$sku"` |
+| **Crawler · 节点资源** | CPU/内存/磁盘使用率（来自 node-exporter / windows_exporter） | 标准 PromQL |
+
+### 3.3 常用 LogQL 查询
+
+#### 看某个节点最近 1 小时所有日志
+
+```logql
+{app="crawler"} | json | nodeCode="crawler-01"
+```
+
+#### 看最近 24h 失败任务总数
+
+```logql
+sum(count_over_time({app="crawler"} | json | component="task" | status="error" [24h]))
+```
+
+#### 失败率趋势（5 分钟窗口）
+
+```logql
+sum(rate({app="crawler"} | json | component="task" | status="error" [5m]))
+/
+sum(rate({app="crawler"} | json | component="task" | status=~".+" [5m]))
+```
+
+#### 失败 SKU top10（24h）
+
+```logql
+topk(10, sum by (sku) (count_over_time({app="crawler"} | json | component="task" | status="error" [24h])))
+```
+
+#### 单 SKU 全文日志
+
+```logql
+{app="crawler"} | json | sku="YOUR_SKU_HERE"
+```
+
+#### 看心跳是否存在
+
+```logql
+{app="crawler"} | json | component="heartbeat" | nodeCode="crawler-09"
+```
+
+---
+
+## 4. 告警（当前就绪但未接飞书）
+
+两条 Grafana Alert 规则已配置（在 `deployment/monitoring/alert-rules/rules.yml`）：
+
+| 规则 | 条件 | 严重度 |
+|---|---|---|
+| `CrawlerNodeHeartbeatMissing` | 节点心跳缺失超过 5 分钟 | critical |
+| `CrawlerFailureRateHigh` | 全局失败率 > 50% 持续 5 分钟 | warning |
+
+**当前状态**：规则在 Grafana Alerting UI 中可见，但**未配置 webhook contact point**（飞书/钉钉等）。需要时在 Grafana UI → Alerting → Contact points 添加。
+
+---
+
+## 5. 常见排查操作
+
+### 5.1 节点不在线
+
+1. Grafana → "Crawler · 节点心跳" 面板，看节点最后心跳时间
+2. SSH 到该节点
+3. 检查 PM2 状态：`pm2 list` / `pm2 logs`
+4. 检查 Promtail 服务：`nssm status Promtail`，查看 `C:\promtail\promtail.log`
+5. 检查 Loki 连通性：从 Windows 跑 `Test-NetConnection 100.x.x.V -Port 3100`
+
+### 5.2 看不到任务日志
+
+1. 检查心跳是否存在（3.3 节查询）
+2. 如果心跳有但 task event 没有 → 看 Worker 日志 / 调高 `data-layer-failure-threshold` 排查
+3. 如果都没 → 检查 Promtail 是否在抓：`cat /var/lib/docker/containers/.../*.log`
+
+### 5.3 Grafana 查询慢
+
+1. 检查 Loki chunk 数：`curl http://127.0.0.1:3100/metrics | grep loki_tsdb`
+2. 如果 chunk 太多 → 增加 `compactor.retention_delete_worker_count` 或缩短 `retention_period`
+
+---
+
+## 6. 关键配置项
+
+| 项 | 默认值 | 说明 |
+|---|---|---|
+| `CRAWLER_HEARTBEAT_INTERVAL` | 30 | 心跳间隔（秒） |
+| `CRAWLER_HEALTH_PORT` | 9999 | 健康检查端口（Blackbox 探活） |
+| `CRAWLER_NODE_CODE` | `crawler-01` | 节点标识，决定 Loki label 中的 `nodeCode` |
+| `GRAFANA_ADMIN_PASSWORD` | **必填，无 fallback** | Grafana 管理员密码 |
+| `MONITOR_PORT` | 3000 | Grafana 端口（compose 中固定） |
+
+---
+
+## 7. 不做的事（明确边界）
+
+- **不引入** Prometheus/Grafana/InfluxDB 等外部时序数据库（用 Loki 自管）
+- **不改造** Poller/Pusher/Channel 主循环，仅增加事件埋点
+- **不实现** 告警抑制 / 静默时段
+- **不实现** 用户认证（Grafana 仅绑 Tailscale IP，假设内网可信）
+- **不废弃** logger.js，仅接入
+
+---
+
+## 8. 文件清单（部署时用到）
+
+```
+deployment/monitoring/
+├── docker-compose.yml              # 监控栈（loki/promtail/grafana/prometheus/blackbox/node-exporter）
+├── loki-config.yml
+├── promtail-docker.yml
+├── prometheus.yml
+├── blackbox.yml
+├── grafana-datasources/provider.yml  # Loki + Prometheus
+├── grafana-dashboards/provider.yml
+├── grafana-dashboards/
+│   ├── crawler-nodes.json
+│   ├── crawler-failures.json
+│   ├── crawler-task-logs.json
+│   └── node-resources.json
+└── alert-rules/rules.yml
+
+deployment/windows/
+├── install-promtail.ps1            # Promtail NSSM 服务
+└── install-windows-exporter.ps1    # windows_exporter MSI
+```
+
+业务代码改动：
+
+- `src/logger.js` 新增 `createStdoutLogger` / `createBroadcastLogger`
+- `src/service.js` `start()` 调 `startHeartbeat()`，`stop()` 调 `stopHeartbeat()`，日志走 broadcast logger
+- `src/worker.js` `runTask` 写 task event 日志
+- `src/cli.js` `--heartbeat-interval` / `CRAWLER_HEARTBEAT_INTERVAL`
+
+---
+
+## 9. 故障排除速查表
+
+| 现象 | 检查 |
+|---|---|
+| Loki /ready 返回非 200 | `docker logs monitoring-loki` |
+| Promtail 抓不到日志 | `docker logs monitoring-promtail` 看 positions 文件 |
+| Grafana dashboard "datasource not found" | `cat deployment/monitoring/grafana-datasources/provider.yml` 看 `uid:` 字段 |
+| 告警规则 NoData 一直触发 | 确认 Loki 中 `component="heartbeat"` 日志存在 |
+| Promtail pipeline 抽不到 sku | 看 worker 写入的 JSON 是否含 `"sku":"..."` 字段（注意 spec 转义） |
