@@ -1,0 +1,49 @@
+{
+  "title": "Crawler · 单 SKU 任务日志",
+  "uid": "crawler-task-logs",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["crawler"],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "sku",
+        "label": "SKU",
+        "type": "textbox",
+        "current": { "value": "", "text": "" }
+      },
+      {
+        "name": "nodeCode",
+        "label": "节点",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values({app=\"crawler\"}, nodeCode)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "SKU=$sku 节点=$nodeCode 实时日志",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{app=\"crawler\"} | json | sku=~\"$sku\" | nodeCode=~\"$nodeCode\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    }
+  ]
+}

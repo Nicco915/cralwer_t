@@ -41,14 +41,37 @@ function createFileLogger(options = {}) {
   const logDir = options.logDir || path.resolve('./logs');
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, 'crawler.jsonl');
-  const stream = fs.createWriteStream(logFile, { flags: 'a' });
-  stream.on('error', (err) => {
-    process.stderr.write(`[LOGGER] File stream error: ${err.message}\n`);
-  });
   return createLogger({
     nodeCode: options.nodeCode,
-    write: (line) => stream.write(line),
+    write: (line) => {
+      try {
+        fs.appendFileSync(logFile, line);
+      } catch (err) {
+        process.stderr.write(`[LOGGER] File write error: ${err.message}\n`);
+      }
+    },
   });
 }
 
-module.exports = { createLogger, createFileLogger };
+function createStdoutLogger(options = {}) {
+  const nodeCode = options.nodeCode || 'unknown';
+  const write = options.write || ((line) => process.stdout.write(line));
+  return createLogger({ nodeCode, write });
+}
+
+function createBroadcastLogger(loggers) {
+  const safeCall = (method, args) => {
+    for (const l of loggers) {
+      try { l[method](...args); } catch (e) {
+        process.stderr.write(`[BROADCAST-LOGGER] ${method} failed: ${e.message}\n`);
+      }
+    }
+  };
+  return {
+    info: (c, m, e) => safeCall('info', [c, m, e]),
+    warn: (c, m, e) => safeCall('warn', [c, m, e]),
+    error: (c, m, e) => safeCall('error', [c, m, e]),
+  };
+}
+
+module.exports = { createLogger, createFileLogger, createStdoutLogger, createBroadcastLogger };

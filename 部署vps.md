@@ -94,7 +94,7 @@ curl http://127.0.0.1:3001/health
 
 #### 3.1 新增节点
 
-编辑 `deployment/crawlab/docker-compose.yml`，复制一段 `crawler-N` service 并修改：
+编辑 `deployment/linux/docker-compose.yml`，复制一段 `crawler-N` service 并修改：
 
 ```yaml
   crawler-7:
@@ -230,7 +230,7 @@ export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
 
 ### 6. 内存推荐
 
-当前 6 个 crawler 节点，每个限制 800MB，共约 4.8GB；加上 crawlab、mongo、redis 等基础服务约 1-1.5GB。目前 8GB 内存已使用 2GB，属于轻负载。
+当前 6 个 crawler 节点，每个限制 800MB，共约 4.8GB；加上 monitoring(Loki/Promtail/Grafana) 约 1-1.5GB。目前 8GB 内存已使用 2GB，属于轻负载。
 
 推荐预留：
 
@@ -370,43 +370,61 @@ docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' 
 | 10 | `service.checkChannelForRotation` 路径绕过 channel cooldown（仍会 reinstall 旧 IP） | 30s 内可能 reinstall 旧 IP 浪费 | 建议下次改动：让 service 也读 `channel.lastIpRotationAt` |
 | 11 | 双重 reinstall 用同一 IP（仅 profile 切换有意义） | 浪费但 session 切换有效 | 观察 |
 
-### 8. 开启 Crawlab 监控
+### 8. 部署监控栈（Loki + Promtail + Grafana）
 
-Crawlab 已经作为 Docker Compose 服务运行，默认暴露在 VPS 的 `8080` 端口。
+容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控，详见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md` 与 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
 
-#### 8.1 本地访问
-
-在 VPS 上直接访问：
+#### 8.1 VPS 端启动监控栈
 
 ```bash
-curl http://127.0.0.1:8080
+cd /opt/crawler
+docker compose -f deployment/monitoring/docker-compose.yml up -d
 ```
 
-#### 8.2 远程访问
+启动后包含的服务：
 
-如果要在本地浏览器查看，需要一条 SSH 隧道：
+- `loki`：日志聚合，默认监听 `3100`，仅绑定 Tailscale 内网 IP
+- `promtail`：抓取本机 crawler 容器日志，推送至 Loki
+- `grafana`：可视化与告警，默认监听 `3000`，仅绑定 Tailscale 内网 IP
+
+#### 8.2 Grafana 访问
+
+仅内网（绑定 Tailscale IP）：`http://100.x.x.V:3000`，默认账号 `admin` / 密码取自 `.env` 中的 `GRAFANA_ADMIN_PASSWORD`。
+
+如需在本地浏览器查看，通过 SSH 隧道转发：
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 root@<VPS_IP>
+ssh -L 3000:127.0.0.1:3000 root@<VPS_IP>
 ```
 
-然后在浏览器打开 `http://localhost:8080`。
+然后在浏览器打开 `http://localhost:3000`。
 
-#### 8.3 放行防火墙（可选）
+#### 8.3 Windows 节点安装（每台）
 
-如果希望通过公网直接访问 Crawlab：
-
-```bash
-ufw allow 8080/tcp
-# 或者在云厂商控制台放行 8080 端口
+```powershell
+.\deployment\windows\install-promtail.ps1 -LokiUrl "http://100.x.x.V:3100/loki/api/v1/push" -NodeCode "crawler-09"
+.\deployment\windows\install-windows-exporter.ps1
 ```
 
-> 公网暴露 Crawlab 有安全风险，建议只通过 SSH 隧道或 VPN 访问。
+`install-promtail.ps1` 会创建 NSSM 托管的 Promtail 服务，把 PM2 日志、Crawler stdout/stderr 推送到指定 Loki 地址；`install-windows-exporter.ps1` 安装 windows-exporter 暴露 Prometheus 指标。
 
-#### 8.4 查看 Crawlab 日志
+#### 8.4 放行防火墙（可选）
+
+如果希望通过公网直接访问 Grafana：
 
 ```bash
-docker logs -f crawlab
+ufw allow 3000/tcp
+# 或者在云厂商控制台放行 3000 端口
+```
+
+> 公网暴露 Grafana 有安全风险，建议只通过 SSH 隧道、Tailscale 或 VPN 访问。
+
+#### 8.5 查看监控栈日志
+
+```bash
+docker compose -f deployment/monitoring/docker-compose.yml logs -f loki
+docker compose -f deployment/monitoring/docker-compose.yml logs -f promtail
+docker compose -f deployment/monitoring/docker-compose.yml logs -f grafana
 ```
 
 ---
@@ -817,58 +835,6 @@ docker compose logs --tail=100 crawler
 
 ---
 
-## 十一、crawlab 同机部署（可选）
-
-如果需要可视化监控节点，可将 crawlab 与爬虫部署在同一台 VPS。
-
-### 11.1 使用 crawlab 版 Docker Compose
-
-```bash
-su - crawler -c "cd /opt/crawler/repo/deployment/crawlab && ./deploy.sh v1.0.0"
-```
-
-此 compose 默认启动 6 个 crawler 节点，节点数可通过 `generate-compose.js --nodes=N` 调整。实际启动的服务包括：
-- `crawlab`：管理界面，访问 `http://<VPS_IP>:8080`
-- `mongo`：crawlab 元数据
-- `redis`：crawlab 任务队列
-- `crawler-1` ~ `crawler-N`：hs-sku-crawler 多节点，分别暴露健康端点
-
-每个 crawler 节点拥有独立的配置：
-- `CRAWLER_NODE_CODE`：`crawler-01` ~ `crawler-0N`
-- `CRAWLER_HEALTH_PORT`：`3001` ~ `3000+N`
-- `CRAWLER_CLIPROXY_SESSION_PREFIX`：与 `nodeCode` 相同，避免 IP 冲突
-- 独立的 volume 子目录：`output/crawler-0N/` 和 `images/crawler-0N/`
-
-### 11.2 在 crawlab 中添加节点
-
-1. 打开 `http://<VPS_IP>:8080`
-2. 进入「节点」→「添加节点」
-3. 节点地址填 `http://crawler:3000/health`
-4. 轮询间隔 30 秒
-
-### 11.3 GitHub Actions 自动发布
-
-配置 GitHub Secrets：
-- `VPS_HOST`：VPS 公网 IP
-- `VPS_USER`：部署用户名（如 `crawler`）
-- `VPS_SSH_KEY`：SSH 私钥
-
-发布新版本：
-
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-
-GitHub Actions 会自动构建镜像、推送到 GHCR、SSH 到 VPS 执行 `update.sh`。
-
-### 11.4 安全建议
-
-- crawlab 的 8080 端口建议通过 Nginx + Basic Auth 保护，或仅通过 SSH 隧道访问
-- 健康端口 3000 仅监听 `127.0.0.1`，不暴露公网
-
----
-
 ## 附录：完整文件清单
 
 部署目录 `/opt/crawler/` 应包含：
@@ -888,79 +854,3 @@ cliproxy-assignments.json  # Cliproxy 会话持久化（自动生成）
 ```
 
 部署代码与脚本在 `deployment/linux/`，配置示例在 `.env.example`，Dockerfile 在 `deployment/docker/Dockerfile`。
-
----
-
-## 十二、多节点部署（单 VPS 多 crawler 节点）
-
-当单台 VPS 配置较高（如 6C8G）时，可以运行多个 crawler 节点以充分利用资源。
-
-### 12.1 生成多节点 compose 文件
-
-默认生成 6 个节点：
-
-```bash
-cd deployment/crawlab
-node generate-compose.js
-```
-
-生成 4 个节点：
-
-```bash
-node generate-compose.js --nodes=4
-```
-
-节点编号为 `crawler-1` ~ `crawler-N`，对应：
-- `CRAWLER_NODE_CODE`: `crawler-01` ~ `crawler-0N`
-- `CRAWLER_HEALTH_PORT`: `3001` ~ `3000+N`
-- `CRAWLER_CLIPROXY_SESSION_PREFIX`: 与 `nodeCode` 相同，避免 IP 冲突
-
-### 12.2 首次部署
-
-```bash
-su - crawler -c "cd /opt/crawler/repo/deployment/crawlab && ./deploy.sh v1.0.0"
-```
-
-`deploy.sh` 会自动创建每个节点的 `output/crawler-0N` 和 `images/crawler-0N` 子目录。
-
-### 12.3 在 crawlab 中添加节点
-
-进入 crawlab Web UI → 节点 → 添加节点：
-
-| 节点名称 | 节点地址 |
-|----------|----------|
-| crawler-01 | http://crawler-1:3001/health |
-| crawler-02 | http://crawler-2:3002/health |
-| ... | ... |
-| crawler-06 | http://crawler-6:3006/health |
-
-### 12.4 升级全部节点
-
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-
-GitHub Actions 会自动执行 `./update.sh v1.2.3`，滚动升级所有 crawler 节点。
-
-### 12.5 单节点运维
-
-```bash
-# 停止节点 3
-docker compose stop crawler-3
-
-# 删除并重建节点 3
-docker compose rm -f crawler-3
-docker compose up -d crawler-3
-
-# 查看单个节点日志
-docker compose logs -f crawler-3
-```
-
-如需新增或删除节点，用 `generate-compose.js --nodes=N` 重新生成 compose 文件，并在 crawlab UI 中同步节点配置。
-
-### 12.6 资源与风险
-
-- 6 节点 × 2 channel 约占用 6.25 GB 内存 limit，请根据实际 `docker stats` 调整。
-- 每个节点使用独立的 `output`/`images` 子目录，避免文件冲突。
-- 所有节点共用同一组 Cliproxy 账号，靠不同 `sessionPrefix` 获取不同 IP。

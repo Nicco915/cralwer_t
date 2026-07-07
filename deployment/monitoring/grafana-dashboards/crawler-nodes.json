@@ -1,0 +1,75 @@
+{
+  "title": "Crawler · 节点心跳",
+  "uid": "crawler-nodes",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["crawler"],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "nodeCode",
+        "label": "节点",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values({app=\"crawler\"}, nodeCode)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "节点列表（最后心跳）",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "time() - max by (nodeCode) (timestamp({app=\"crawler\"} | json | component=\"heartbeat\" | nodeCode=~\".+\"))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 120, "color": "yellow" },
+              { "value": 300, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Blackbox 探活（8 容器）",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(probe_success{job=\"blackbox\"})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 8, "color": "green" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "title": "Crawler · 失败率与 SKU 排行",
+  "uid": "crawler-failures",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["crawler"],
+  "timezone": "browser",
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "失败率（5 分钟窗口）",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(rate({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [5m])) / sum(rate({app=\"crawler\"} | json | component=\"task\" | status=~\".+\" [5m]))",
+          "refId": "A",
+          "legendFormat": "失败率"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "失败 SKU 排名 top10（24h）",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 12 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (sku) (count_over_time({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [24h])))",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "失败原因分布（24h）",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 12 },
+      "targets": [
+        {
+          "expr": "sum by (error) (count_over_time({app=\"crawler\"} | json | component=\"task\" | status=\"error\" [24h]))",
+          "refId": "A",
+          "legendFormat": "{{error}}"
+        }
+      ]
+    }
+  ]
+}

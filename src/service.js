@@ -11,6 +11,7 @@ const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { ImageUploader } = require('./image-uploader');
+const { createStdoutLogger, createFileLogger, createBroadcastLogger } = require('./logger');
 
 function maskProxyUrl(url) {
   if (!url) return url;
@@ -45,10 +46,19 @@ class CrawlerService {
     this.proxyRefreshTimer = null;
     this.healthServer = null;
     this.healthServerStartTime = null;
+    this.heartbeatTimer = null;
+    this.logger = createBroadcastLogger([
+      createStdoutLogger({ nodeCode: this.config.nodeCode }),
+      createFileLogger({
+        nodeCode: this.config.nodeCode,
+        logDir: this.config.customLogDir || path.resolve('./logs'),
+      }),
+    ]);
   }
 
   log(...args) {
-    console.log(...args);
+    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    this.logger.info('service', msg, {});
   }
 
   ensureImageDir() {
@@ -203,7 +213,17 @@ class CrawlerService {
     }
   }
 
-  async start() {
+  async start(options = {}) {
+    if (options.customLogDir) {
+      this.config.customLogDir = options.customLogDir;
+      this.logger = createBroadcastLogger([
+        createStdoutLogger({ nodeCode: this.config.nodeCode }),
+        createFileLogger({
+          nodeCode: this.config.nodeCode,
+          logDir: options.customLogDir,
+        }),
+      ]);
+    }
     this.log('[SERVICE] Starting crawler service...');
     this.ensureImageDir();
 
@@ -235,6 +255,7 @@ class CrawlerService {
       pusher: this.pusher,
       imageUploader,
       log: this.log.bind(this),
+      logger: this.logger,
     });
 
     this.poller = new Poller({
@@ -259,6 +280,7 @@ class CrawlerService {
     this.log(`[SERVICE] Running with nodeCode=${this.config.nodeCode}, channels=${this.config.channels}`);
 
     this.startHealthCheck();
+    this.startHeartbeat();
     await this.startHealthServer();
     this.registerSignalHandlers();
   }
@@ -269,6 +291,7 @@ class CrawlerService {
     this.log('[SERVICE] Shutting down gracefully...');
 
     this.stopHealthCheck();
+    this.stopHeartbeat();
     this.stopProxyRefresh();
     if (this.healthServer) {
       this.healthServer.close();
@@ -389,6 +412,27 @@ class CrawlerService {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
+    }
+  }
+
+  startHeartbeat() {
+    if (this.heartbeatTimer) return;
+    const startedAt = Date.now();
+    this.heartbeatTimer = setInterval(() => {
+      this.logger.info('heartbeat', 'alive', {
+        uptime: Math.floor((Date.now() - startedAt) / 1000),
+        channels: this.channels.length,
+        pending: this.worker ? this.worker.taskQueue.length : 0,
+        running: this.worker ? this.worker.channels.filter(c => c.busy).length : 0,
+        browserConnected: this.browser ? this.browser.isConnected() : false,
+      });
+    }, (this.config.heartbeatInterval || 30) * 1000);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 

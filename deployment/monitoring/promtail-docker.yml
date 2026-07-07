@@ -1,0 +1,66 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  - job_name: crawler-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project"]
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(hs-sku-crawler-\d+)'
+        target_label: 'nodeCode'
+      - source_labels: ['__meta_docker_container_label_CRAWLER_NODE_CODE']
+        target_label: 'nodeCode'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+      - target_label: 'app'
+        replacement: 'crawler'
+      - target_label: 'job'
+        replacement: 'docker'
+
+  - job_name: crawler-host-logs
+    static_configs:
+      - targets: ['localhost']
+        labels:
+          app: crawler
+          job: docker
+          nodeCode: crawler-host
+        __path__: /app/logs/crawler-*.log
+
+pipeline_stages:
+  - match:
+      selector: '{app="crawler"}'
+      stages:
+        - regex:
+            expression: '"time":"(?P<time>[^"]+)"'
+        - regex:
+            expression: '"level":"(?P<level>[^"]+)"'
+        - regex:
+            expression: '"component":"(?P<component>[^"]+)"'
+        - regex:
+            expression: '"msg":"(?P<msg>[^"]+)"'
+        - regex:
+            expression: '"sku":"(?P<sku>[^"]+)"'
+        - regex:
+            expression: '"status":"(?P<status>[^"]+)"'
+        - regex:
+            expression: '"error":"(?P<error>[^"]+)"'
+        - regex:
+            expression: '"durationMs":(?P<durationMs>\d+)'
+        - regex:
+            expression: '"channelId":(?P<channelId>\d+)'
+        - regex:
+            expression: '"crawlerTaskId":(?P<crawlerTaskId>\d+)'

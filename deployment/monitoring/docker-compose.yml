@@ -1,0 +1,104 @@
+services:
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: monitoring-loki
+    restart: unless-stopped
+    user: "1000:1000"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - monitoring-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: monitoring-promtail
+    restart: unless-stopped
+    user: "1000:1000"
+    command: -config.file=/etc/promtail/promtail-docker.yml
+    volumes:
+      - ./promtail-docker.yml:/etc/promtail/promtail-docker.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ../../logs:/app/logs:ro
+    networks:
+      - monitoring-net
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:10.4.14
+    container_name: monitoring-grafana
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_ADDR: "0.0.0.0"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - monitoring-net
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: monitoring-prometheus
+    restart: unless-stopped
+    user: "1000:1000"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=31d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring-net
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: monitoring-blackbox
+    restart: unless-stopped
+    user: "1000:1000"
+    command: --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    networks:
+      - monitoring-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: monitoring-node-exporter
+    restart: unless-stopped
+    user: "0:0"
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($|/)'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring-net
+
+volumes:
+  loki-data:
+  grafana-data:
+  prometheus-data:
+
+networks:
+  monitoring-net:
+    driver: bridge

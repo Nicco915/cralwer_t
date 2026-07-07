@@ -79,6 +79,7 @@ const FLAG_MAP = {
   'image-upload-concurrency': 'imageUploadConcurrency',
   'image-upload-retries': 'imageUploadRetries',
   'image-upload': 'enableImageUpload',
+  'heartbeat-interval': 'heartbeatInterval',
 };
 
 const BOOLEAN_FLAGS = new Set([
@@ -178,6 +179,7 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_CLOUDFLARE_MAX_WAIT: 'cloudflareMaxWait',
     CRAWLER_MODE: 'mode',
     CRAWLER_HEALTH_PORT: 'healthPort',
+    CRAWLER_HEARTBEAT_INTERVAL: 'heartbeatInterval',
     CRAWLER_NODE_CODE: 'nodeCode',
     CRAWLER_NODE_TOKEN: 'nodeToken',
     CRAWLER_TASK_URL: 'taskUrl',
