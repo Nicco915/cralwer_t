@@ -19,17 +19,32 @@ scrape_configs:
           - name: label
             values: ["com.docker.compose.project"]
     relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        regex: '/(hs-sku-crawler-\d+)'
-        target_label: 'nodeCode'
+      # 优先使用容器上的 CRAWLER_NODE_CODE label，否则用容器名 hs-sku-crawler-N
       - source_labels: ['__meta_docker_container_label_CRAWLER_NODE_CODE']
+        regex: '(.+)'
         target_label: 'nodeCode'
+      - source_labels: ['nodeCode', '__meta_docker_container_name']
+        regex: '^;?/(hs-sku-crawler-\d+)$'
+        target_label: 'nodeCode'
+        replacement: '${1}'
       - source_labels: ['__meta_docker_container_log_stream']
         target_label: 'stream'
       - target_label: 'app'
         replacement: 'crawler'
       - target_label: 'job'
         replacement: 'docker'
+    pipeline_stages:
+      - json:
+          expressions:
+            level: s
+            component: c
+            msg: msg
+            ctx: ctx
+            id: id
+            time: 't["$date"]'
+      - labels:
+          level:
+          component:
 
   - job_name: crawler-host-logs
     static_configs:
@@ -40,26 +55,14 @@ scrape_configs:
           nodeCode: crawler-host
           __path__: /app/logs/crawler-*.log
     pipeline_stages:
-      - match:
-          selector: '{app="crawler"}'
-          stages:
-            - regex:
-                expression: '"time":"(?P<time>[^"]+)"'
-            - regex:
-                expression: '"level":"(?P<level>[^"]+)"'
-            - regex:
-                expression: '"component":"(?P<component>[^"]+)"'
-            - regex:
-                expression: '"msg":"(?P<msg>[^"]+)"'
-            - regex:
-                expression: '"sku":"(?P<sku>[^"]+)"'
-            - regex:
-                expression: '"status":"(?P<status>[^"]+)"'
-            - regex:
-                expression: '"error":"(?P<error>[^"]+)"'
-            - regex:
-                expression: '"durationMs":(?P<durationMs>\d+)'
-            - regex:
-                expression: '"channelId":(?P<channelId>\d+)'
-            - regex:
-                expression: '"crawlerTaskId":(?P<crawlerTaskId>\d+)'
+      - json:
+          expressions:
+            level: s
+            component: c
+            msg: msg
+            ctx: ctx
+            id: id
+            time: 't["$date"]'
+      - labels:
+          level:
+          component:

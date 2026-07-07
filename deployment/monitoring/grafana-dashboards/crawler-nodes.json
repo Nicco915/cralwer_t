@@ -2,7 +2,7 @@
   "title": "Crawler · 节点心跳",
   "uid": "crawler-nodes",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "tags": ["crawler"],
   "timezone": "browser",
   "time": { "from": "now-1h", "to": "now" },
@@ -29,13 +29,14 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "time() - max by (nodeCode) (timestamp({app=\"crawler\"} | json | component=\"heartbeat\" | nodeCode=~\".+\"))",
-          "refId": "A"
+          "expr": "max by (nodeCode) (timestamp({app=\"crawler\", job=\"docker\", nodeCode=~\".+\"} | json))",
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "dateTimeAsIso",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -44,8 +45,27 @@
               { "value": 300, "color": "red" }
             ]
           }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Time" },
+            "properties": [
+              { "id": "displayName", "value": "最后活跃时间" },
+              { "id": "unit", "value": "dateTimeAsIso" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Value #A (count)": true },
+            "renameByName": { "Value #A (lastNotNull)": "最后活跃时间" }
+          }
         }
-      }
+      ]
     },
     {
       "id": 2,
