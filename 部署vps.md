@@ -370,6 +370,71 @@ docker logs hs-sku-crawler-5 2>&1 | grep -E 'DATA_LAYER_(NEVER_PUSHED|MISSING)' 
 | 10 | `service.checkChannelForRotation` 路径绕过 channel cooldown（仍会 reinstall 旧 IP） | 30s 内可能 reinstall 旧 IP 浪费 | 建议下次改动：让 service 也读 `channel.lastIpRotationAt` |
 | 11 | 双重 reinstall 用同一 IP（仅 profile 切换有意义） | 浪费但 session 切换有效 | 观察 |
 
+#### 7.5 任务超时换 IP 重试 + Deadline 保护（2026-07-08）
+
+**新增 commit**（按时间顺序）：
+
+| SHA | 说明 |
+|---|---|
+| `60c6a1b` | feat(channel): add rotateProxy(reason) for worker-layer IP rotation |
+| `43eab72` | fix(channel): rotateProxy use browserContext.browser() instead of undefined this.browser |
+| `2ce1ca0` | feat(worker): retry-on-timeout — rotate IP and re-crawl once on dataLayer/timeout failure |
+| `05ecd7d` | fix(worker): catch crawl exceptions before retry decision + extract buildErrorResult |
+| `2d16bfe` | feat(config): taskTimeoutMs=130000, retryOnTimeout=true, goto/dataLayer retry 3→1 |
+| `6cbd46b` | fix(config): align goto/dataLayer defaults with CLI, validate taskTimeoutMs, add env flags |
+| `ffcaf50` | feat(worker): taskPromise 130s deadline — force timeout push if renderer/pusher hangs |
+| `697cf8c` | fix(worker): prevent duplicate push after deadline and rethrow non-deadline errors |
+| `d7ceb17` | fix(worker): preserve original result.status when rotateProxy fails |
+
+**触发条件**：
+
+- dataLayer 异常触发的 not_found（业务无结果 result_number=0 **不触发**）
+- page.goto 全部 timeout（status=error, error 匹配 /Timeout \d+ms exceeded/）
+- crawl 抛 TimeoutError（status=timeout）
+
+**Deadline 保护**：单 task 整体 130s 超时后强制推 timeout 给上游，防止 renderer 卡死导致 channel 永久 busy。
+
+**新增环境变量**：
+
+```bash
+CRAWLER_TASK_TIMEOUT_MS=130000
+CRAWLER_RETRY_ON_TIMEOUT=true
+```
+
+**新增 CLI flags**：
+
+```bash
+--task-timeout-ms 130000
+--retry-on-timeout true
+```
+
+**监控项**：
+
+- `[Worker] rotating IP and retrying` 频率（建议 < 10/min/channel）
+- `Task deadline exceeded` 频率（建议 0/hour，触发则重启容器）
+- `rotate skipped for task ... cooldown` 频率（建议 < 30%）
+- `[Worker] rotate failed for task` 频率
+
+**Revert**：
+
+```bash
+# 单 commit revert（按倒序）
+git revert d7ceb17
+git revert 697cf8c
+git revert ffcaf50
+git revert 6cbd46b
+git revert 2d16bfe
+git revert 05ecd7d
+git revert 2ce1ca0
+git revert 43eab72
+git revert 60c6a1b
+
+# 或一次回退到 435fdd4（计划 commit 之前）
+git reset --hard 435fdd4
+```
+
+**不推送镜像**：所有 commit 在 working tree，等生产观察 1-2 天无异常后再打新 tag。
+
 ### 8. 部署监控栈（Loki + Promtail + Grafana）
 
 容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控。完整安装说明见项目根目录 [`loki监控.md`](../../loki监控.md)。
