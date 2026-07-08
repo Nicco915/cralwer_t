@@ -217,6 +217,41 @@ describe('Worker.runTask retry behavior', () => {
     assert.strictEqual(pushed[0].status, 'not_found');
   });
 
+  it('rotates IP and retries when first crawl throws timeout exception', async () => {
+    let crawlCalls = 0;
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      crawl: async () => {
+        crawlCalls += 1;
+        if (crawlCalls === 1) {
+          const err = new Error('page.goto: Timeout 30000ms exceeded.');
+          err.status = 'timeout';
+          throw err;
+        }
+        return {
+          crawlerTaskId: 't1', sku: 'SKU1', status: 'success',
+          product_url: 'https://hit', product_name: 'Hit',
+        };
+      },
+      rotateProxy: async () => ({ rotated: true, reason: 'success' }),
+    };
+
+    const pushed = [];
+    const worker = new Worker({
+      pusher: { push: async (r) => { pushed.push(r); } },
+      log: () => {},
+    });
+    worker.retryOnTimeout = true;
+
+    await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU1' }, channel);
+
+    assert.strictEqual(crawlCalls, 2, 'should crawl twice after exception');
+    assert.strictEqual(pushed.length, 1);
+    assert.strictEqual(pushed[0].status, 'success', 'should push retry success result');
+  });
+
   it('translates second crawl exception to result and pushes', async () => {
     let crawlCalls = 0;
     const channel = {

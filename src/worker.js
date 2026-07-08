@@ -42,6 +42,19 @@ class Worker {
     return taskId !== undefined ? String(taskId) : null;
   }
 
+  buildErrorResult(task, err) {
+    return {
+      crawlerTaskId: task.crawlerTaskId,
+      sku: task.sku,
+      status: err.status ?? 'error',
+      product_name: '',
+      features_details: '',
+      product_specification: '',
+      product_url: '',
+      error: err.message,
+    };
+  }
+
   hasCapacity() {
     return this.taskQueue.length === 0 && this.channels.some(c => !c.busy);
   }
@@ -96,46 +109,27 @@ class Worker {
         this.log(`[Worker] Assigning task ${task.crawlerTaskId} sku ${task.sku} to channel ${channel.id}`);
         result = await channel.crawl(task);
         this.log(`[Worker] Crawl finished task ${task.crawlerTaskId} status ${result.status}`);
-
-        // 新增：换 IP 重试前置
-        if (this.shouldRetryWithNewIp(result, channel)) {
-          this.log(`[Worker] task ${task.crawlerTaskId} failed (${result.status}); rotating IP and retrying`);
-          const rotated = await channel.rotateProxy('task-timeout');
-          if (rotated.rotated) {
-            try {
-              result = await channel.crawl(task);
-              retries = 1;
-              this.log(`[Worker] Retry crawl finished task ${task.crawlerTaskId} status ${result.status}`);
-            } catch (retryErr) {
-              this.log(`[Worker] Retry crawl failed task ${task.crawlerTaskId}: ${retryErr.message}`);
-              result = {
-                crawlerTaskId: task.crawlerTaskId,
-                sku: task.sku,
-                status: retryErr.status ?? 'error',
-                product_name: '',
-                features_details: '',
-                product_specification: '',
-                product_url: '',
-                error: retryErr.message,
-              };
-              retries = 1;
-            }
-          } else {
-            this.log(`[Worker] rotate skipped for task ${task.crawlerTaskId}: ${rotated.reason}`);
-          }
-        }
       } catch (e) {
         this.log(`[Worker] Crawl failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
-        result = {
-          crawlerTaskId: task.crawlerTaskId,
-          sku: task.sku,
-          status: e.status ?? 'error',
-          product_name: '',
-          features_details: '',
-          product_specification: '',
-          product_url: '',
-          error: e.message,
-        };
+        result = this.buildErrorResult(task, e);
+      }
+
+      // 换 IP 重试：针对 crawl 抛异常或返回异常 result 的场景
+      if (this.shouldRetryWithNewIp(result, channel)) {
+        this.log(`[Worker] task ${task.crawlerTaskId} failed (${result.status}); rotating IP and retrying`);
+        const rotated = await channel.rotateProxy('task-timeout');
+        if (rotated.rotated) {
+          try {
+            result = await channel.crawl(task);
+            this.log(`[Worker] Retry crawl finished task ${task.crawlerTaskId} status ${result.status}`);
+          } catch (retryErr) {
+            this.log(`[Worker] Retry crawl failed task ${task.crawlerTaskId}: ${retryErr.message}`);
+            result = this.buildErrorResult(task, retryErr);
+          }
+          retries = 1;
+        } else {
+          this.log(`[Worker] rotate skipped for task ${task.crawlerTaskId}: ${rotated.reason}`);
+        }
       }
 
       try {

@@ -78,6 +78,7 @@ describe('Worker task event logging', { timeout: 15000 }, () => {
     const channel = makeMockChannel(3, {
       throwError: { message: 'Timeout 30000ms exceeded', status: 'timeout' },
     });
+    channel.rotateProxy = async () => ({ rotated: false, reason: 'no pool in test' });
     const worker = new Worker({ pusher: new FakePusher(), logger });
     worker.addChannel(channel);
 
