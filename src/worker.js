@@ -137,6 +137,10 @@ class Worker {
           rotated = await channel.rotateProxy('task-timeout');
         } catch (rotateErr) {
           this.log(`[Worker] rotateProxy failed task ${task.crawlerTaskId}: ${rotateErr.message}`);
+          // 原任务已是 timeout 时保留原始 result，避免 rotate 失败覆盖 timeout 语义
+          if (result.status === 'timeout') {
+            return result;
+          }
           result = this.buildErrorResult(task, rotateErr);
           return result;
         }
@@ -150,6 +154,13 @@ class Worker {
             result = this.buildErrorResult(task, retryErr);
           }
           retries = 1;
+        } else if (rotated.reason === 'error') {
+          this.log(`[Worker] rotate failed for task ${task.crawlerTaskId}: ${rotated.error}`);
+          // 保留原始 result.status，仅追加 rotate 失败信息
+          result = {
+            ...result,
+            error: `${result.error || ''}; rotate failed: ${rotated.error || rotated.reason}`.trim(),
+          };
         } else {
           this.log(`[Worker] rotate skipped for task ${task.crawlerTaskId}: ${rotated.reason}`);
         }
