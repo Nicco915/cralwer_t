@@ -218,20 +218,24 @@ class Worker {
           }
         }
       } catch (e) {
-        retries = 1;  // 触发了 fallback error push
         this.log(`[Worker] Push failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
-        const errorResult = {
-          ...result,
-          status: 'error',
-          error: e.message,
-        };
-        try {
-          await this.pusher.push(errorResult);
-          this.log(`[Worker] Error status pushed for task ${task.crawlerTaskId}`);
-        } catch (pushErr) {
-          this.log(`[Worker] failed to push error result for task ${task.crawlerTaskId}: ${pushErr.message}`);
+        if (result.status === 'timeout') {
+          this.log(`[Worker] Skipping fallback error push for already-timeout task ${task.crawlerTaskId}`);
+        } else {
+          retries = 1;  // 触发了 fallback error push
+          const errorResult = {
+            ...result,
+            status: 'error',
+            error: e.message,
+          };
+          try {
+            await this.pusher.push(errorResult);
+            this.log(`[Worker] Error status pushed for task ${task.crawlerTaskId}`);
+          } catch (pushErr) {
+            this.log(`[Worker] failed to push error result for task ${task.crawlerTaskId}: ${pushErr.message}`);
+          }
+          result = errorResult;  // 更新 result，让后续 logger 看到最终语义
         }
-        result = errorResult;  // 更新 result，让后续 logger 看到最终语义
       }
     }
 

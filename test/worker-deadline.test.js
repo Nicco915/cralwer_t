@@ -239,4 +239,33 @@ describe('Worker.runTask deadline', () => {
 
     assert.strictEqual(rotateCalls, 0, 'rotateProxy should not be called after deadline');
   });
+
+  it('does not fallback-push error for already-timeout result', async () => {
+    const pushed = [];
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: 't1', sku: 'SKU', status: 'success', product_url: 'x' };
+      },
+      onTaskComplete: async () => {},
+    };
+    const worker = new Worker({
+      pusher: {
+        push: async (r) => {
+          pushed.push(r);
+          throw new Error('pusher down');
+        },
+      },
+      log: () => {},
+      taskTimeoutMs: 100,
+    });
+
+    await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
+
+    assert.strictEqual(pushed.length, 1, `expected 1 push but got ${pushed.length}`);
+    assert.strictEqual(pushed[0].status, 'timeout');
+  });
 });
