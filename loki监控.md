@@ -1,6 +1,6 @@
-# Loki 监控使用说明
+# Loki 监控与容器管理使用说明
 
-> 用 Loki + Promtail + Grafana 替代 `deployment/crawlab/`，统一 8 个 Docker 节点与 6 台 Windows PM2 节点的日志聚合、失败率与失败 SKU 排行视图。
+> 用 Loki + Promtail + Grafana + Prometheus + Blackbox + Portainer 替代 `deployment/crawlab/`，统一 8 个 Docker 节点与 6 台 Windows PM2 节点的日志聚合、失败率、失败 SKU 排行视图，以及整台 VPS 的容器管理。
 
 详细设计见 `docs/superpowers/specs/2026-07-06-loki-monitoring-design.md`。
 实现计划见 `docs/superpowers/plans/2026-07-06-loki-monitoring-plan.md`。
@@ -392,3 +392,71 @@ deployment/windows/
 | Grafana dashboard "datasource not found" | `cat deployment/monitoring/grafana-datasources/provider.yml` 看 `uid:` 字段 |
 | 告警规则 NoData 一直触发 | 确认 Loki 中 `component="heartbeat"` 日志存在 |
 | Promtail pipeline 抽不到 sku | 看 worker 写入的 JSON 是否含 `"sku":"..."` 字段（注意 spec 转义） |
+
+---
+
+## 10. Portainer 容器管理面板
+
+`deployment/portainer/` 用 docker compose 单独管理一个 Portainer CE 容器，作为 VPS 上所有容器（crawler、监控栈）的 Web UI。
+
+### 10.1 资源占用
+
+- 镜像：`portainer/portainer-ce:2.21.5`，约 80 MB
+- 内存：空闲约 30-50 MB，CPU 接近 0%
+- 监听端口：9443（HTTPS，HTTP 9000 已关闭）
+
+对一台跑 8 个 crawler + Loki/Promtail/Grafana/Prometheus/Blackbox 的 VPS 来说基本可忽略。
+
+### 10.2 安装
+
+VPS 上执行（一次性）：
+
+```bash
+cd /opt/crawler
+mkdir -p portainer && cd portainer
+
+# 复制仓库里的 compose 文件
+cp /opt/crawler/repo/deployment/portainer/docker-compose.yml .
+
+# 创建 .env，绑定到 Tailscale IP（仅内网可访问）
+cp /opt/crawler/repo/deployment/portainer/.env.example .env
+sed -i 's|^PORTAINER_BIND_ADDR=.*|PORTAINER_BIND_ADDR=100.111.251.108|' .env
+
+# 启动
+docker compose up -d
+```
+
+或者用 `deploy.sh` 类的脚本同步时直接 rsync 这个目录过去。
+
+### 10.3 访问
+
+1. 浏览器打开 `https://100.111.251.108:9443`
+2. 首次访问会提示创建管理员账号（用户名 + 12 位以上密码）
+3. 进入后会默认列出 **local** 环境，可看到这台 VPS 上所有容器（crawler-1..8、monitoring-*、portainer 自身）
+4. 可以按容器看 CPU/内存/日志、重启、exec 进 shell、查环境变量、看镜像层
+
+### 10.4 维护命令
+
+```bash
+cd /opt/crawler/portainer
+
+# 拉取新版镜像并滚动重启
+docker compose pull
+docker compose up -d
+
+# 看日志
+docker compose logs -f --tail=100
+
+# 停掉
+docker compose down
+```
+
+数据持久化在 named volume `portainer_portainer_data`，升级或重建容器不会丢配置/账号/已注册的环境。
+
+### 10.5 安全说明
+
+- Portainer 挂载了 `/var/run/docker.sock`，相当于拿到了宿主机 root 权限。
+- 因此 compose 里把端口绑到 `PORTAINER_BIND_ADDR`（默认 Tailscale IP `100.111.251.108`），**不要改成 `0.0.0.0`** 或公网 IP。
+- HTTPS 用的是自签证书，浏览器会提示不安全，信任一次即可。
+- 创建管理员账号时使用 12 位以上强密码。
+- 如果需要多人协作，用 Portainer 自身的 teams/roles 功能给同事开权限，不要共享管理员账号。
