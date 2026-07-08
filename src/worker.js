@@ -1,3 +1,11 @@
+class TaskDeadlineError extends Error {
+  constructor(timeoutMs) {
+    super(`Task deadline ${timeoutMs}ms exceeded`);
+    this.code = 'TASK_DEADLINE_EXCEEDED';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 class Worker {
   constructor(options) {
     this.channels = [];
@@ -104,10 +112,12 @@ class Worker {
     let retries = 0;
     let result = null;
     let timedOut = false;
+    let cancelled = false;
     channel.busy = true;
 
-    // 完整流程（包含 crawl + retry + push + imageUpload）
+    // 完整流程（只包含 crawl + retry；push / upload 拆到 race 之后统一处理）
     const finishPromise = (async () => {
+      if (cancelled) return result;
       try {
         this.log(`[Worker] Assigning task ${task.crawlerTaskId} sku ${task.sku} to channel ${channel.id}`);
         result = await channel.crawl(task);
@@ -117,11 +127,21 @@ class Worker {
         result = this.buildErrorResult(task, e);
       }
 
+      if (cancelled) return result;
+
       // 换 IP 重试：针对 crawl 抛异常或返回异常 result 的场景
       if (this.shouldRetryWithNewIp(result, channel)) {
         this.log(`[Worker] task ${task.crawlerTaskId} failed (${result.status}); rotating IP and retrying`);
-        const rotated = await channel.rotateProxy('task-timeout');
+        let rotated;
+        try {
+          rotated = await channel.rotateProxy('task-timeout');
+        } catch (rotateErr) {
+          this.log(`[Worker] rotateProxy failed task ${task.crawlerTaskId}: ${rotateErr.message}`);
+          result = this.buildErrorResult(task, rotateErr);
+          return result;
+        }
         if (rotated.rotated) {
+          if (cancelled) return result;
           try {
             result = await channel.crawl(task);
             this.log(`[Worker] Retry crawl finished task ${task.crawlerTaskId} status ${result.status}`);
@@ -135,6 +155,42 @@ class Worker {
         }
       }
 
+      return result;
+    })();
+
+    // Deadline 兜底：单 task 整体 crawl+retry 不超过 taskTimeoutMs（默认 130s）
+    let deadlineReject;
+    const deadlinePromise = new Promise((_, reject) => {
+      deadlineReject = reject;
+    });
+    const deadlineTimer = setTimeout(
+      () => {
+        cancelled = true;
+        deadlineReject(new TaskDeadlineError(this.taskTimeoutMs));
+      },
+      this.taskTimeoutMs,
+    );
+
+    try {
+      result = await Promise.race([finishPromise, deadlinePromise]);
+    } catch (err) {
+      clearTimeout(deadlineTimer);
+      if (err instanceof TaskDeadlineError || err.code === 'TASK_DEADLINE_EXCEEDED') {
+        timedOut = true;
+        this.log(`[Worker] Task ${task.crawlerTaskId} deadline exceeded, forcing timeout result`);
+        result = this.buildErrorResult(task, err);
+        result.status = 'timeout';
+        result.error = err.message;
+      } else {
+        this.log(`[Worker] Task ${task.crawlerTaskId} failed with non-deadline error: ${err.message}`);
+        result = this.buildErrorResult(task, err);
+      }
+    } finally {
+      clearTimeout(deadlineTimer);
+    }
+
+    // 统一推送（包括 timeout）
+    if (result) {
       try {
         this.log(`[Worker] Starting push task ${task.crawlerTaskId} sku ${task.sku} status=${result.status}`);
         await this.pusher.push(result);
@@ -164,36 +220,6 @@ class Worker {
         }
         result = errorResult;  // 更新 result，让后续 logger 看到最终语义
       }
-    })();
-
-    // Deadline 兜底：单 task 整体不超过 taskTimeoutMs（默认 130s）
-    let deadlineReject;
-    const deadlinePromise = new Promise((_, reject) => {
-      deadlineReject = reject;
-    });
-    const deadlineTimer = setTimeout(
-      () => deadlineReject(new Error(`Task deadline ${this.taskTimeoutMs}ms exceeded`)),
-      this.taskTimeoutMs,
-    );
-
-    try {
-      await Promise.race([finishPromise, deadlinePromise]);
-    } catch (deadlineErr) {
-      if (deadlineErr.message.startsWith('Task deadline')) {
-        timedOut = true;
-        this.log(`[Worker] Task ${task.crawlerTaskId} deadline exceeded, forcing timeout result`);
-        const timeoutResult = this.buildErrorResult(task, deadlineErr);
-        timeoutResult.status = 'timeout';
-        timeoutResult.error = deadlineErr.message;
-        try {
-          await this.pusher.push(timeoutResult);
-          this.log(`[Worker] Forced timeout result pushed for task ${task.crawlerTaskId}`);
-        } catch (pushErr) {
-          this.log(`[Worker] Failed to push forced timeout result for task ${task.crawlerTaskId}: ${pushErr.message}`);
-        }
-      }
-    } finally {
-      clearTimeout(deadlineTimer);
     }
 
     // 资源清理（即使 deadline 触发也必须执行）

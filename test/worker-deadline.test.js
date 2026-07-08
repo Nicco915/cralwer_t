@@ -30,18 +30,14 @@ describe('Worker.runTask deadline', () => {
       id: 1,
       busy: false,
       reinitializing: false,
-      crawl: async () => ({ crawlerTaskId: 't1', sku: 'SKU', status: 'success', product_url: 'x' }),
-      onTaskComplete: async () => {
-        await new Promise(r => setTimeout(r, 300));
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: 't1', sku: 'SKU', status: 'success', product_url: 'x' };
       },
+      onTaskComplete: async () => {},
     };
     const worker = new Worker({
-      pusher: {
-        push: async (r) => {
-          pushed.push(r);
-          await new Promise(r => setTimeout(r, 200));
-        },
-      },
+      pusher: { push: async (r) => { pushed.push(r); } },
       log: () => {},
       taskTimeoutMs: 100,
     });
@@ -58,14 +54,17 @@ describe('Worker.runTask deadline', () => {
       id: 1,
       busy: false,
       reinitializing: false,
-      crawl: async () => ({ crawlerTaskId: 't1', sku: 'SKU', status: 'success' }),
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: 't1', sku: 'SKU', status: 'success' };
+      },
       onTaskComplete: async () => {
         onTaskCompleteCalled = true;
         await new Promise(r => setTimeout(r, 300));
       },
     };
     const worker = new Worker({
-      pusher: { push: async () => { await new Promise(r => setTimeout(r, 300)); } },
+      pusher: { push: async () => {} },
       log: () => {},
       taskTimeoutMs: 100,
     });
@@ -79,11 +78,14 @@ describe('Worker.runTask deadline', () => {
   it('clears inFlightTaskIds when deadline fires', async () => {
     const channel = {
       id: 1, busy: false, reinitializing: false,
-      crawl: async () => ({ crawlerTaskId: '42', sku: 'SKU', status: 'success' }),
-      onTaskComplete: async () => { await new Promise(r => setTimeout(r, 300)); },
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: '42', sku: 'SKU', status: 'success' };
+      },
+      onTaskComplete: async () => {},
     };
     const worker = new Worker({
-      pusher: { push: async () => { await new Promise(r => setTimeout(r, 300)); } },
+      pusher: { push: async () => {} },
       log: () => {},
       taskTimeoutMs: 100,
     });
@@ -96,12 +98,15 @@ describe('Worker.runTask deadline', () => {
   it('respects custom taskTimeoutMs from config', async () => {
     const channel = {
       id: 1, busy: false, reinitializing: false,
-      crawl: async () => ({ crawlerTaskId: 't1', sku: 'SKU', status: 'success' }),
-      onTaskComplete: async () => { await new Promise(r => setTimeout(r, 300)); },
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: 't1', sku: 'SKU', status: 'success' };
+      },
+      onTaskComplete: async () => {},
     };
     const pushed = [];
     const worker = new Worker({
-      pusher: { push: async (r) => { pushed.push(r); await new Promise(r => setTimeout(r, 100)); } },
+      pusher: { push: async (r) => { pushed.push(r); } },
       log: () => {},
       taskTimeoutMs: 50,
     });
@@ -133,7 +138,70 @@ describe('Worker.runTask deadline', () => {
       await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
     });
 
-    assert.ok(logs.some(msg => msg.includes('Failed to push forced timeout result')), 'should log push failure');
+    assert.ok(logs.some(msg => msg.includes('Push failed')), 'should log push failure');
     assert.strictEqual(channel.busy, false);
+  });
+
+  it('pushes timeout only once when deadline fires during crawl', async () => {
+    const pushed = [];
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return { crawlerTaskId: 't1', sku: 'SKU', status: 'success', product_url: 'x' };
+      },
+      onTaskComplete: async () => {},
+    };
+    const worker = new Worker({
+      pusher: {
+        push: async (r) => {
+          pushed.push(r);
+          await new Promise(r => setTimeout(r, 10));
+        },
+      },
+      log: () => {},
+      taskTimeoutMs: 100,
+    });
+
+    await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
+    await new Promise(r => setTimeout(r, 300));
+
+    assert.strictEqual(pushed.length, 1, `expected 1 push but got ${pushed.length}`);
+    assert.strictEqual(pushed[0].status, 'timeout');
+    assert.strictEqual(channel.busy, false);
+  });
+
+  it('does not swallow non-deadline errors from rotateProxy', async () => {
+    const pushed = [];
+    let rotateCalls = 0;
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      crawl: async () => ({
+        crawlerTaskId: 't1', sku: 'SKU', status: 'not_found',
+        dataLayerFailed: true, dataLayerNotFound: false,
+      }),
+      rotateProxy: async () => {
+        rotateCalls += 1;
+        throw new Error('proxy rotation failed');
+      },
+      onTaskComplete: async () => {},
+    };
+    const worker = new Worker({
+      pusher: { push: async (r) => { pushed.push(r); } },
+      log: () => {},
+      taskTimeoutMs: 5000,
+    });
+    worker.retryOnTimeout = true;
+
+    await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
+
+    assert.strictEqual(rotateCalls, 1);
+    assert.strictEqual(pushed.length, 1);
+    assert.strictEqual(pushed[0].status, 'error');
+    assert.ok(pushed[0].error.includes('proxy rotation failed'));
   });
 });
