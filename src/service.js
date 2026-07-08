@@ -358,7 +358,7 @@ class CrawlerService {
 
     this.healthServerStartTime = Date.now();
 
-    this.healthServer = http.createServer((req, res) => {
+    this.healthServer = http.createServer(async (req, res) => {
       if (req.url !== '/health') {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'not found' }));
@@ -369,15 +369,15 @@ class CrawlerService {
       const status = browserConnected ? 'ok' : 'degraded';
       const code = browserConnected ? 200 : 503;
 
-      const channels = this.channels.map((c) => ({
+      const channels = await Promise.all(this.channels.map(async (c) => ({
         id: c.id,
-        healthy: c.healthy || false,
+        healthy: await c.isHealthy(),
         proxy: maskProxyUrl(
           this.proxyPool
             ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
             : this.config.proxy
         ),
-      }));
+      })));
 
       const queue = {
         pending: this.worker ? this.worker.taskQueue.length : 0,
