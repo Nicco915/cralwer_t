@@ -389,8 +389,17 @@ class Channel {
       if (!browser.isConnected() || this.page.isClosed()) {
         return false;
       }
-      // Verify the page context is actually usable by executing a trivial script
-      await this.page.evaluate(() => document.title);
+      // Verify the page context is actually usable by executing a trivial script.
+      // Bound the wait with a timeout so a stuck renderer cannot drag health
+      // checks forever (which would also hang /health HTTP clients).
+      const timeoutMs = this.isHealthyTimeoutMs || 5000;
+      await Promise.race([
+        this.page.evaluate(() => document.title),
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error(`isHealthy timeout after ${timeoutMs}ms`)),
+          timeoutMs
+        )),
+      ]);
       return true;
     } catch (e) {
       return false;

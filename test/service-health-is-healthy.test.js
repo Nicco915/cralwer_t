@@ -2,6 +2,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
 const { CrawlerService } = require('../src/service');
+const { Channel } = require('../src/channel');
 
 // This test file locks in the contract: the /health endpoint must reflect the
 // real channel health by calling channel.isHealthy() — not by reading the dead
@@ -13,7 +14,7 @@ describe('CrawlerService /health reflects channel.isHealthy()', { timeout: 30000
   let service;
   let healthPort;
 
-  async function fetchHealth(port) {
+  async function fetchHealth(port, timeoutMs = 5000) {
     return new Promise((resolve, reject) => {
       const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
         let data = '';
@@ -21,6 +22,9 @@ describe('CrawlerService /health reflects channel.isHealthy()', { timeout: 30000
         res.on('end', () => resolve({ status: res.statusCode, body: data }));
       });
       req.on('error', reject);
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`fetchHealth timeout after ${timeoutMs}ms`));
+      });
     });
   }
 
@@ -127,6 +131,59 @@ describe('CrawlerService /health reflects channel.isHealthy()', { timeout: 30000
     assert.ok(json.channels[0].proxy.includes('ch-1'),
       'proxy must resolve from proxyPool for the channel id');
     assert.strictEqual(json.channels[0].healthy, true);
+  });
+
+  it('returns 503 when channel.isHealthy() rejects (handler must catch errors)', async () => {
+    // Regression: Promise.all rejecting without a catch would leave the HTTP
+    // socket hanging until the client times out. The handler must catch and
+    // answer with 503 so that health probes see failures instead of stalls.
+    service.browser = { isConnected: () => true };
+    service.worker = { taskQueue: [], channels: [] };
+    service.channels = [
+      {
+        id: 1,
+        isHealthy: async () => {
+          throw new Error('renderer stuck');
+        },
+        busy: false,
+      },
+    ];
+    service.proxyPool = null;
+    service.config.proxy = null;
+
+    const res = await fetchHealth(healthPort);
+    assert.strictEqual(res.status, 503,
+      'handler must answer 503 when channel.isHealthy() rejects');
+    const json = JSON.parse(res.body);
+    assert.strictEqual(json.status, 'error');
+    assert.ok(json.error && json.error.includes('renderer stuck'),
+      `body must include the error message, got: ${res.body}`);
+  });
+
+  it('Channel.isHealthy() returns false when page.evaluate hangs (renderer stuck)', async () => {
+    // Regression: page.evaluate has no timeout. If the renderer process hangs,
+    // isHealthy() would also hang and drag the entire /health endpoint with it.
+    // We override the per-channel timeout to 100ms so the test runs fast.
+    const channel = new Channel({ id: 7, config: {}, log: () => {} });
+    channel.busy = false;
+    channel.isHealthyTimeoutMs = 100;
+    channel.page = {
+      isClosed: () => false,
+      // Never resolves — simulates a stuck renderer.
+      evaluate: () => new Promise(() => {}),
+    };
+    channel.browserContext = {
+      browser: () => ({ isConnected: () => true }),
+    };
+
+    const start = Date.now();
+    const result = await channel.isHealthy();
+    const elapsed = Date.now() - start;
+
+    assert.strictEqual(result, false,
+      'isHealthy() must return false when page.evaluate hangs beyond the timeout');
+    assert.ok(elapsed < 2000,
+      `isHealthy() must respect the configured timeout (~100ms), took ${elapsed}ms`);
   });
 
 });

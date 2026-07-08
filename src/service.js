@@ -359,44 +359,56 @@ class CrawlerService {
     this.healthServerStartTime = Date.now();
 
     this.healthServer = http.createServer(async (req, res) => {
-      if (req.url !== '/health') {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'not found' }));
-        return;
+      try {
+        if (req.url !== '/health') {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'not found' }));
+          return;
+        }
+
+        const browserConnected = this.browser && this.browser.isConnected();
+        const status = browserConnected ? 'ok' : 'degraded';
+        const code = browserConnected ? 200 : 503;
+
+        const channels = await Promise.all(this.channels.map(async (c) => ({
+          id: c.id,
+          healthy: await c.isHealthy(),
+          proxy: maskProxyUrl(
+            this.proxyPool
+              ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
+              : this.config.proxy
+          ),
+        })));
+
+        const queue = {
+          pending: this.worker ? this.worker.taskQueue.length : 0,
+          running: this.worker ? this.worker.channels.filter((c) => c.busy).length : 0,
+          completed: 0,
+        };
+
+        const payload = {
+          status,
+          nodeCode: this.config.nodeCode,
+          timestamp: new Date().toISOString(),
+          uptime: Math.floor((Date.now() - this.healthServerStartTime) / 1000),
+          browserConnected,
+          channels,
+          queue,
+        };
+
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+      } catch (e) {
+        this.log('[HEALTH] handler error:', e.message);
+        try {
+          if (!res.headersSent) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+          }
+          res.end(JSON.stringify({ status: 'error', error: e.message }));
+        } catch (e2) {
+          this.log('[HEALTH] failed to write error response:', e2.message);
+        }
       }
-
-      const browserConnected = this.browser && this.browser.isConnected();
-      const status = browserConnected ? 'ok' : 'degraded';
-      const code = browserConnected ? 200 : 503;
-
-      const channels = await Promise.all(this.channels.map(async (c) => ({
-        id: c.id,
-        healthy: await c.isHealthy(),
-        proxy: maskProxyUrl(
-          this.proxyPool
-            ? this.proxyPool.getProxyForChannel(`ch-${c.id}`)
-            : this.config.proxy
-        ),
-      })));
-
-      const queue = {
-        pending: this.worker ? this.worker.taskQueue.length : 0,
-        running: this.worker ? this.worker.channels.filter((c) => c.busy).length : 0,
-        completed: 0,
-      };
-
-      const payload = {
-        status,
-        nodeCode: this.config.nodeCode,
-        timestamp: new Date().toISOString(),
-        uptime: Math.floor((Date.now() - this.healthServerStartTime) / 1000),
-        browserConnected,
-        channels,
-        queue,
-      };
-
-      res.writeHead(code, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(payload));
     });
 
     return new Promise((resolve, reject) => {
