@@ -75,7 +75,8 @@ describe('PageCrawler.extractProductUrlWithRetry HTML fallback on DATA_LAYER_*',
   });
 
   it('returns empty when dataLayer succeeds but result is empty and HTML also empty', async () => {
-    // 业务无结果：dataLayer 返回 ['', '']，HTML 也没有 → 返回空
+    // 业务无结果：dataLayer 返回 ['', '', 'not_found']，HTML 也没有 → 返回空
+    // 不应被标 dataLayerFailed（业务无结果不是 dataLayer 异常），但应当是 dataLayerNotFound
     const page = createPage({
       dataLayer: [{ search: { result_number: 0, goods_list_params: null } }],
       html: '<html>nothing</html>',
@@ -86,6 +87,7 @@ describe('PageCrawler.extractProductUrlWithRetry HTML fallback on DATA_LAYER_*',
 
     assert.strictEqual(result.productUrl, '');
     assert.strictEqual(result.productName, '');
-    assert.strictEqual(result.dataLayerFailed, true);
+    assert.strictEqual(result.dataLayerFailed, false);
+    assert.strictEqual(result.dataLayerNotFound, true);
   });
 });

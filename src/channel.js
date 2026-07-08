@@ -260,12 +260,14 @@ class Channel {
           return this.recreateContext(browser);
         };
         result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
-        if (result.dataLayerFailed) {
+        if (result.dataLayerFailed && !result.dataLayerNotFound) {
           this.dataLayerFailureCount++;
           if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
             this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
           }
-        } else {
+        } else if (!result.dataLayerNotFound) {
+          // 业务无结果（dataLayerNotFound=true）保留 dataLayerFailureCount 不变；
+          // 真正的成功（或无 dataLayer 信号）才重置计数
           this.dataLayerFailureCount = 0;
         }
       } catch (e) {
@@ -305,6 +307,7 @@ class Channel {
             status: 'not_found',
             error: e.message,
             dataLayerFailed: true,
+            dataLayerNotFound: false,
           };
         } else {
           throw e;

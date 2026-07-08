@@ -145,7 +145,8 @@ class PageCrawler {
       }
       if (fast.state === 'not_found') {
         this.log(`[${sku}] dataLayer fast-path: result_number=0`);
-        return ['', ''];
+        // 业务无结果：用三元组 ['', '', 'not_found'] 告诉 caller 这不是异常
+        return ['', '', 'not_found'];
       }
       if (fast.state === 'found') {
         return [fast.url, fast.title];
@@ -218,9 +219,16 @@ class PageCrawler {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let productUrl = '';
       let productName = '';
+      let businessNotFound = false;
       let dataLayerThrew = false;
       try {
-        [productUrl, productName] = await this.extractProductUrlFromDataLayer(page, sku);
+        const extractResult = await this.extractProductUrlFromDataLayer(page, sku);
+        // 业务无结果时 dataLayer 返回三元组 ['', '', 'not_found']
+        if (extractResult.length === 3 && extractResult[2] === 'not_found') {
+          businessNotFound = true;
+        } else {
+          [productUrl, productName] = extractResult;
+        }
       } catch (e) {
         // DATA_LAYER_NEVER_PUSHED / DATA_LAYER_MISSING：标记后仍尝试 HTML 兜底
         // (channel 也会捕获这个错误做换 IP 决策，但只要 HTML 能拿到结果就算 success)
@@ -234,13 +242,22 @@ class PageCrawler {
       }
 
       if (productUrl) {
-        return { productUrl, productName, dataLayerFailed: false };
+        return { productUrl, productName, dataLayerFailed: false, dataLayerNotFound: false };
       }
 
       const [htmlUrl, htmlName] = await this.extractFromHtml(page, sku);
       if (htmlUrl) {
         this.log(`[${sku}] Found from HTML regex: ${htmlUrl}`);
-        return { productUrl: htmlUrl, productName: htmlName, dataLayerFailed: true };
+        // 业务无结果即使 HTML 拿到，也不应触发换 IP（IP 没问题，纯粹是 SKU 在 EU 没匹配）
+        if (businessNotFound) {
+          return { productUrl: htmlUrl, productName: htmlName, dataLayerFailed: false, dataLayerNotFound: true };
+        }
+        return { productUrl: htmlUrl, productName: htmlName, dataLayerFailed: true, dataLayerNotFound: false };
+      }
+
+      // 业务无结果 + HTML 也没有 → 通知 caller 这是 not_found，不是 dataLayer 失败
+      if (businessNotFound) {
+        return { productUrl: '', productName: '', dataLayerFailed: false, dataLayerNotFound: true };
       }
 
       // 第一次 dataLayer 抛错后 HTML 也没救，且 attempt 走完了 → 重抛原 dataLayer 错误
@@ -249,7 +266,7 @@ class PageCrawler {
         throw lastDataLayerError;
       }
     }
-    return { productUrl: '', productName: '', dataLayerFailed: true };
+    return { productUrl: '', productName: '', dataLayerFailed: true, dataLayerNotFound: false };
   }
 
   async extractPageSku(page) {
@@ -371,6 +388,7 @@ class PageCrawler {
       let productUrl = extractResult.productUrl;
       let productName = extractResult.productName;
       result.dataLayerFailed = extractResult.dataLayerFailed;
+      result.dataLayerNotFound = !!extractResult.dataLayerNotFound;
       if (productUrl) this.log(`[${sku}] Final product URL: ${productUrl}`);
 
       if (productUrl) {
