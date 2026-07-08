@@ -28,6 +28,13 @@ describe('Worker', () => {
     };
   }
 
+  describe('constructor', () => {
+    it('does not expose unused pendingPushes set', () => {
+      const worker = createWorker();
+      assert.strictEqual(worker.pendingPushes, undefined, 'pendingPushes should be removed');
+    });
+  });
+
   describe('pushTasks', () => {
     it('deduplicates tasks with the same crawlerTaskId', () => {
       const worker = createWorker();

@@ -15,7 +15,6 @@ class Worker {
     this.log = options.log || console.log;
     this.logger = options.logger || null;
     this.running = false;
-    this.pendingPushes = new Set();
     this.loopPromise = null;
     this.maxQueueSize = options.maxQueueSize || 50;
     this.inFlightTaskIds = new Set();
@@ -241,7 +240,6 @@ class Worker {
 
     // 资源清理（即使 deadline 触发也必须执行）
     channel.busy = false;
-    this.pendingPushes.delete(finishPromise);
     if (taskIdKey !== null) {
       this.inFlightTaskIds.delete(taskIdKey);
     }
