@@ -100,6 +100,26 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.dataLayerFailureThreshold, 3);
   });
 
+  it('defaults gotoMaxRetries to 1', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.gotoMaxRetries, 1);
+  });
+
+  it('passes timeout/retry config to service config', () => {
+    const config = buildServiceConfig({
+      taskTimeoutMs: '90000',
+      retryOnTimeout: 'false',
+    });
+    assert.strictEqual(config.taskTimeoutMs, 90000);
+    assert.strictEqual(config.retryOnTimeout, false);
+  });
+
+  it('uses timeout/retry defaults when not provided', () => {
+    const config = buildServiceConfig({});
+    assert.strictEqual(config.taskTimeoutMs, 130000);
+    assert.strictEqual(config.retryOnTimeout, true);
+  });
+
   it('passes image upload config to service config', () => {
     const config = buildServiceConfig({
       imageUploadUrl: 'http://example.com/upload',

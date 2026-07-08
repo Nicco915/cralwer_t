@@ -137,7 +137,7 @@ class CrawlerService {
           gotoRetryDelays: this.config.gotoRetryDelays,
           headedFallback: this.config.headedFallback,
           pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
-          dataLayerMaxRetries: 1,
+          dataLayerMaxRetries: this.config.dataLayerMaxRetries ?? 1,
           dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
           nodeCode: this.config.nodeCode,
           stealthMode: this.config.stealthMode,
