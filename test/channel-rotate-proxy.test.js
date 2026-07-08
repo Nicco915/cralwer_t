@@ -114,4 +114,25 @@ describe('Channel.rotateProxy', () => {
     assert.ok(result.error.includes('browser dead'));
     assert.strictEqual(channel.reinitializing, false);
   });
+
+  it('rotates IP against a real initialized channel', async () => {
+    const channel = new Channel({ id: 1, config: { cliproxyRotationCooldownMs: 30000 }, log: () => {} });
+    const mockBrowser = {
+      isConnected: () => true,
+      newContext: async () => ({
+        addInitScript: async () => {},
+        newPage: async () => ({ close: async () => {} }),
+        browser: () => mockBrowser,
+        close: async () => {},
+      }),
+    };
+    channel.proxyPool = {
+      nextForChannel: async () => 'http://rotated-proxy:8080',
+    };
+    await channel.init(mockBrowser);
+    const result = await channel.rotateProxy('task-timeout');
+    assert.strictEqual(result.rotated, true);
+    assert.strictEqual(result.reason, 'success');
+    assert.ok(channel.config.proxy.includes('rotated-proxy'));
+  });
 });

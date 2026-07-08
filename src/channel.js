@@ -4,6 +4,18 @@ const { createProfile } = require('./stealth-profile');
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
 
+function maskProxyUrl(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.password = '***';
+    parsed.username = '***';
+    return parsed.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
 class Channel {
   constructor(options) {
     this.id = options.id;
@@ -471,10 +483,17 @@ class Channel {
 
     try {
       this.reinitializing = true;
+
+      const browser = this.browserContext ? this.browserContext.browser() : null;
+      if (!browser || !browser.isConnected()) {
+        this.log(`[Channel ${this.id}] rotateProxy(${reason}) failed: browser context not available or disconnected`);
+        return { rotated: false, reason: 'error', error: 'Browser context not available or disconnected' };
+      }
+
       const channelId = `ch-${this.id}`;
       const newProxy = await this.proxyPool.nextForChannel(channelId);
-      this.log(`[Channel ${this.id}] rotateProxy(${reason}): rotating to ${newProxy}`);
-      await this.reinit(this.browser, newProxy);
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}): rotating to ${maskProxyUrl(newProxy)}`);
+      await this.reinit(browser, newProxy);
       this.recordIpRotation();
       return { rotated: true, reason: 'success' };
     } catch (e) {
