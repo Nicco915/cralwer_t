@@ -204,4 +204,39 @@ describe('Worker.runTask deadline', () => {
     assert.strictEqual(pushed[0].status, 'error');
     assert.ok(pushed[0].error.includes('proxy rotation failed'));
   });
+
+  it('does not rotate proxy when deadline fires before rotateProxy', async () => {
+    let rotateCalls = 0;
+    const channel = {
+      id: 1,
+      busy: false,
+      reinitializing: false,
+      crawl: async () => {
+        await new Promise(r => setTimeout(r, 200));
+        return {
+          crawlerTaskId: 't1',
+          sku: 'SKU',
+          status: 'not_found',
+          dataLayerFailed: true,
+          dataLayerNotFound: false,
+        };
+      },
+      rotateProxy: async () => {
+        rotateCalls += 1;
+        return { rotated: true, reason: 'success' };
+      },
+      onTaskComplete: async () => {},
+    };
+    const worker = new Worker({
+      pusher: { push: async () => {} },
+      log: () => {},
+      taskTimeoutMs: 100,
+    });
+    worker.retryOnTimeout = true;
+
+    await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
+    await new Promise(r => setTimeout(r, 300));
+
+    assert.strictEqual(rotateCalls, 0, 'rotateProxy should not be called after deadline');
+  });
 });

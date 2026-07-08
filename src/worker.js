@@ -127,10 +127,12 @@ class Worker {
         result = this.buildErrorResult(task, e);
       }
 
-      if (cancelled) return result;
-
       // 换 IP 重试：针对 crawl 抛异常或返回异常 result 的场景
       if (this.shouldRetryWithNewIp(result, channel)) {
+        if (cancelled) {
+          this.log(`[Worker] task ${task.crawlerTaskId} retry cancelled: deadline already exceeded`);
+          return result;
+        }
         this.log(`[Worker] task ${task.crawlerTaskId} failed (${result.status}); rotating IP and retrying`);
         let rotated;
         try {
