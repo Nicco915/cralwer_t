@@ -87,6 +87,11 @@ function resolveConfig(config) {
   cfg.cloudflareMaxWait = Number(cfg.cloudflareMaxWait);
   cfg.testCount = Number(cfg.testCount);
 
+  cfg.taskTimeoutMs = process.env.CRAWLER_TASK_TIMEOUT_MS
+    ? parseInt(process.env.CRAWLER_TASK_TIMEOUT_MS, 10)
+    : 130000;
+  cfg.retryOnTimeout = process.env.CRAWLER_RETRY_ON_TIMEOUT !== 'false';
+
   return cfg;
 }
 

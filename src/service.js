@@ -137,7 +137,7 @@ class CrawlerService {
           gotoRetryDelays: this.config.gotoRetryDelays,
           headedFallback: this.config.headedFallback,
           pageRefreshAfterTasks: this.config.pageRefreshAfterTasks,
-          dataLayerMaxRetries: this.config.dataLayerMaxRetries,
+          dataLayerMaxRetries: 1,
           dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
           nodeCode: this.config.nodeCode,
           stealthMode: this.config.stealthMode,
@@ -256,6 +256,8 @@ class CrawlerService {
       imageUploader,
       log: this.log.bind(this),
       logger: this.logger,
+      taskTimeoutMs: this.config.taskTimeoutMs,
+      retryOnTimeout: this.config.retryOnTimeout,
     });
 
     this.poller = new Poller({
