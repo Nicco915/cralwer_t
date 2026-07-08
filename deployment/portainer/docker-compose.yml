@@ -1,0 +1,18 @@
+services:
+  portainer:
+    image: portainer/portainer-ce:2.21.5
+    container_name: portainer
+    restart: unless-stopped
+    user: "0:0"
+    # 仅监听 Tailscale IP，公网不可达
+    # 改成本机公网 IP 即可对外（不推荐）
+    ports:
+      - "${PORTAINER_BIND_ADDR}:9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    # 关闭 HTTP 9000，只保留 HTTPS 9443
+    command: --http-disabled
+
+volumes:
+  portainer_data:
