@@ -446,6 +446,45 @@ class Channel {
     return false;
   }
 
+  // 由 worker.runTask 在任务失败时调用：主动换 IP + session 后重试一次。
+  // 返回 { rotated, reason } 让 caller 决定是否重试：
+  //   - rotated=true: 已换 IP，可重试
+  //   - rotated=false: 跳过换 IP（cooldown / 正在重建 / 无 pool / 错误），直接提交原 result
+  // reason 字段用于日志和监控区分跳过原因。
+  async rotateProxy(reason) {
+    if (this.reinitializing) {
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}) skipped: reinitializing`);
+      return { rotated: false, reason: 'reinitializing' };
+    }
+
+    const cooldownMs = this.config.cliproxyRotationCooldownMs || 30000;
+    const now = Date.now();
+    if (this.lastIpRotationAt > 0 && (now - this.lastIpRotationAt) < cooldownMs) {
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}) skipped: cooldown active (${Math.round((cooldownMs - (now - this.lastIpRotationAt)) / 1000)}s remaining)`);
+      return { rotated: false, reason: 'cooldown' };
+    }
+
+    if (!this.proxyPool) {
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}) skipped: no proxy pool`);
+      return { rotated: false, reason: 'no_pool' };
+    }
+
+    try {
+      this.reinitializing = true;
+      const channelId = `ch-${this.id}`;
+      const newProxy = await this.proxyPool.nextForChannel(channelId);
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}): rotating to ${newProxy}`);
+      await this.reinit(this.browser, newProxy);
+      this.recordIpRotation();
+      return { rotated: true, reason: 'success' };
+    } catch (e) {
+      this.log(`[Channel ${this.id}] rotateProxy(${reason}) failed: ${e.message}`);
+      return { rotated: false, reason: 'error', error: e.message };
+    } finally {
+      this.reinitializing = false;
+    }
+  }
+
   async close() {
     if (this.browserContext) {
       try {
