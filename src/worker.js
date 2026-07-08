@@ -11,6 +11,30 @@ class Worker {
     this.loopPromise = null;
     this.maxQueueSize = options.maxQueueSize || 50;
     this.inFlightTaskIds = new Set();
+    this.retryOnTimeout = options.retryOnTimeout !== false;
+  }
+
+  // 决定是否对单 task 触发换 IP 重试。
+  // 触发条件：业务异常强信号（dataLayer 异常 / page.goto 全 timeout / crawl timeout）
+  // 不触发：业务无结果（dataLayerNotFound=true）/ 成功 / 普通 error / channel 正在重建 / 全局开关关闭
+  shouldRetryWithNewIp(result, channel) {
+    if (this.retryOnTimeout === false) return false;
+    if (!channel || channel.reinitializing) return false;
+    if (!result) return false;
+
+    if (result.status === 'not_found' && result.dataLayerFailed === true && result.dataLayerNotFound !== true) {
+      return true;
+    }
+
+    if (result.status === 'error' && typeof result.error === 'string' && /Timeout \d+ms exceeded/.test(result.error)) {
+      return true;
+    }
+
+    if (result.status === 'timeout') {
+      return true;
+    }
+
+    return false;
   }
 
   getTaskIdKey(task) {
@@ -72,6 +96,34 @@ class Worker {
         this.log(`[Worker] Assigning task ${task.crawlerTaskId} sku ${task.sku} to channel ${channel.id}`);
         result = await channel.crawl(task);
         this.log(`[Worker] Crawl finished task ${task.crawlerTaskId} status ${result.status}`);
+
+        // 新增：换 IP 重试前置
+        if (this.shouldRetryWithNewIp(result, channel)) {
+          this.log(`[Worker] task ${task.crawlerTaskId} failed (${result.status}); rotating IP and retrying`);
+          const rotated = await channel.rotateProxy('task-timeout');
+          if (rotated.rotated) {
+            try {
+              result = await channel.crawl(task);
+              retries = 1;
+              this.log(`[Worker] Retry crawl finished task ${task.crawlerTaskId} status ${result.status}`);
+            } catch (retryErr) {
+              this.log(`[Worker] Retry crawl failed task ${task.crawlerTaskId}: ${retryErr.message}`);
+              result = {
+                crawlerTaskId: task.crawlerTaskId,
+                sku: task.sku,
+                status: retryErr.status ?? 'error',
+                product_name: '',
+                features_details: '',
+                product_specification: '',
+                product_url: '',
+                error: retryErr.message,
+              };
+              retries = 1;
+            }
+          } else {
+            this.log(`[Worker] rotate skipped for task ${task.crawlerTaskId}: ${rotated.reason}`);
+          }
+        }
       } catch (e) {
         this.log(`[Worker] Crawl failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
         result = {
