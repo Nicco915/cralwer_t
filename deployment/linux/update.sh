@@ -4,6 +4,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 同步代码：/opt/crawler/repo 是仓库克隆，需要自动 pull 最新代码
+REPO_DIR="/opt/crawler/repo"
+if [ -d "${REPO_DIR}/.git" ]; then
+  echo "[Update] syncing repo: ${REPO_DIR}"
+  cd "${REPO_DIR}"
+  git config --global --add safe.directory "${REPO_DIR}" 2>/dev/null || true
+  git fetch origin
+  git status --short | grep -q . && echo "[Update] WARNING: repo has local changes, stash or commit them first" || true
+  git pull --rebase origin main || {
+    echo "[Update] ERROR: git pull --rebase failed, please resolve conflicts manually" >&2
+    exit 1
+  }
+  cd "$SCRIPT_DIR"
+else
+  echo "[Update] WARNING: ${REPO_DIR} is not a git repo, skipping sync"
+fi
+
 # 如果 .env 存在，读取环境变量
 if [ -f .env ]; then
   set -a
