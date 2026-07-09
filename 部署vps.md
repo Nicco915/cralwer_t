@@ -497,6 +497,7 @@ Error: EACCES: permission denied, mkdir '/app/output/browser-temp'
 ```bash
 NODE_CODE="crawler-01"   # 改成对应的 crawler-02..08
 HEALTH_PORT="3001"        # 改成对应的 3002..3008
+HOSTNAME="crawler-1"      # 改成对应的 crawler-2..8（⚠️ 必须显式设置，否则 Blackbox 探活会失效，见坑 4）
 
 # 1. 停掉旧容器
 docker stop hs-sku-crawler-1 && docker rm hs-sku-crawler-1
@@ -504,6 +505,7 @@ docker stop hs-sku-crawler-1 && docker rm hs-sku-crawler-1
 # 2. 启动新容器（保持原 mount/env/port）
 docker run -d \
   --name hs-sku-crawler-1 \
+  --hostname ${HOSTNAME} \
   --restart unless-stopped \
   --network crawler_crawler-net \
   --user 1000:1000 \
@@ -521,7 +523,7 @@ docker run -d \
   -e CRAWLER_ADAPTIVE_RECOVERY_SUCCESSES=3 \
   -e CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD=1 \
   -e CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD=1 \
-  -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000 \
+  -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=30000 \
   -e CRAWLER_DIAGNOSTIC_DIR=/app/logs/diagnostics \
   -e CRAWLER_CHANNELS=1 \
   -e CRAWLER_POLL_INTERVAL=10000 \
@@ -544,10 +546,12 @@ ENV_FILE=/opt/crawler/.env
 for i in 1 2 3 4 5 6 7 8; do
   NODE_CODE="crawler-0${i}"
   HEALTH_PORT="300${i}"
+  HOSTNAME="crawler-${i}"
   docker stop hs-sku-crawler-${i} >/dev/null 2>&1
   docker rm   hs-sku-crawler-${i} >/dev/null 2>&1
   docker run -d \
     --name hs-sku-crawler-${i} \
+    --hostname ${HOSTNAME} \
     --restart unless-stopped \
     --network crawler_crawler-net \
     --user 1000:1000 \
@@ -565,7 +569,7 @@ for i in 1 2 3 4 5 6 7 8; do
     -e CRAWLER_ADAPTIVE_RECOVERY_SUCCESSES=3 \
     -e CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD=1 \
     -e CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD=1 \
-    -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000 \
+    -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=30000 \
     -e CRAWLER_DIAGNOSTIC_DIR=/app/logs/diagnostics \
     -e CRAWLER_CHANNELS=1 \
     -e CRAWLER_POLL_INTERVAL=10000 \
@@ -629,6 +633,66 @@ bash ./update.sh "${{ github.ref_name }}"
 
 > ⚠️ 这条修复需要修改 `.github/workflows/deploy-vps.yml` 并 push。如果不修改，下次再有人 tag push，仍然会因 symlink 缺失 fail。
 
+##### 坑 4：Grafana Blackbox 探活显示 0 容器（hostname 未设置）
+
+**症状**：Grafana → "Crawler · 节点心跳" → "Blackbox 探活（8 容器）" stat 面板显示 **0**（红色）。但 Loki 节点列表面板里 8 个节点都有日志，说明容器本身是健康的。
+
+**根因**：
+
+- `prometheus.yml` 里 blackbox target 用短主机名：`http://crawler-1:3001/health` 等
+- Docker DNS 解析容器时**依赖容器自身 hostname**
+- 之前手动 `docker run` 启动 crawler 时**没有**显式 `--hostname`，容器默认 hostname 是容器 ID 前 12 位（如 `081211bd6a3f`）
+- Blackbox probe 全部 fail → Prometheus `probe_success = 0` → Grafana 显示 0
+
+**诊断**：
+
+```bash
+# 1. 看容器实际 hostname
+for i in 1 2 3 4 5 6 7 8; do
+  docker inspect hs-sku-crawler-${i} --format '{{.Config.Hostname}}'
+done
+# 输出示例（错误）：081211bd6a3f（容器 ID 前 12 位）
+# 期望：crawler-1
+
+# 2. 从 blackbox 容器手动探测
+docker exec monitoring-blackbox wget -qO- \
+  "http://127.0.0.1:9115/probe?module=http_2xx&target=http://crawler-1:3001/health"
+# 看 probe_success 值，0=失败，1=成功
+
+# 3. 看 Prometheus 当前指标
+docker exec monitoring-prometheus wget -qO- \
+  "http://localhost:9090/api/v1/query?query=probe_success" | python3 -m json.tool
+```
+
+**修复**：重启 8 个 crawler 容器时**显式加 `--hostname crawler-N`**：
+
+```bash
+docker run -d \
+  --name hs-sku-crawler-1 \
+  --hostname crawler-1 \      # ← 关键
+  --network crawler_crawler-net \
+  ...
+```
+
+完整脚本见上文"坑 2 修复"模板。
+
+**为什么不能用 `127.0.0.1:3001`**：
+
+- 容器间网络是隔离的，黑盒容器里 `127.0.0.1` 是黑盒自己的 loopback
+- 走 `127.0.0.1` 访问不到 host 上的 crawler health endpoint（端口绑在 `127.0.0.1` 而不是 `0.0.0.0`）
+- 所以必须通过 Docker DNS 解析 `crawler-N` → 容器 IP
+
+**验证**：
+
+```bash
+# 重启后等 30-60 秒（Prometheus 第一轮 scrape）
+docker exec monitoring-prometheus wget -qO- \
+  "http://localhost:9090/api/v1/query?query=sum(probe_success%7Bjob%3D%22blackbox%22%7D)"
+# 期望：value = "8"
+```
+
+更详细的黑盒 0 排查流程见 [`loki监控.md`](../../loki监控.md) 5.4 节。
+
 ##### 经验总结
 
 | 坑 | 触发条件 | 预防 / 修复 |
@@ -636,12 +700,17 @@ bash ./update.sh "${{ github.ref_name }}"
 | symlink 断链 | 仓库目录结构变更（crawlab → linux）后未更新 symlink | 用绝对路径 symlink + 部署前 `test -e` 验证 |
 | compose 单容器 vs 手动多容器 | 当前 `docker-compose.yml` 设计上是单容器，但生产实际是 8 个手动 `docker run` | 重写 `docker-compose.yml` 或在文档中明确"不用 compose" |
 | GH Actions 脚本路径 | ssh 步骤假设脚本在固定位置 | 脚本前加 `set -e` + 显式 `test -e` |
+| Blackbox 0 容器（hostname 缺失） | `docker run` 没显式 `--hostname crawler-N`，Docker DNS 无法解析 | **滚动升级脚本模板里始终带 `--hostname crawler-N`** |
 
 **推荐后续动作**：
 
 1. 修 `.github/workflows/deploy-vps.yml`（见坑 3 修复）
 2. 把 v1.1.9 之前的 `docker-compose.yml` 重写为多 service 模式（`crawler-01..08`），让 `docker compose up -d` 能直接起全部 8 个
 3. 解决 `CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000` 与新代码默认值 30s 不一致的问题
+4. ✅ cooldown 120000→30000：本次部署已统一（详见坑 2 修复脚本）
+5. ✅ hostname 显式设置：本次部署已修复（详见坑 4 修复脚本）
+
+> v1.2.0 部署结束后，坑 4、坑 2 中的 `--hostname` 和 `COOLDOWN_MS=30000` 都已落地。后续 GH Actions 自动部署仍需修坑 3 才会生效。
 
 ### 8. 部署监控栈（Loki + Promtail + Grafana）
 

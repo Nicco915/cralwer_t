@@ -327,6 +327,55 @@ topk(10, sum by (sku) (count_over_time({app="crawler"} | json | component="task"
 1. 检查 Loki chunk 数：`curl http://127.0.0.1:3100/metrics | grep loki_tsdb`
 2. 如果 chunk 太多 → 增加 `compactor.retention_delete_worker_count` 或缩短 `retention_period`
 
+### 5.4 Blackbox 探活显示 0 容器（Grafana "Blackbox 探活（8 容器）" 面板为 0）
+
+**现象**：Grafana → "Crawler · 节点心跳" → "Blackbox 探活（8 容器）" stat 面板显示 **0**（红色），但 Loki 节点列表面板里 8 个节点都有日志。
+
+**根因**：
+
+- `prometheus.yml` 里 blackbox target 用短主机名：`http://crawler-1:3001/health` 等
+- Docker DNS 解析容器时，**依赖容器自身 hostname**
+- 如果 docker run 启动 crawler 时**没有**显式 `--hostname crawler-N`，容器默认 hostname 是容器 ID 前 12 位（如 `081211bd6a3f`），Docker DNS 无法解析 `crawler-1`
+- Blackbox probe 全部 fail → Prometheus `probe_success = 0`
+
+**诊断命令**：
+
+```bash
+# 1. 看容器实际 hostname
+for i in 1 2 3 4 5 6 7 8; do
+  echo "hs-sku-crawler-${i}: $(docker inspect hs-sku-crawler-${i} --format '{{.Config.Hostname}}')"
+done
+
+# 2. 看 Prometheus 是否能拉到 blackbox 指标
+docker exec monitoring-prometheus wget -qO- "http://localhost:9090/api/v1/query?query=probe_success" | python3 -m json.tool
+
+# 3. 从 blackbox 容器手动探测一次
+docker exec monitoring-blackbox wget -qO- "http://127.0.0.1:9115/probe?module=http_2xx&target=http://crawler-1:3001/health"
+```
+
+**修复**：重启 crawler 容器时**显式加 `--hostname`**：
+
+```bash
+docker run -d \
+  --name hs-sku-crawler-1 \
+  --hostname crawler-1 \        # ← 关键：让 Docker DNS 能解析
+  --network crawler_crawler-net \
+  --user 1000:1000 \
+  -p 127.0.0.1:3001:3001 \
+  ...
+  ghcr.io/nicco915/cralwer_t:v1.2.0
+```
+
+**验证修复**：
+
+```bash
+# 等 30-60 秒 Prometheus 第一轮 scrape 后查
+docker exec monitoring-prometheus wget -qO- "http://localhost:9090/api/v1/query?query=sum(probe_success%7Bjob%3D%22blackbox%22%7D)"
+# 期望：value = "8"
+```
+
+**预防**：在 `部署vps.md` 7.6 节的滚动升级脚本模板里**始终带 `--hostname crawler-N`**，避免遗漏。
+
 ---
 
 ## 6. 关键配置项
@@ -392,6 +441,7 @@ deployment/windows/
 | Grafana dashboard "datasource not found" | `cat deployment/monitoring/grafana-datasources/provider.yml` 看 `uid:` 字段 |
 | 告警规则 NoData 一直触发 | 确认 Loki 中 `component="heartbeat"` 日志存在 |
 | Promtail pipeline 抽不到 sku | 看 worker 写入的 JSON 是否含 `"sku":"..."` 字段（注意 spec 转义） |
+| Blackbox 探活显示 0 容器 | 见 5.4 节，**`--hostname crawler-N`** 是否在 `docker run` 时显式设置 |
 
 ---
 
