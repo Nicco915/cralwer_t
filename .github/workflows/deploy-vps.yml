@@ -60,7 +60,19 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
           script: |
+            set -e
             cd /opt/crawler
+
+            # 兜底：如果 symlink 断了，重新指向 deployment/linux/
+            for f in deploy.sh update.sh rollback.sh docker-compose.yml .env.example; do
+              target="/opt/crawler/repo/deployment/linux/${f}"
+              if [ ! -e "$target" ]; then
+                echo "ERROR: $target does not exist, refusing to deploy"
+                exit 1
+              fi
+              ln -sfn "$target" "$f"
+            done
+
             sed -i 's|^CRAWLER_IMAGE_BASE=.*|CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}|' .env
             grep -q '^CRAWLER_IMAGE_BASE=' .env || echo 'CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}' >> .env
             export CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}

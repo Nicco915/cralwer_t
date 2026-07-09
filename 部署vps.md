@@ -435,6 +435,214 @@ git reset --hard 435fdd4
 
 **不推送镜像**：所有 commit 在 working tree，等生产观察 1-2 天无异常后再打新 tag。
 
+#### 7.6 v1.2.0 部署实战经验（2026-07-09）
+
+本次部署从 `git push v1.2.0` 到所有 8 个节点跑新代码，期间踩了三个坑。下面是踩坑实录与修复方案，作为未来类似操作的参考。
+
+##### 坑 1：symlink 全部指向不存在的 `deployment/crawlab/`
+
+**症状**：GH Actions 的 `deploy` job 失败，日志：
+
+```
+bash: ./update.sh: No such file or directory
+Process exited with status 127
+```
+
+**根因**：VPS 上 `/opt/crawler/{deploy,update,rollback,setup-vps}.sh`、`docker-compose.yml`、`.env.example` 都是 symlink，**全部指向不存在的 `/opt/crawler/repo/deployment/crawlab/`**（应该是早期调试时建的）。实际脚本在 `/opt/crawler/repo/deployment/linux/`。
+
+**排查命令**：
+
+```bash
+ssh root@<VPS_IP>
+ls -la /opt/crawler/*.sh /opt/crawler/docker-compose.yml /opt/crawler/.env.example
+# 看到类似 deploy.sh -> /opt/crawler/repo/deployment/crawlab/deploy.sh
+# 验证 target 是否存在：
+ls /opt/crawler/repo/deployment/crawlab/  # No such file
+```
+
+**修复**：重新指向 `deployment/linux/`：
+
+```bash
+cd /opt/crawler
+ln -sf /opt/crawler/repo/deployment/linux/deploy.sh deploy.sh
+ln -sf /opt/crawler/repo/deployment/linux/update.sh update.sh
+ln -sf /opt/crawler/repo/deployment/linux/rollback.sh rollback.sh
+ln -sf /opt/crawler/repo/deployment/linux/docker-compose.yml docker-compose.yml
+ln -sf /opt/crawler/repo/deployment/linux/.env.example .env.example
+```
+
+##### 坑 2：`docker-compose.yml` 部署的单个 `hs-sku-crawler` 容器在 crash loop
+
+**症状**：`docker ps` 显示：
+
+```
+hs-sku-crawler  ghcr.io/nicco915/cralwer_t:v1.2.0  Restarting (1) 5 seconds ago
+hs-sku-crawler-1..8  ghcr.io/nicco915/cralwer_t:v1.1.9  Up 2 days
+```
+
+`docker logs hs-sku-crawler` 反复打印：
+
+```
+Error: EACCES: permission denied, mkdir '/app/output/browser-temp'
+```
+
+**根因**：
+- `deployment/linux/docker-compose.yml` 把 `./output` 整个 mount 到 `/app/output`，但实际数据应该写到 `output/crawler-01/` 等子目录
+- 历史上的 `hs-sku-crawler-1..8` 8 个容器**不是**这个 compose 项目管出来的，是手动 `docker run` 启动的，每个容器单独 mount 到对应的 `output/crawler-XX` 子目录
+- `docker compose up -d` 创建的 `hs-sku-crawler`（不带编号）试图在 `/opt/crawler/output`（owner `crawler:crawler`，mode 0775）下创建 `browser-temp`，理论上应该能写，但实际启动失败
+- v1.1.9 的 8 个手动 `docker run` 容器至今正常跑（mount `output/crawler-01` 子目录，所有权与容器内 uid=1000 匹配）
+
+**修复**：直接用手动 `docker run` 模式滚动升级每个节点，**不复用** `docker-compose.yml`。模板：
+
+```bash
+NODE_CODE="crawler-01"   # 改成对应的 crawler-02..08
+HEALTH_PORT="3001"        # 改成对应的 3002..3008
+
+# 1. 停掉旧容器
+docker stop hs-sku-crawler-1 && docker rm hs-sku-crawler-1
+
+# 2. 启动新容器（保持原 mount/env/port）
+docker run -d \
+  --name hs-sku-crawler-1 \
+  --restart unless-stopped \
+  --network crawler_crawler-net \
+  --user 1000:1000 \
+  -p 127.0.0.1:3001:3001 \
+  -v /opt/crawler/logs:/app/logs:rw \
+  -v /opt/crawler/output/crawler-01:/app/output:rw \
+  -v /opt/crawler/images/crawler-01:/app/images:rw \
+  -e CRAWLER_MODE=service \
+  -e CRAWLER_NODE_CODE=crawler-01 \
+  -e CRAWLER_HEALTH_PORT=3001 \
+  -e CRAWLER_CLIPROXY_SESSION_PREFIX=crawler-01 \
+  -e CRAWLER_HEADED_FALLBACK=false \
+  -e CRAWLER_STEALTH_MODE=adaptive \
+  -e CRAWLER_ADAPTIVE_TIMEOUT_THRESHOLD=1 \
+  -e CRAWLER_ADAPTIVE_RECOVERY_SUCCESSES=3 \
+  -e CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD=1 \
+  -e CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD=1 \
+  -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000 \
+  -e CRAWLER_DIAGNOSTIC_DIR=/app/logs/diagnostics \
+  -e CRAWLER_CHANNELS=1 \
+  -e CRAWLER_POLL_INTERVAL=10000 \
+  -e CRAWLER_POLL_LIMIT=1 \
+  --env-file /opt/crawler/.env \
+  ghcr.io/nicco915/cralwer_t:v1.2.0
+
+# 3. 健康检查
+sleep 5
+curl -s http://127.0.0.1:3001/health
+# 期望：{"status":"ok","browserConnected":true,...}
+```
+
+**快速批量化脚本**（在 VPS 上跑，按节点顺序逐个升级）：
+
+```bash
+cd /opt/crawler
+IMAGE=ghcr.io/nicco915/cralwer_t:v1.2.0
+ENV_FILE=/opt/crawler/.env
+for i in 1 2 3 4 5 6 7 8; do
+  NODE_CODE="crawler-0${i}"
+  HEALTH_PORT="300${i}"
+  docker stop hs-sku-crawler-${i} >/dev/null 2>&1
+  docker rm   hs-sku-crawler-${i} >/dev/null 2>&1
+  docker run -d \
+    --name hs-sku-crawler-${i} \
+    --restart unless-stopped \
+    --network crawler_crawler-net \
+    --user 1000:1000 \
+    -p 127.0.0.1:${HEALTH_PORT}:${HEALTH_PORT} \
+    -v /opt/crawler/logs:/app/logs:rw \
+    -v /opt/crawler/output/${NODE_CODE}:/app/output:rw \
+    -v /opt/crawler/images/${NODE_CODE}:/app/images:rw \
+    -e CRAWLER_MODE=service \
+    -e CRAWLER_NODE_CODE=${NODE_CODE} \
+    -e CRAWLER_HEALTH_PORT=${HEALTH_PORT} \
+    -e CRAWLER_CLIPROXY_SESSION_PREFIX=${NODE_CODE} \
+    -e CRAWLER_HEADED_FALLBACK=false \
+    -e CRAWLER_STEALTH_MODE=adaptive \
+    -e CRAWLER_ADAPTIVE_TIMEOUT_THRESHOLD=1 \
+    -e CRAWLER_ADAPTIVE_RECOVERY_SUCCESSES=3 \
+    -e CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD=1 \
+    -e CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD=1 \
+    -e CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000 \
+    -e CRAWLER_DIAGNOSTIC_DIR=/app/logs/diagnostics \
+    -e CRAWLER_CHANNELS=1 \
+    -e CRAWLER_POLL_INTERVAL=10000 \
+    -e CRAWLER_POLL_LIMIT=1 \
+    --env-file ${ENV_FILE} \
+    ${IMAGE} >/dev/null
+  echo "=== ${NODE_CODE} ==="
+  sleep 5
+  curl -s --max-time 5 http://127.0.0.1:${HEALTH_PORT}/health
+  echo
+done
+```
+
+##### 坑 3：GH Actions deploy 步骤指向错路径
+
+**症状**：`deploy-vps.yml` 跑：
+
+```bash
+cd /opt/crawler
+sed -i 's|^CRAWLER_IMAGE_BASE=.*|CRAWLER_IMAGE_BASE=...' .env
+...
+bash ./update.sh "${{ github.ref_name }}"
+```
+
+但 `update.sh` 是 symlink → 死链。
+
+**根因**：与坑 1 同源。
+
+**修复**：
+
+1. 已修复 symlink（见坑 1）
+2. 修复 `deploy-vps.yml`，让脚本执行**前先验证脚本存在**，避免下次 symlink 又断：
+
+```yaml
+- name: Deploy to VPS
+  uses: appleboy/ssh-action@v1.0.0
+  with:
+    host: ${{ secrets.VPS_HOST }}
+    username: ${{ secrets.VPS_USER }}
+    key: ${{ secrets.VPS_SSH_KEY }}
+    script_stop: true
+    script: |
+      set -e
+      cd /opt/crawler
+
+      # 兜底：如果 symlink 断了，重新指向 deployment/linux/
+      for f in deploy.sh update.sh rollback.sh docker-compose.yml .env.example; do
+        target="/opt/crawler/repo/deployment/linux/${f}"
+        if [ ! -e "$target" ]; then
+          echo "ERROR: $target does not exist, refusing to deploy"
+          exit 1
+        fi
+        ln -sfn "$target" "$f"
+      done
+
+      sed -i 's|^CRAWLER_IMAGE_BASE=.*|CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}|' .env
+      grep -q '^CRAWLER_IMAGE_BASE=' .env || echo 'CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}' >> .env
+      export CRAWLER_IMAGE_BASE=ghcr.io/${{ steps.repo.outputs.lower }}
+      bash ./update.sh "${{ github.ref_name }}"
+```
+
+> ⚠️ 这条修复需要修改 `.github/workflows/deploy-vps.yml` 并 push。如果不修改，下次再有人 tag push，仍然会因 symlink 缺失 fail。
+
+##### 经验总结
+
+| 坑 | 触发条件 | 预防 / 修复 |
+|---|---|---|
+| symlink 断链 | 仓库目录结构变更（crawlab → linux）后未更新 symlink | 用绝对路径 symlink + 部署前 `test -e` 验证 |
+| compose 单容器 vs 手动多容器 | 当前 `docker-compose.yml` 设计上是单容器，但生产实际是 8 个手动 `docker run` | 重写 `docker-compose.yml` 或在文档中明确"不用 compose" |
+| GH Actions 脚本路径 | ssh 步骤假设脚本在固定位置 | 脚本前加 `set -e` + 显式 `test -e` |
+
+**推荐后续动作**：
+
+1. 修 `.github/workflows/deploy-vps.yml`（见坑 3 修复）
+2. 把 v1.1.9 之前的 `docker-compose.yml` 重写为多 service 模式（`crawler-01..08`），让 `docker compose up -d` 能直接起全部 8 个
+3. 解决 `CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS=120000` 与新代码默认值 30s 不一致的问题
+
 ### 8. 部署监控栈（Loki + Promtail + Grafana）
 
 容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控。完整安装说明见项目根目录 [`loki监控.md`](../../loki监控.md)。
