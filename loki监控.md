@@ -442,6 +442,7 @@ deployment/windows/
 | 告警规则 NoData 一直触发 | 确认 Loki 中 `component="heartbeat"` 日志存在 |
 | Promtail pipeline 抽不到 sku | 看 worker 写入的 JSON 是否含 `"sku":"..."` 字段（注意 spec 转义） |
 | Blackbox 探活显示 0 容器 | 见 5.4 节，**`--hostname crawler-N`** 是否在 `docker run` 时显式设置 |
+| Portainer admin 密码忘记 | 见 10.6 节，用 `portainer/helper-reset-password` 镜像重置 |
 
 ---
 
@@ -510,3 +511,39 @@ docker compose down
 - HTTPS 用的是自签证书，浏览器会提示不安全，信任一次即可。
 - 创建管理员账号时使用 12 位以上强密码。
 - 如果需要多人协作，用 Portainer 自身的 teams/roles 功能给同事开权限，不要共享管理员账号。
+
+### 10.6 重置 admin 密码
+
+如果忘记了 admin 密码，用 Portainer 官方 helper 容器重置：
+
+```bash
+ssh root@<VPS_IP>
+cd /opt/crawler/portainer
+
+# 1. 停掉 Portainer
+docker compose down
+
+# 2. 用 helper 容器重置密码（数据卷名称是 portainer_portainer_data）
+docker run --rm -v portainer_portainer_data:/data portainer/helper-reset-password
+# 输出示例：
+#   Password successfully updated for user: admin
+#   Use the following password to login: }A|U083fmQ)~1Rn?#e5ZGM.2tw7P9xo+
+
+# 3. 重新启动 Portainer
+docker compose up -d
+
+# 4. 浏览器访问 https://127.0.0.1:9443 登录
+#    用户名：admin
+#    密码：上一步 helper 输出的随机串
+#    首次登录会强制要求改密码
+```
+
+**注意**：
+
+- 数据卷名是 `portainer_portainer_data`（**两个** `portainer_` 前缀），不是 `portainer_data`
+- 原因是 compose 项目名（`portainer`）+ service 名（`portainer`）+ 数据卷声明拼接
+- helper 只重置 `admin` 账号密码，**不会**清空其他 Portainer 设置（其他用户、endpoints、stacks 配置都保留）
+- 如果 helper 镜像下载慢，可以预先 `docker pull portainer/helper-reset-password`
+- 重置后等约 30 秒容器完全启动再访问
+
+**如果是首次部署**（还没建过 admin），先访问 `https://127.0.0.1:9443` 创建初始账号，不要走重置流程（helper 重置要求 admin 已存在）。
