@@ -44,4 +44,22 @@ describe('.github/workflows/deploy-vps.yml', () => {
     assert.ok(content.includes("tr '[:upper:]' '[:lower:]'"), 'should lowercase repo');
     assert.ok(content.includes('ghcr.io/${{ steps.repo.outputs.lower }}'), 'should use lowercased repo in tags');
   });
+
+  it('syncs VPS repo to the current tag before deploying', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes('git fetch --tags'), 'should fetch tags on VPS');
+    assert.ok(content.includes('git checkout "${{ github.ref_name }}"'), 'should checkout the pushed tag');
+  });
+
+  it('aborts deploy when VPS repo has local changes', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes('git status --porcelain'), 'should check for dirty working tree');
+    assert.ok(content.includes('refusing to deploy'), 'should refuse deploy when repo is dirty');
+  });
+
+  it('configures git safe.directory for the VPS repo', () => {
+    const content = fs.readFileSync(workflowPath, 'utf-8');
+    assert.ok(content.includes('safe.directory'), 'should configure safe.directory');
+    assert.ok(content.includes('/opt/crawler/repo'), 'should point safe.directory at repo');
+  });
 });

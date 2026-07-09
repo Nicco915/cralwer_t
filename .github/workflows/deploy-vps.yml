@@ -63,6 +63,17 @@ jobs:
             set -e
             cd /opt/crawler
 
+            # 同步部署脚本到当前 tag（防止 VPS 本地仓库落后导致脚本和镜像不匹配）
+            git config --global --add safe.directory /opt/crawler/repo || true
+            cd /opt/crawler/repo
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "ERROR: /opt/crawler/repo has local changes, refusing to deploy"
+              exit 1
+            fi
+            git fetch --tags
+            git checkout "${{ github.ref_name }}"
+            cd /opt/crawler
+
             # 兜底：如果 symlink 断了，重新指向 deployment/linux/
             for f in deploy.sh update.sh rollback.sh docker-compose.yml .env.example; do
               target="/opt/crawler/repo/deployment/linux/${f}"
