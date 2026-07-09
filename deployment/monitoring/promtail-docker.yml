@@ -16,8 +16,11 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
         filters:
-          - name: label
-            values: ["com.docker.compose.project"]
+          # 只抓 hs-sku-crawler-N 开头的容器，排除 crawlab-mongo/redis/portainer/monitoring-*
+          # v1.2.0 起 docker run 启动时不再带 com.docker.compose.project label，
+          # 改用容器名前缀匹配（Docker API 的 name filter 是 substring 匹配，不是 regex）
+          - name: name
+            values: ["hs-sku-crawler-"]
     relabel_configs:
       # 优先使用容器上的 CRAWLER_NODE_CODE label，否则用容器名 hs-sku-crawler-N
       - source_labels: ['__meta_docker_container_label_CRAWLER_NODE_CODE']

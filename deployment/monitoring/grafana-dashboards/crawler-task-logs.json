@@ -20,8 +20,8 @@
         "label": "节点",
         "type": "query",
         "datasource": { "type": "loki", "uid": "loki" },
-        "query": "label_values({app=\"crawler\"}, nodeCode)",
-        "refresh": 2,
+        "query": "label_values({app=\"crawler\", nodeCode=~\".+\"}, nodeCode)",
+        "refresh": 1,
         "multi": true,
         "includeAll": true
       }
