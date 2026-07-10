@@ -73,10 +73,15 @@ async function setupCliproxyIfNeeded(config) {
     username,
     password,
     region: process.env.CLIPROXY_REGION || 'EU',
+    asn: process.env.CLIPROXY_ASN,
     stickyMinutes: Number(process.env.CLIPROXY_STICKY_MINUTES || 30),
     sessionPrefix: process.env.CLIPROXY_SESSION_PREFIX || 'crawler',
     channels: 1,
     assignmentsFile: process.env.CLIPROXY_ASSIGNMENTS_FILE || path.resolve('./cliproxy-assignments.json'),
+    regionParamName: process.env.CLIPROXY_REGION_PARAM_NAME,
+    asnParamName: process.env.CLIPROXY_ASN_PARAM_NAME,
+    sessionParamName: process.env.CLIPROXY_SESSION_PARAM_NAME,
+    stickyParamName: process.env.CLIPROXY_STICKY_PARAM_NAME,
   });
   await pool.assign();
   const proxyUrl = pool.getProxyForChannel('ch-1');
