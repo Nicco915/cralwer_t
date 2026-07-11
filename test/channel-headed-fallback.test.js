@@ -5,7 +5,8 @@ const { Channel } = require('../src/channel');
 function createMockBrowser() {
   let contextCount = 0;
   const contexts = [];
-  return {
+  const browser = {
+    isConnected: () => true,
     async newContext() {
       contextCount++;
       const ctxId = contextCount;
@@ -33,6 +34,7 @@ function createMockBrowser() {
         closed: false,
         pages,
       };
+      context.browser = () => browser;
       contexts.push(context);
       return context;
     },
@@ -45,6 +47,7 @@ function createMockBrowser() {
     closed: false,
     contexts,
   };
+  return browser;
 }
 
 describe('Channel headed fallback', () => {
@@ -166,6 +169,7 @@ describe('Channel headed fallback', () => {
         return mockBrowser;
       },
     });
+    await channel.init(createMockBrowser());
 
     // Simulate a non-timeout error in crawlSingleSku
     channel.pageCrawler.crawlSingleSku = async () => {
@@ -192,6 +196,7 @@ describe('Channel headed fallback', () => {
         return mockBrowser;
       },
     });
+    await channel.init(createMockBrowser());
 
     // Simulate a timeout error in crawlSingleSku (headless)
     channel.pageCrawler.crawlSingleSku = async (sku, page, recreateContext) => {
@@ -221,6 +226,7 @@ describe('Channel headed fallback', () => {
         return mockBrowser;
       },
     });
+    await channel.init(createMockBrowser());
 
     channel.pageCrawler.crawlSingleSku = async (sku, page, recreateContext) => {
       if (!headedFallbackCalled) {
@@ -241,6 +247,7 @@ describe('Channel headed fallback', () => {
       config: { dataLayerFailureThreshold: 3 },
       log: () => {},
     });
+    await channel.init(createMockBrowser());
 
     channel.pageCrawler.crawlSingleSku = async () => ({ status: 'not_found', dataLayerFailed: true });
 
@@ -263,6 +270,7 @@ describe('Channel headed fallback', () => {
       config: { dataLayerFailureThreshold: 3 },
       log: () => {},
     });
+    await channel.init(createMockBrowser());
 
     let callCount = 0;
     channel.pageCrawler.crawlSingleSku = async () => {

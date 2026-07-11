@@ -2,7 +2,24 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { Channel } = require('../src/channel');
 
-function createSilentChannel(options = {}) {
+function createMockBrowser() {
+  const browser = {
+    isConnected: () => true,
+    async newContext() {
+      const ctx = {
+        closed: false,
+        async addInitScript() {},
+        async newPage() { return { closed: false, async close() {} }; },
+        async close() { this.closed = true; },
+      };
+      ctx.browser = () => browser;
+      return ctx;
+    },
+  };
+  return browser;
+}
+
+async function createSilentChannel(options = {}) {
   const log = () => {};
   const channel = new Channel({
     id: 1,
@@ -13,12 +30,13 @@ function createSilentChannel(options = {}) {
     },
     log,
   });
+  await channel.init(createMockBrowser());
   return channel;
 }
 
 describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
   it('returns not_found result and does not throw when crawlSingleSku throws DATA_LAYER_NEVER_PUSHED', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       const err = new Error('DATA_LAYER_NEVER_PUSHED');
       throw err;
@@ -32,7 +50,7 @@ describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
   });
 
   it('increments dataLayerFailureCount when DATA_LAYER_NEVER_PUSHED is thrown', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('DATA_LAYER_NEVER_PUSHED');
     };
@@ -43,7 +61,7 @@ describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
   });
 
   it('does not throw to caller even when headed fallback would otherwise be triggered', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.headedBrowserLauncher = async () => { throw new Error('headed launcher should not run'); };
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('DATA_LAYER_NEVER_PUSHED');
@@ -56,7 +74,7 @@ describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
 
 describe('Channel DATA_LAYER_MISSING handling', () => {
   it('returns not_found result when DATA_LAYER_MISSING is thrown', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('DATA_LAYER_MISSING: page.waitForFunction: Timeout 20000ms exceeded.');
     };
@@ -69,7 +87,7 @@ describe('Channel DATA_LAYER_MISSING handling', () => {
   });
 
   it('increments dataLayerFailureCount for DATA_LAYER_MISSING too', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('DATA_LAYER_MISSING: timeout');
     };
@@ -82,7 +100,7 @@ describe('Channel DATA_LAYER_MISSING handling', () => {
 
 describe('Channel generic errors are unaffected', () => {
   it('still throws generic errors so headed fallback / error reporting paths work', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('Some unrelated error');
     };
@@ -94,7 +112,7 @@ describe('Channel generic errors are unaffected', () => {
   });
 
   it('does not increment dataLayerFailureCount for non-DATA_LAYER errors', async () => {
-    const channel = createSilentChannel();
+    const channel = await createSilentChannel();
     channel.pageCrawler.crawlSingleSku = async () => {
       throw new Error('unrelated failure');
     };
