@@ -11,6 +11,7 @@ class Worker {
     this.channels = [];
     this.taskQueue = [];
     this.pusher = options.pusher;
+    this.regionRegistry = options.regionRegistry || null;
     this.imageUploader = options.imageUploader || null;
     this.log = options.log || console.log;
     this.logger = options.logger || null;
@@ -54,6 +55,7 @@ class Worker {
     return {
       crawlerTaskId: task.crawlerTaskId,
       sku: task.sku,
+      regionCode: task.regionCode,
       status: err.status ?? 'error',
       product_name: '',
       features_details: '',
@@ -112,6 +114,48 @@ class Worker {
     let result = null;
     let timedOut = false;
     let cancelled = false;
+
+    // 多区域路由：把 task.regionCode 解析成 task.baseUrl。
+    // 未知码/禁用码 → 快速失败回推，不占用通道、不崩节点。
+    if (this.regionRegistry) {
+      const reg = this.regionRegistry;
+      const code = reg.normalize(task.regionCode);
+      task.regionCode = code;
+      const baseUrl = reg.resolve(code);
+      if (baseUrl === null) {
+        const disabled = reg.isKnown(code);
+        const message = disabled
+          ? `region ${code} has no target site (disabled)`
+          : `unknown regionCode: ${code}`;
+        result = this.buildErrorResult(task, new Error(message));
+        this.log(`[Worker] task ${task.crawlerTaskId} rejected before crawl: ${message}`);
+        try {
+          await this.pusher.push(result);
+        } catch (pushErr) {
+          this.log(`[Worker] push failed for rejected task ${task.crawlerTaskId}: ${pushErr.message}`);
+        }
+        if (taskIdKey !== null) {
+          this.inFlightTaskIds.delete(taskIdKey);
+        }
+        if (this.logger) {
+          try {
+            this.logger.info('task', 'finished', {
+              crawlerTaskId: task.crawlerTaskId,
+              sku: task.sku,
+              status: 'error',
+              error: message,
+              durationMs: Date.now() - startedAt,
+              retries: 0,
+              channelId: channel.id,
+              timedOut: false,
+              regionCode: code,
+            });
+          } catch (e) { /* ignore logger errors */ }
+        }
+        return result;
+      }
+      task.baseUrl = baseUrl;
+    }
     channel.busy = true;
 
     // 完整流程（只包含 crawl + retry；push / upload 拆到 race 之后统一处理）
@@ -203,6 +247,9 @@ class Worker {
 
     // 统一推送（包括 timeout）
     if (result) {
+      result.regionCode = task.regionCode;
+    }
+    if (result) {
       try {
         this.log(`[Worker] Starting push task ${task.crawlerTaskId} sku ${task.sku} status=${result.status}`);
         await this.pusher.push(result);
@@ -256,6 +303,7 @@ class Worker {
           retries,
           channelId: channel.id,
           timedOut,
+          regionCode: task.regionCode,
         });
       } catch (e) {
         this.log(`[Worker] Failed to write task event log: ${e.message}`);
