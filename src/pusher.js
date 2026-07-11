@@ -75,6 +75,7 @@ class Pusher {
     return {
       crawlerTaskId: result.crawlerTaskId,
       sku: result.sku,
+      regionCode: result.regionCode || '',
       nodeCode: this.nodeCode,
       nodeToken: this.nodeToken,
       goodsName: result.product_name || '',
