@@ -159,4 +159,41 @@ describe('Service integration', { timeout: 120000 }, () => {
       server.close();
     }
   });
+
+  it('reclaims idle channel page after idleReclaimMs (no tasks)', async () => {
+    let service = null;
+    const { server, port } = await startMockUpstream({ tasks: [] });
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      service = await runService({
+        baseUrl: 'https://eur.vevor.com',
+        imageDir: './output/test-idle-reclaim',
+        headless: true,
+        nodeCode: 'idle-node',
+        nodeToken: 'test-token',
+        taskUrl: `${baseUrl}/tasks`,
+        callbackUrl: `${baseUrl}/callback`,
+        channels: 1,
+        pollInterval: 1000,
+        pollLimit: 1,
+        pushRetries: 1,
+        idleReclaimMs: 1500,
+        idleReapIntervalMs: 500,
+      });
+
+      const ch = service.channels[0];
+      const start = Date.now();
+      while (!ch.page && Date.now() - start < 30000) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      assert.ok(ch.page, 'page initialized');
+
+      await new Promise((r) => setTimeout(r, 4000));
+      assert.ok(ch.page === null || ch.page.isClosed(), 'page should be reclaimed by idle reaper');
+    } finally {
+      if (service) await service.stop();
+      server.close();
+    }
+  });
 });
