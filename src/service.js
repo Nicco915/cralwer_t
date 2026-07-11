@@ -288,6 +288,7 @@ class CrawlerService {
 
     this.startHealthCheck();
     this.startHeartbeat();
+    this.startIdleReaper();
     await this.startHealthServer();
     this.registerSignalHandlers();
   }
@@ -299,6 +300,7 @@ class CrawlerService {
 
     this.stopHealthCheck();
     this.stopHeartbeat();
+    this.stopIdleReaper();
     this.stopProxyRefresh();
     if (this.healthServer) {
       this.healthServer.close();
