@@ -15,6 +15,8 @@ module.exports = {
         NODE_ENV: 'production',
         // 强制使用 Playwright 自带的 Chromium，避免 Edge/Microsoft Family Safety 干扰
         CRAWLER_BROWSER_PATH: '',
+        CRAWLER_IDLE_RECLAIM_MS: process.env.CRAWLER_IDLE_RECLAIM_MS || '300000',
+        CRAWLER_IDLE_REAP_INTERVAL_MS: process.env.CRAWLER_IDLE_REAP_INTERVAL_MS || '30000',
       },
       log_file: path.join(installDir, 'logs', 'crawler-combined.log'),
       out_file: path.join(installDir, 'logs', 'crawler-out.log'),

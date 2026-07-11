@@ -8,6 +8,8 @@ services:
       - CRAWLER_MODE=service
       - CRAWLER_NODE_CODE=${CRAWLER_NODE_CODE:-crawler-01}
       - CRAWLER_HEADED_FALLBACK=false
+      - CRAWLER_IDLE_RECLAIM_MS=${CRAWLER_IDLE_RECLAIM_MS:-300000}
+      - CRAWLER_IDLE_REAP_INTERVAL_MS=${CRAWLER_IDLE_REAP_INTERVAL_MS:-30000}
     volumes:
       - ./logs:/app/logs
       - ./output:/app/output

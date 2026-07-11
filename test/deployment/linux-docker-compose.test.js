@@ -16,5 +16,7 @@ describe('deployment/linux/docker-compose.yml', () => {
     assert.ok(content.includes('CRAWLER_HEADED_FALLBACK=false'), 'should explicitly disable headed fallback');
     assert.ok(content.includes('CRAWLER_MODE=service'), 'should set service mode');
     assert.ok(content.includes('${CRAWLER_IMAGE:?'), 'should require CRAWLER_IMAGE');
+    assert.ok(content.includes('CRAWLER_IDLE_RECLAIM_MS'), 'should expose CRAWLER_IDLE_RECLAIM_MS');
+    assert.ok(content.includes('CRAWLER_IDLE_REAP_INTERVAL_MS'), 'should expose CRAWLER_IDLE_REAP_INTERVAL_MS');
   });
 });
