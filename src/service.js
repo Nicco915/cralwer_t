@@ -12,6 +12,7 @@ const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { ImageUploader } = require('./image-uploader');
 const { createStdoutLogger, createFileLogger, createBroadcastLogger } = require('./logger');
+const { RegionRegistry } = require('./region-registry');
 
 function maskProxyUrl(url) {
   if (!url) return url;
@@ -36,6 +37,11 @@ class CrawlerService {
     this.config.idleReclaimMs = idleReclaimRaw === undefined ? 300000 : Number(idleReclaimRaw);
     const idleReapRaw = config?.idleReapIntervalMs ?? process.env.CRAWLER_IDLE_REAP_INTERVAL_MS;
     this.config.idleReapIntervalMs = idleReapRaw === undefined ? 30000 : Number(idleReapRaw);
+    this.regionRegistry = new RegionRegistry({
+      regions: this.config.regions,
+      defaultRegion: this.config.defaultRegion,
+      legacyBaseUrl: this.config.baseUrl,
+    });
     this.browser = null;
     this.channels = [];
     this.poller = null;
@@ -146,6 +152,7 @@ class CrawlerService {
           dataLayerFailureThreshold: this.config.dataLayerFailureThreshold,
           nodeCode: this.config.nodeCode,
           stealthMode: this.config.stealthMode,
+          clearCookiesOnRegionSwitch: this.config.clearCookiesOnRegionSwitch,
           adaptiveTimeoutThreshold: this.config.adaptiveTimeoutThreshold,
           adaptiveRecoverySuccesses: this.config.adaptiveRecoverySuccesses,
           adaptiveDataLayerThreshold: this.config.adaptiveDataLayerThreshold,
@@ -263,6 +270,7 @@ class CrawlerService {
       logger: this.logger,
       taskTimeoutMs: this.config.taskTimeoutMs,
       retryOnTimeout: this.config.retryOnTimeout,
+      regionRegistry: this.regionRegistry,
     });
 
     this.poller = new Poller({
@@ -285,6 +293,7 @@ class CrawlerService {
     });
 
     this.log(`[SERVICE] Running with nodeCode=${this.config.nodeCode}, channels=${this.config.channels}`);
+    this.log(`[SERVICE] regions: ${JSON.stringify(this.regionRegistry.map)}`);
 
     this.startHealthCheck();
     this.startHeartbeat();
