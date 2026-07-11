@@ -90,4 +90,39 @@ describe('Channel', () => {
     assert.strictEqual(crawlCalled, true);
     assert.ok(elapsed < 50, `expected no delay, got ${elapsed}ms`);
   });
+
+  it('initializes idle state and markActivity updates lastActivityAt', async () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    assert.strictEqual(channel.browser, null);
+    assert.ok(typeof channel.lastActivityAt === 'number' && channel.lastActivityAt > 0);
+    const before = channel.lastActivityAt;
+    await new Promise((r) => setTimeout(r, 5));
+    channel.markActivity();
+    assert.ok(channel.lastActivityAt > before, 'lastActivityAt should advance');
+  });
+
+  it('isIdleReclaimable reflects busy/reinitializing/context/timeout', () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    const now = Date.now();
+    channel.lastActivityAt = now - 10000;
+    channel.busy = false;
+    channel.reinitializing = false;
+
+    channel.browserContext = null;
+    assert.strictEqual(channel.isIdleReclaimable(now, 5000), false, 'no context -> false');
+
+    channel.browserContext = {};
+    assert.strictEqual(channel.isIdleReclaimable(now, 5000), true, 'idle > threshold -> true');
+
+    channel.busy = true;
+    assert.strictEqual(channel.isIdleReclaimable(now, 5000), false, 'busy -> false');
+    channel.busy = false;
+
+    channel.reinitializing = true;
+    assert.strictEqual(channel.isIdleReclaimable(now, 5000), false, 'reinitializing -> false');
+    channel.reinitializing = false;
+
+    channel.lastActivityAt = now - 1000;
+    assert.strictEqual(channel.isIdleReclaimable(now, 5000), false, 'within threshold -> false');
+  });
 });

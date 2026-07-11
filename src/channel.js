@@ -64,6 +64,8 @@ class Channel {
     // 上次换 IP 的时间戳（毫秒）。0 表示从未换过。
     // 用于在 cliproxy cooldown 期内避免重复 reinstall（耗资源但 IP 没变）。
     this.lastIpRotationAt = 0;
+    this.browser = null;
+    this.lastActivityAt = Date.now();
   }
 
   _createProfile() {
@@ -102,6 +104,7 @@ class Channel {
   }
 
   async recreateContext(browser) {
+    this.browser = browser;
     if (this.browserContext) {
       try {
         await this.browserContext.close();
@@ -162,6 +165,14 @@ class Channel {
     }
   }
 
+  markActivity() {
+    this.lastActivityAt = Date.now();
+  }
+
+  isIdleReclaimable(now, idleMs) {
+    return !this.busy && !this.reinitializing && !!this.browserContext && (now - this.lastActivityAt) > idleMs;
+  }
+
   needsProxyRotation() {
     return this.dataLayerFailureCount >= this.dataLayerProxyRotationThreshold;
   }
@@ -205,6 +216,7 @@ class Channel {
   }
 
   async init(browser, proxyOverride) {
+    this.browser = browser;
     if (proxyOverride !== undefined) {
       this.config.proxy = proxyOverride;
     }
@@ -214,6 +226,7 @@ class Channel {
     await this.browserContext.addInitScript(this.getStealthScript());
     this.page = await this.browserContext.newPage();
     this.log(`[Channel ${this.id}] initialized`);
+    this.markActivity();
   }
 
   async runHeadedFallback(task) {
