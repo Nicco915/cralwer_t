@@ -82,6 +82,9 @@ const FLAG_MAP = {
   'image-upload-retries': 'imageUploadRetries',
   'image-upload': 'enableImageUpload',
   'heartbeat-interval': 'heartbeatInterval',
+  regions: 'regions',
+  'default-region': 'defaultRegion',
+  'clear-cookies-on-region-switch': 'clearCookiesOnRegionSwitch',
 };
 
 const BOOLEAN_FLAGS = new Set([
@@ -90,6 +93,7 @@ const BOOLEAN_FLAGS = new Set([
   'feishu',
   'headed-fallback',
   'image-upload',
+  'clear-cookies-on-region-switch',
 ]);
 
 const BOOLEAN_CONFIG_KEYS = new Set([
@@ -98,6 +102,7 @@ const BOOLEAN_CONFIG_KEYS = new Set([
   'enableFeishu',
   'headedFallback',
   'enableImageUpload',
+  'clearCookiesOnRegionSwitch',
 ]);
 
 function isBooleanFlag(key) {
@@ -234,6 +239,9 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD: 'adaptiveDataLayerThreshold',
     CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD: 'dataLayerProxyRotationThreshold',
     CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS: 'cliproxyRotationCooldownMs',
+    CRAWLER_REGIONS: 'regions',
+    CRAWLER_DEFAULT_REGION: 'defaultRegion',
+    CRAWLER_CLEAR_COOKIES_ON_REGION_SWITCH: 'clearCookiesOnRegionSwitch',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {
