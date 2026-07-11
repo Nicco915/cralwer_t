@@ -435,7 +435,6 @@ describe('CrawlerService idle reaper', () => {
       if (!channel.isIdleReclaimable(Date.now(), idleMs)) continue;
       try {
         channel.reinitializing = true;
-        if (!channel.isIdleReclaimable(Date.now(), idleMs)) continue;
         await channel.close();
         this.log(`[IDLE] channel ${channel.id} reclaimed after ${Math.round((Date.now() - channel.lastActivityAt) / 1000)}s idle`);
       } catch (e) {
