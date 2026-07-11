@@ -64,6 +64,10 @@ class Channel {
     // 上次换 IP 的时间戳（毫秒）。0 表示从未换过。
     // 用于在 cliproxy cooldown 期内避免重复 reinstall（耗资源但 IP 没变）。
     this.lastIpRotationAt = 0;
+    // 跨区域 cookie 护栏（默认关）：记录上次任务的区域，热切换时清 cookie 防串扰。
+    this.lastRegionCode = null;
+    this.clearCookiesOnRegionSwitch = this.config.clearCookiesOnRegionSwitch === true
+      || this.config.clearCookiesOnRegionSwitch === 'true';
     this.browser = null;
     this.lastActivityAt = Date.now();
   }
@@ -274,7 +278,7 @@ class Channel {
         headedPage = await headedContext.newPage();
         return headedPage;
       };
-      return await this.pageCrawler.crawlSingleSku(task.sku, headedPage, recreateContext);
+      return await this.pageCrawler.crawlSingleSku(task.sku, headedPage, recreateContext, { baseUrl: task.baseUrl });
     } finally {
       if (headedContext) {
         try {
@@ -293,6 +297,15 @@ class Channel {
     try {
       this.markActivity();
       await this.ensureContext();
+      const taskRegion = task.regionCode || null;
+      if (this.clearCookiesOnRegionSwitch && taskRegion && this.lastRegionCode
+          && taskRegion !== this.lastRegionCode && this.browserContext) {
+        await this.browserContext.clearCookies();
+        this.log(`[Channel ${this.id}] region switch ${this.lastRegionCode} → ${taskRegion}, cookies cleared`);
+      }
+      if (taskRegion) {
+        this.lastRegionCode = taskRegion;
+      }
       const delay = this.pageCrawler.randomDelay();
       if (delay > 0) {
         this.log(`[Channel ${this.id}] waiting ${(delay / 1000).toFixed(1)}s before task ${task.crawlerTaskId}`);
@@ -307,7 +320,7 @@ class Channel {
           if (!browser) throw new Error('Browser context not available');
           return this.recreateContext(browser);
         };
-        result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext);
+        result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext, { baseUrl: task.baseUrl });
         if (result.dataLayerFailed && !result.dataLayerNotFound) {
           this.dataLayerFailureCount++;
           if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
