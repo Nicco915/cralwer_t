@@ -9,6 +9,9 @@ const { runService } = require('../src/service');
 function buildServiceConfig(config) {
   return {
     baseUrl: config.baseUrl || 'https://eur.vevor.com',
+    regions: config.regions,
+    defaultRegion: config.defaultRegion || 'EU',
+    clearCookiesOnRegionSwitch: config.clearCookiesOnRegionSwitch === true || config.clearCookiesOnRegionSwitch === 'true',
     imageDir: config.imageDir || path.resolve('./output/images'),
     diagnosticDir: config.diagnosticDir || process.env.CRAWLER_DIAGNOSTIC_DIR || path.resolve('./output/diagnostics'),
     stealthMode: config.stealthMode ?? 'channel',
