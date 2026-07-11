@@ -18,12 +18,19 @@ describe('CrawlerService logger integration', { timeout: 30000 }, () => {
       callbackUrl: 'http://127.0.0.1:1/callback',
       channels: 0,
       imageDir: '/tmp/test-health-images',
-      healthPort: 0,
     });
+    // 本用例只验证 svc.log() 写 crawler.jsonl，不需要真浏览器；
+    // 桩掉 initBrowser 避免拉起 Playwright chromium，让单测快速且与环境无关。
+    svc.initBrowser = async () => {
+      svc.browser = { isConnected: () => true, close: async () => {} };
+    };
     svc.ensureImageDir();
-    svc.start({ customLogDir: TMP_DIR });
-    svc.log('[TEST] hello world', 42);
-    svc.stop();
+    try {
+      await svc.start({ customLogDir: TMP_DIR });
+      svc.log('[TEST] hello world', 42);
+    } finally {
+      await svc.stop();
+    }
 
     const file = path.join(TMP_DIR, 'crawler.jsonl');
     const lines = fs.readFileSync(file, 'utf-8').trim().split('\n');
