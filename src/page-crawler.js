@@ -337,8 +337,9 @@ class PageCrawler {
     return Object.values(bestUrls);
   }
 
-  async crawlSingleSku(sku, page, recreateContext) {
-    const { baseUrl, imageDir, maxImages } = this.config;
+  async crawlSingleSku(sku, page, recreateContext, options = {}) {
+    const { imageDir, maxImages } = this.config;
+    const baseUrl = options.baseUrl || this.config.baseUrl;
     const result = {
       sku,
       product_name: '',
