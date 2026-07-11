@@ -17,6 +17,28 @@ function createMockBrowser() {
   };
 }
 
+function createMockBrowser2({ connected = true } = {}) {
+  return {
+    connected,
+    isConnected() { return this.connected; },
+    async newContext() {
+      return {
+        _closed: false,
+        async addInitScript() {},
+        async newPage() {
+          return {
+            _closed: false,
+            isClosed() { return this._closed; },
+            async close() { this._closed = true; },
+          };
+        },
+        async close() { this._closed = true; },
+      };
+    },
+    async close() {},
+  };
+}
+
 describe('Channel', () => {
   it('counts consecutive failures and detects proxy errors', async () => {
     const channel = new Channel({ id: 1, config: {}, log: () => {} });
@@ -124,5 +146,64 @@ describe('Channel', () => {
 
     channel.lastActivityAt = now - 1000;
     assert.strictEqual(channel.isIdleReclaimable(now, 5000), false, 'within threshold -> false');
+  });
+
+  it('ensureContext creates context+page when none exist', async () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    channel.browser = createMockBrowser2();
+    channel.browserContext = null;
+    channel.page = null;
+
+    const page = await channel.ensureContext();
+    assert.ok(page, 'page should be created');
+    assert.strictEqual(channel.page, page);
+    assert.ok(channel.browserContext && channel.browserContext._closed === false);
+  });
+
+  it('ensureContext re-creates when page is closed', async () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    await channel.init(createMockBrowser2());
+    const oldPage = channel.page;
+    await oldPage.close();
+    assert.strictEqual(oldPage.isClosed(), true);
+
+    const newPage = await channel.ensureContext();
+    assert.notStrictEqual(newPage, oldPage);
+    assert.strictEqual(newPage.isClosed(), false);
+  });
+
+  it('ensureContext throws when browser disconnected', async () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    channel.browser = createMockBrowser2({ connected: false });
+    channel.browserContext = null;
+    channel.page = null;
+    await assert.rejects(() => channel.ensureContext(), /Browser not available/);
+  });
+
+  it('ensureContext keeps profile stable (no session/profile side effects)', async () => {
+    const channel = new Channel({ id: 1, config: { stealthMode: 'session' }, log: () => {} });
+    await channel.init(createMockBrowser2());
+    const sigBefore = channel.profile.signature;
+    const sessionBefore = channel.sessionIndex;
+    await channel.page.close();
+
+    await channel.ensureContext();
+    assert.strictEqual(channel.profile.signature, sigBefore, 'profile signature must not change');
+    assert.strictEqual(channel.sessionIndex, sessionBefore, 'sessionIndex must not increment');
+  });
+
+  it('crawl recovers after context reclaimed (ensureContext at crawl entry)', async () => {
+    const channel = new Channel({ id: 1, config: {}, log: () => {} });
+    await channel.init(createMockBrowser2());
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      status: 'success', sku: 'T', product_name: '', features_details: '',
+      product_specification: '', product_url: '', error: '',
+    });
+    await channel.close();
+    assert.strictEqual(channel.page, null);
+
+    const res = await channel.crawl({ crawlerTaskId: 1n, sku: 'T' });
+    assert.strictEqual(res.status, 'success');
+    assert.ok(channel.page, 'page re-created by crawl via ensureContext');
   });
 });

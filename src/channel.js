@@ -173,6 +173,27 @@ class Channel {
     return !this.busy && !this.reinitializing && !!this.browserContext && (now - this.lastActivityAt) > idleMs;
   }
 
+  async ensureContext() {
+    const pageOpen = this.page && typeof this.page.isClosed === 'function' && !this.page.isClosed();
+    if (this.browserContext && pageOpen) {
+      return this.page;
+    }
+    if (!this.browser || !this.browser.isConnected()) {
+      throw new Error('Browser not available for ensureContext');
+    }
+    if (this.browserContext) {
+      try { await this.browserContext.close(); } catch (e) { /* already closed */ }
+      this.browserContext = null;
+      this.page = null;
+    }
+    const contextOptions = this._buildContextOptions();
+    this.browserContext = await this.browser.newContext(contextOptions);
+    await this.browserContext.addInitScript(this.getStealthScript());
+    this.page = await this.browserContext.newPage();
+    this.log(`[Channel ${this.id}] context re-created after idle reclaim`);
+    return this.page;
+  }
+
   needsProxyRotation() {
     return this.dataLayerFailureCount >= this.dataLayerProxyRotationThreshold;
   }
@@ -270,6 +291,8 @@ class Channel {
     this.currentTask = task;
 
     try {
+      this.markActivity();
+      await this.ensureContext();
       const delay = this.pageCrawler.randomDelay();
       if (delay > 0) {
         this.log(`[Channel ${this.id}] waiting ${(delay / 1000).toFixed(1)}s before task ${task.crawlerTaskId}`);
