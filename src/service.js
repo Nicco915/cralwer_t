@@ -32,6 +32,10 @@ class CrawlerService {
       nodeCode: config?.nodeCode ?? process.env.CRAWLER_NODE_CODE ?? 'crawler-01',
       stealthMode: config?.stealthMode ?? process.env.CRAWLER_STEALTH_MODE ?? 'channel',
     };
+    const idleReclaimRaw = config?.idleReclaimMs ?? process.env.CRAWLER_IDLE_RECLAIM_MS;
+    this.config.idleReclaimMs = idleReclaimRaw === undefined ? 300000 : Number(idleReclaimRaw);
+    const idleReapRaw = config?.idleReapIntervalMs ?? process.env.CRAWLER_IDLE_REAP_INTERVAL_MS;
+    this.config.idleReapIntervalMs = idleReapRaw === undefined ? 30000 : Number(idleReapRaw);
     this.browser = null;
     this.channels = [];
     this.poller = null;
@@ -47,6 +51,7 @@ class CrawlerService {
     this.healthServer = null;
     this.healthServerStartTime = null;
     this.heartbeatTimer = null;
+    this.idleReapTimer = null;
     this.logger = createBroadcastLogger([
       createStdoutLogger({ nodeCode: this.config.nodeCode }),
       createFileLogger({
@@ -447,6 +452,40 @@ class CrawlerService {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+  }
+
+  startIdleReaper() {
+    if (this.config.idleReclaimMs <= 0) {
+      this.log('[IDLE] reclaim disabled (idleReclaimMs<=0)');
+      return;
+    }
+    this.idleReapTimer = setInterval(() => {
+      this.reapOnce().catch((e) => this.log('[IDLE] reap error:', e.message));
+    }, this.config.idleReapIntervalMs);
+  }
+
+  stopIdleReaper() {
+    if (this.idleReapTimer) {
+      clearInterval(this.idleReapTimer);
+      this.idleReapTimer = null;
+    }
+  }
+
+  async reapOnce() {
+    const idleMs = this.config.idleReclaimMs;
+    for (const channel of this.channels) {
+      if (channel.reinitializing) continue;
+      if (!channel.isIdleReclaimable(Date.now(), idleMs)) continue;
+      try {
+        channel.reinitializing = true;
+        await channel.close();
+        this.log(`[IDLE] channel ${channel.id} reclaimed after ${Math.round((Date.now() - channel.lastActivityAt) / 1000)}s idle`);
+      } catch (e) {
+        this.log(`[IDLE] channel ${channel.id} reclaim failed: ${e.message}`);
+      } finally {
+        channel.reinitializing = false;
+      }
     }
   }
 
