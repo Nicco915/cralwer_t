@@ -162,7 +162,9 @@ describe('Channel adaptive stealth mode', () => {
         return {
           browser: () => this,
           async addInitScript() {},
-          async newPage() { return { close: async () => {} }; },
+          // page 需实现 isClosed()（真实 Playwright page 具备），
+          // 否则 ensureContext 会误判页面已关而多重建一次 context。
+          async newPage() { return { close: async () => {}, isClosed: () => false }; },
           async close() { closeCount++; },
         };
       },
