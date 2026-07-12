@@ -2,11 +2,13 @@
 
 // VEVOR 各区域站的 canonical URL（公开事实，非密钥）。
 // 空字符串 = 已知区域但无目标站（禁用），resolve 返回 null。
+// US 禁用：2026-07-12 烟测证实 DE 出口访问 www.vevor.com 被按德国 IP 地理
+// 重定向到 www.vevor.de，返回错误区域数据。待 US 出口代理/US 节点就绪再启用。
 const BUILT_IN_REGIONS = {
   EU: 'https://eur.vevor.com',
   GB: 'https://www.vevor.co.uk',
   CA: 'https://www.vevor.ca',
-  US: 'https://www.vevor.com',
+  US: '',
   CN: '',
 };
 

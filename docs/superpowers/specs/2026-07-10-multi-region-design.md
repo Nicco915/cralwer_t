@@ -36,6 +36,22 @@
 
 > 副发现（范围外，见 §10）：仓库自带 `test-sku.js` 构造 `CliproxyPool` 时未传入 `regionParamName/asn/session/sticky` 等参数，会回退到默认 `country-DE`，导致在该 `.env` 下拿到错误/随机出口 IP（首次烟测即因此拿到巴西 IP）。生产 `service.js` 传参正确，不受影响。
 
+### 2.1 US 烟测未过（2026-07-12，上线 US 前门禁）
+
+上游提供 3 个 US SKU，同 §2 方法（同 VPS、DE 出口、`--base-url=https://www.vevor.com`）：
+
+| SKU | 结果 | product_url 域名 |
+|---|---|---|
+| JSJS382MJDDMBL240002V0 | success（**德文**数据 "Hühnerstall"） | `www.vevor.de` |
+| SJXTMJ236INCCDQ78001V1 | not_found（美国独品，德站无） | — |
+| BXGCWYG34CJY8SX20V0 | success（**德文**数据 "Hundewaschstation"） | `www.vevor.de` |
+
+3/3 复现：`www.vevor.com/s/<sku>` 被站点**按德国 IP 地理重定向到 `www.vevor.de`**（日志 `Current URL` 即变为 `.de`）。两市场都有货时拿到错误德国数据，美国独品时 not_found。
+
+**结论修正**：§2 的「同一 DE 代理池爬所有区域」前提**仅对 EU/CA/GB 成立，对 US 不成立**——`www.vevor.com` 对德国 IP 做地理重定向，DE 代理无法获取 US 区域数据。
+
+**处置**：代码 `BUILT_IN_REGIONS` 将 US 置为禁用（空 URL，同 CN），US 任务快速失败（`region US has no target site (disabled)`）而非返回错误德国数据；生产 `CRAWLER_REGIONS` 仅配 EU/GB/CA。**US 待 US 出口代理或独立 US 节点就绪后，经显式 `CRAWLER_REGIONS` 配置重启用**（显式配置可覆盖内置禁用，见 `region-registry` 的 override 语义）。
+
 ## 3. 决策
 
 ### 3.1 路由模型：上游在 task 里带 `region`，节点跨区域服务（已选）

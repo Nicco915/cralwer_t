@@ -30,13 +30,20 @@ describe('RegionRegistry', () => {
     assert.strictEqual(reg.resolve('EU'), 'https://eur.vevor.com');
     assert.strictEqual(reg.resolve('GB'), 'https://www.vevor.co.uk');
     assert.strictEqual(reg.resolve('CA'), 'https://www.vevor.ca');
-    assert.strictEqual(reg.resolve('US'), 'https://www.vevor.com');
   });
 
   it('treats CN as known but disabled (null)', () => {
     const reg = new RegionRegistry();
     assert.strictEqual(reg.isKnown('CN'), true);
     assert.strictEqual(reg.resolve('CN'), null);
+  });
+
+  it('treats US as known but disabled (null): DE proxy geo-redirects vevor.com to .de', () => {
+    // 2026-07-12 US 烟测未过：DE 出口访问 www.vevor.com 被站点按德国 IP
+    // 强制跳转 www.vevor.de，返回错误区域数据。US 待 US 出口代理/节点就绪再启用。
+    const reg = new RegionRegistry();
+    assert.strictEqual(reg.isKnown('US'), true);
+    assert.strictEqual(reg.resolve('US'), null);
   });
 
   it('returns null and isKnown=false for unknown codes', () => {
