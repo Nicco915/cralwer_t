@@ -8,8 +8,12 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 libgtk-3-0 libpango-1.0-0 libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建非 root 用户
-RUN groupadd -r crawler && useradd -r -g crawler -d /app crawler
+# 创建非 root 用户，uid/gid 固定 1000，与宿主机挂载目录属主对齐
+# （基础镜像自带 node 用户占用 1000，先删除）
+RUN userdel node 2>/dev/null || true \
+    && groupdel node 2>/dev/null || true \
+    && groupadd -g 1000 crawler \
+    && useradd -u 1000 -g crawler -d /app -M crawler
 
 WORKDIR /app
 

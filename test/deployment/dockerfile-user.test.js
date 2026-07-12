@@ -6,9 +6,9 @@ const path = require('path');
 describe('Dockerfile security', () => {
   const dockerfile = fs.readFileSync(path.resolve('deployment/docker/Dockerfile'), 'utf-8');
 
-  it('creates and uses crawler non-root user', () => {
-    assert.ok(/groupadd\s+-r\s+crawler/.test(dockerfile), 'should create crawler group');
-    assert.ok(/useradd\s+-r\s+-g\s+crawler/.test(dockerfile), 'should create crawler user');
+  it('creates and uses crawler non-root user pinned to uid/gid 1000 (matches host mounts)', () => {
+    assert.ok(/groupadd\s+-g\s+1000\s+crawler/.test(dockerfile), 'should create crawler group with gid 1000');
+    assert.ok(/useradd\s+-u\s+1000\s+-g\s+crawler/.test(dockerfile), 'should create crawler user with uid 1000');
     assert.ok(/USER\s+crawler/.test(dockerfile), 'should switch to crawler user');
   });
 
