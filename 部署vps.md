@@ -244,17 +244,26 @@ export CRAWLER_IMAGE_BASE=ghcr.io/nicco915/cralwer_t
 
 ### 7. 未来升级步骤
 
-#### 7.1 自动升级（推荐）
+#### 7.1 自动升级（推荐，2026-07-13 更新）
+
+> ⚠️ 流程已变更：CI **只构建镜像，不再自动部署**。原因见 7.7 节。
 
 1. 本地提交代码并 push 到 `main`
-2. 打 tag 并推送：
+2. 打 tag 并推送，触发 GitHub Actions 构建 GHCR 镜像（约 3 分钟）：
 
 ```bash
-git tag v1.0.4
-git push github v1.0.4
+git tag -a v1.3.2 -m "说明"
+git push github v1.3.2
 ```
 
-3. GitHub Actions 会自动构建镜像并部署到 VPS
+3. 等构建完成后，在 VPS 上执行滚动更新脚本（逐台 stop → 重建 → /health 验证 → 删备份，失败自动回滚）：
+
+```bash
+ssh root@<VPS_IP>
+python3 /tmp/rolling-update.py v1.3.2
+```
+
+脚本说明与完整源码见 7.7 节。
 
 #### 7.2 手动升级
 
@@ -712,7 +721,62 @@ docker exec monitoring-prometheus wget -qO- \
 
 > v1.2.0 部署结束后，坑 4、坑 2 中的 `--hostname` 和 `COOLDOWN_MS=30000` 都已落地。后续 GH Actions 自动部署仍需修坑 3 才会生效。
 
+#### 7.7 v1.3.2 部署实录（2026-07-13）
+
+##### 7.7.1 本版修复内容
+
+| Commit | 说明 |
+|---|---|
+| `eb1bc28` | fix(service): 健康检查跳过空闲休眠 channel，避免误判 unhealthy 白换 IP |
+| `5d0583a` | ci(workflow): 移除 SSH deploy job，workflow 只负责构建镜像 |
+
+**背景 1：unhealthy 误报。** v1.3.1 引入空闲回收器（idle reaper）：channel 空闲超过 `CRAWLER_IDLE_RECLAIM_MS`（默认 300s）后关闭 context/page 释放内存，下次任务由 `ensureContext()` 懒重建。但健康检查（30s 间隔）的 `isHealthy()` 把"context/page 为 null"一律判为 unhealthy，导致**每次休眠回收后都误报 `Channel N unhealthy detected`，并白换一次独享 IP**，失败时还会升级重启整个浏览器。v1.3.2 在 `checkChannelForRotation` 中对休眠态 channel 直接跳过。
+
+**背景 2：CI deploy job 误建重复容器。** workflow 的 deploy job 用 compose 在 VPS 上拉起 `hs-sku-crawler`（NODE_CODE=crawler-01），与手动 docker run 的 `hs-sku-crawler-1` **身份完全重复**（同 nodeCode 重复拉任务 + cliproxy sticky session 冲突）。v1.3.2 发版时抓到现场并删除，随后把 workflow 改为 build-only（测试 `github-workflow.test.js` 加了 build-only 断言，防止回退）。
+
+##### 7.7.2 当前发版流程（唯一正确姿势）
+
+```bash
+# 本地
+git push github main
+git tag -a vX.Y.Z -m "..." && git push github vX.Y.Z
+
+# 等 GHCR 构建完成（约 3 分钟，GitHub Actions 页面确认）
+curl -s "https://api.github.com/repos/Nicco915/cralwer_t/actions/runs?per_page=1"
+
+# VPS 上滚动更新（脚本位置：/tmp/rolling-update.py）
+python3 /tmp/rolling-update.py vX.Y.Z
+```
+
+`rolling-update.py` 行为：
+
+1. `docker pull` 目标镜像
+2. 逐台（1→8）：`docker stop` → `rename` 为 `-bak` → **按原容器 inspect 配置重建**（env/mount/network/端口/日志驱动全量保留）→ 等 `/health` 返回 200（最长 150s）
+3. 健康则删 `-bak` 继续下一台；不健康则删新容器、恢复 `-bak` 并整体中止
+
+##### 7.7.3 坑 4 复发：rolling-update.py 第一版丢了 --hostname
+
+**症状**：v1.3.2 滚动更新后，Grafana Blackbox 探活从 8 掉到 5→0。
+
+**根因**：脚本按 `docker inspect` 重建容器时**漏传 `--hostname`**，新容器 hostname 变回容器 ID（如 `87bf1c144a85`），Docker DNS 无法解析 `crawler-N`，Blackbox 探活失败——与 7.6 节坑 4 完全同源。
+
+**修复**：脚本里显式加 `--hostname crawler-${i}`（不依赖 inspect 里的 Config.Hostname，因为旧值可能已经是错的），重新滚动一遍即恢复。
+
+**验证**：
+
+```bash
+for i in 1 2 3 4 5 6 7 8; do docker inspect hs-sku-crawler-$i --format '{{.Config.Hostname}}'; done
+# 期望输出 crawler-1 .. crawler-8
+
+docker exec monitoring-prometheus wget -qO- \
+  "http://localhost:9090/api/v1/query?query=sum(probe_success%7Bjob%3D%22blackbox%22%7D)"
+# 期望 value = "8"（等一轮 scrape，约 60s）
+```
+
+> 教训：任何"按 inspect 重建容器"的脚本，`--hostname` 不会出现在需要保留的网络配置里，但**必须显式重建**，否则 Blackbox 静默掉线。
+
 ### 8. 部署监控栈（Loki + Promtail + Grafana）
+
 
 容器与 Windows PM2 节点通过 Loki + Promtail + Grafana 统一监控。完整安装说明见项目根目录 [`loki监控.md`](../../loki监控.md)。
 
