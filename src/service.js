@@ -161,6 +161,7 @@ class CrawlerService {
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         onTaskComplete: () => this.checkChannelForRotation(channel),
+        proxyPool: this.proxyPool,
         log: this.log.bind(this),
       });
       await channel.init(this.browser);

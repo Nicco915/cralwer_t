@@ -123,6 +123,61 @@ test('service rotates proxy after consecutive proxy failures', async () => {
   await service.stop();
 });
 
+test('service injects proxyPool into channels so rotateProxy can switch IP', async () => {
+  const assignmentsFile = path.join(os.tmpdir(), `svc-inject-${Date.now()}.json`);
+  const service = new CrawlerService({
+    baseUrl: 'https://example.com',
+    imageDir: path.join(os.tmpdir(), 'imgs'),
+    headless: true,
+    channels: 2,
+    pollInterval: 10000,
+    pollLimit: 10,
+    pushRetries: 1,
+    callbackUrl: 'http://localhost:9999/callback',
+    nodeCode: 'test-node',
+    nodeToken: '',
+    taskUrl: 'http://localhost:9999/tasks',
+    kuaidailiSecretId: 'sid',
+    kuaidailiSecretKey: 'skey',
+    proxyMachineIndex: 0,
+    proxyMachineTotal: 1,
+    proxyRefreshIntervalMs: 60000,
+    proxyAssignmentsFile: assignmentsFile,
+  });
+
+  const fakeBrowser = {
+    isConnected: () => true,
+    close: async () => {},
+    newContext: async (opts) => ({
+      addInitScript: async () => {},
+      newPage: async () => ({
+        isClosed: () => false,
+        evaluate: async () => document.title,
+      }),
+      close: async () => {},
+    }),
+  };
+  service.initBrowser = async () => { service.browser = fakeBrowser; };
+  service.worker = { addChannel: () => {}, stop: () => {}, drain: async () => {}, resetChannels: () => {}, start: () => {} };
+  service.poller = { stop: () => {} };
+  service.proxyPool = {
+    assign: async () => ({ 'ch-1': '1.1.1.1:8080', 'ch-2': '2.2.2.2:8080' }),
+    getProxyForChannel: (id) => ({ 'ch-1': '1.1.1.1:8080', 'ch-2': '2.2.2.2:8080' }[id]),
+    refresh: async () => [],
+    nextForChannel: async (id) => '3.3.3.3:8080',
+  };
+
+  await service.initBrowser();
+  await service.initChannels();
+
+  // 注入修复前 channel.proxyPool 为 undefined，
+  // rotateProxy 会走 "no proxy pool" 分支，超时重试无法换 IP。
+  assert.strictEqual(service.channels[0].proxyPool, service.proxyPool, 'expected proxyPool injected into channel 1');
+  assert.strictEqual(service.channels[1].proxyPool, service.proxyPool, 'expected proxyPool injected into channel 2');
+
+  await service.stop();
+});
+
 test('service uses static proxy for all channels when configured', async () => {
   const service = new CrawlerService({
     baseUrl: 'https://example.com',

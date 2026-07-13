@@ -70,6 +70,9 @@ class Channel {
       || this.config.clearCookiesOnRegionSwitch === 'true';
     this.browser = null;
     this.lastActivityAt = Date.now();
+    // 代理池引用（由 Service.initChannels 注入），rotateProxy 换 IP 用。
+    // 无池配置时为 null，rotateProxy 走 no_pool 分支。
+    this.proxyPool = options.proxyPool || null;
   }
 
   _createProfile() {
