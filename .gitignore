@@ -29,3 +29,6 @@ logs/callbacks/
 # 批量测试产物
 test/batch-runs/
 部署新windows.md
+
+# 本地多区域模板（不入库，按机器自定义复制使用）
+templates/
