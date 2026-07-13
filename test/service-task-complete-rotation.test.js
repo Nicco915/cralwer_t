@@ -22,6 +22,8 @@ describe('Task-complete proxy rotation', () => {
     const channel = {
       id: 1,
       busy: false,
+      browserContext: {},
+      page: {},
       dataLayerFailureCount: 3,
       consecutiveFailures: 0,
       lastFailureWasProxy: false,
@@ -56,6 +58,8 @@ describe('Task-complete proxy rotation', () => {
     const channel = {
       id: 1,
       busy: false,
+      browserContext: {},
+      page: {},
       dataLayerFailureCount: 0,
       consecutiveFailures: 0,
       lastFailureWasProxy: false,
@@ -88,6 +92,8 @@ describe('Task-complete proxy rotation', () => {
       id: 1,
       busy: false,
       reinitializing: false,
+      browserContext: {},
+      page: {},
       dataLayerFailureCount: 3,
       consecutiveFailures: 0,
       lastFailureWasProxy: false,

@@ -504,6 +504,12 @@ class CrawlerService {
     if (channel.busy) {
       return;
     }
+    // 休眠回收态（context/page 已被 idle reaper 关闭）不是故障：
+    // 下个任务到来时 channel.ensureContext() 会懒重建。
+    // 浏览器级故障由 runHealthCheck 的 browserConnected 检查兜底。
+    if (!channel.browserContext && !channel.page) {
+      return;
+    }
 
     const healthy = await channel.isHealthy();
     const proxyFailed = channel.consecutiveFailures >= 2 && channel.lastFailureWasProxy;
