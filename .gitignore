@@ -32,3 +32,4 @@ test/batch-runs/
 
 # 本地多区域模板（不入库，按机器自定义复制使用）
 templates/
+__pycache__/
