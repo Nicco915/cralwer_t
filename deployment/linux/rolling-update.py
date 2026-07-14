@@ -32,6 +32,13 @@ ENV_OVERRIDES = {
     "CLIPROXY_STICKY_MINUTES": "10",  # v1.3.3: sticky 5 -> 10 分钟
 }
 
+# 每节点独立的 cliproxy session prefix（v1.3.4 修复）：
+# cliproxy 以 sid 第一个 "-" 前的字符串作为 session key。
+# 旧格式 "crawler-01-ch1-<nonce>" 第一段恒为 "crawler"，
+# 导致所有容器共享同一 IP。改为 "v01".."v08"（无 "-"）后，
+# 每个容器第一段唯一，获得独立 IP。
+NODE_SESSION_PREFIX = {i: "v%02d" % i for i in NODES}
+
 
 def sh(cmd, check=True):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -77,6 +84,16 @@ def build_run_args(name, idx, spec):
         if seen.get(key) != new:
             print("[roll] %s: env override %s -> %s" % (name, key, val), flush=True)
         seen[key] = new
+    # 每节点独立的 cliproxy session prefix（v1.3.4 修复）
+    # 注意：代码里 CRAWLER_CLIPROXY_SESSION_PREFIX 优先级高于 CLIPROXY_SESSION_PREFIX
+    # （src/cli.js envMap 中前者先出现，且只在 config 值为 undefined 时写入），
+    # 所以两个 env 都必须覆盖，否则旧值仍生效。
+    node_prefix = NODE_SESSION_PREFIX[idx]
+    for key in ("CRAWLER_CLIPROXY_SESSION_PREFIX", "CLIPROXY_SESSION_PREFIX"):
+        new_val = "%s=%s" % (key, node_prefix)
+        if seen.get(key) != new_val:
+            print("[roll] %s: env override %s -> %s" % (name, key, node_prefix), flush=True)
+        seen[key] = new_val
     for e in seen.values():
         args += ["-e", e]
     for b in host["Binds"] or []:
