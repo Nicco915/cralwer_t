@@ -1002,6 +1002,50 @@ myuser-region-EU-sid-crawler-01-ch1-a3f9c2d8-t-30
 
 只要用这个用户名 + 密码访问 Cliproxy 网关，出口 IP 就是欧洲住宅 IP，且 30 分钟内不切换。
 
+#### ⚠️ 关键：cliproxy session key 只取 sid 第一个 `-` 前的部分
+
+**这是 v1.3.4 踩过的坑，必须理解：**
+
+cliproxy 服务端把 `sid` 按 `-` 切分后，**只用第一段作为 session key**。也就是说：
+
+```
+sid = "crawler-01-ch1-a3f9c2d8"
+       ^^^^^^^^^^
+       cliproxy 只认这一段 = "crawler"
+```
+
+如果所有容器的 `SESSION_PREFIX` 都是 `crawler-01`（或任何以 `crawler` 开头的值），那么：
+
+- 8 个容器的第一段全是 `crawler`
+- cliproxy 把它们视为**同一个 session**
+- **8 个容器共享同一个出口 IP**
+
+**正确做法**：`SESSION_PREFIX` 必须满足两个条件：
+
+1. **每个容器唯一**
+2. **不含 `-`**（否则第一段会被截断）
+
+生产 8 容器当前使用 `v01` ~ `v08`：
+
+| 容器 | prefix | sid 示例 | 第一段 |
+|---|---|---|---|
+| hs-sku-crawler-1 | `v01` | `v01-ch1-1b140065` | `v01` |
+| hs-sku-crawler-2 | `v02` | `v02-ch1-341ebe38` | `v02` |
+| ... | ... | ... | ... |
+| hs-sku-crawler-8 | `v08` | `v08-ch1-89a8b61c` | `v08` |
+
+**验证方法**（部署后必做）：
+
+```bash
+for i in 1 2 3 4 5 6 7 8; do
+  SID=$(docker exec hs-sku-crawler-${i} cat /app/output/cliproxy-assignments.json | grep -oE 'sid-[^"]+' | sed 's/sid-//' | sed 's/-t-.*//')
+  IP=$(curl -s --max-time 20 -x "http://$(docker exec hs-sku-crawler-${i} cat /app/output/cliproxy-assignments.json | grep -oE 'http://[^@]+' | sed 's/http://')@us2.cliproxy.io:3010" 'https://ipinfo.io/json' | grep '"ip"' | grep -oE '[0-9.]+')
+  echo "crawler-${i}: sid=${SID} ip=${IP}"
+done
+```
+
+期望输出 8 个不同的 IP。
+
 ---
 
 ## 五、配置 .env
@@ -1218,6 +1262,28 @@ docker compose logs --tail=100 crawler
 - `cliproxy-assignments.json` 在 volume 内，升级不丢失
 - 只有主动调用 `nextForChannel()` 才会生成新 nonce
 - 如果 IP 仍变化，检查是否触发了健康检查轮换
+
+#### Q4：8 个容器出口 IP 全部相同
+
+**根因**：`CLIPROXY_SESSION_PREFIX` 含 `-` 且各容器不唯一。
+
+cliproxy 以 sid 第一个 `-` 前的字符串作为 session key。如果所有容器 prefix 都是 `crawler-01`，第一段全是 `crawler`，被视为同一 session，共享同一 IP。
+
+**修复**：
+
+```bash
+# 1. 确认当前 prefix
+for i in 1 2 3 4 5 6 7 8; do
+  docker exec hs-sku-crawler-${i} env | grep CLIPROXY_SESSION_PREFIX
+done
+
+# 2. 如果输出全是 crawler-01，用 rolling-update.py 重建（脚本已内置 v01~v08 分配）
+python3 /tmp/rolling-update.py v1.3.4
+```
+
+**预防**：`rolling-update.py` 的 `NODE_SESSION_PREFIX` dict 已按节点自动分配 `v01`~`v08`。新增节点时在此 dict 中追加即可。
+
+详见 4.2 节「cliproxy session key 只取 sid 第一个 `-` 前的部分」。
 
 #### Q4：回滚失败提示「未找到 .last_image」
 
