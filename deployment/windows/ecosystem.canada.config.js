@@ -19,7 +19,9 @@ const installDir = process.env.CRAWLER_INSTALL_DIR || path.resolve(__dirname, '.
 //  2. 每进程独立 cwd（instances/<nodeCode>）→ 自动隔离 logs/、output/browser-temp/、
 //     output/cliproxy-assignments.json、output/images/。目录在 PM2 加载本配置时自动创建。
 //  3. 双写 SESSION_PREFIX（CRAWLER_CLIPROXY_SESSION_PREFIX 优先级更高，两个都必须设）。
-//  4. 与 VPS 硬隔离：REGION=CA + ASN=AS11290（VPS 为 DE/AS12897）。
+//  4. 与 VPS 硬隔离：REGION=CA（VPS 为 DE）；且本机每进程独立 ASN（NODE_ASN，
+//     2026-07-15 起），不同 AS 前缀不相交，跨进程撞 IP 结构性不可能。
+//     VPS 侧同日起也是一容器一 ASN（rolling-update.py NODE_ASN）。
 //  5. PARAM_NAME 必须与 VPS 一致（region/asn/sid/t），否则代理 username 编码错误。
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -30,12 +32,12 @@ const installDir = process.env.CRAWLER_INSTALL_DIR || path.resolve(__dirname, '.
 const CLIPROXY_USERNAME = process.env.CLIPROXY_USERNAME || '';
 const CLIPROXY_PASSWORD = process.env.CLIPROXY_PASSWORD || '';
 
-// 所有进程共享的 cliproxy 配置（host/port/region/asn/param 名与 VPS 对齐）
+// 所有进程共享的 cliproxy 配置（host/port/region/param 名与 VPS 对齐）
+// 注意：ASN 不在此处——每进程独立，见下方 NODE_ASN
 const SHARED_PROXY = {
   CLIPROXY_HOST: 'us2.cliproxy.io',
   CLIPROXY_PORT: '3010',
   CLIPROXY_REGION: 'CA',
-  CLIPROXY_ASN: 'AS11290',
   CLIPROXY_STICKY_MINUTES: '10',
   CLIPROXY_REGION_PARAM_NAME: 'region',
   CLIPROXY_ASN_PARAM_NAME: 'asn',
@@ -61,6 +63,27 @@ const NODE_CODES = [
   'crawler-20',
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ 每进程独立 ASN（2026-07-15 起）：原先 8 进程共用 CA/AS11290（Cogeco）一个池，
+//   池侧可能给不同 session 分同一出口 IP（VPS 上 v01/v02 已实测撞车）。
+//   改为一进程一 ASN：不同 AS 的 IP 前缀天然不相交，跨爬虫撞 IP 在结构上不可能。
+//   以下 ASN 全部在 VPS 实测（2026-07-15）cliproxy 加拿大区有真实库存。
+//   备用池（同样实测可用）：AS5645 TekSavvy、AS21949 Beanfield、AS1403 EBOX。
+//   注意：cliproxy 对无库存的 ASN 不报错、静默回落其他池（如 AS855→AS577、
+//   AS22652→AS11260），换 ASN 后必须验证出口 org 与此处目标一致。
+//   增删进程时：NODE_CODES 与 NODE_ASN 必须同步增删（下方有防呆检查）。
+// ─────────────────────────────────────────────────────────────────────────────
+const NODE_ASN = {
+  'crawler-13': 'AS11290', // Cogeco（保留现池）
+  'crawler-14': 'AS577',   // Bell Canada
+  'crawler-15': 'AS812',   // Rogers
+  'crawler-16': 'AS852',   // Telus
+  'crawler-17': 'AS6327',  // Shaw
+  'crawler-18': 'AS5769',  // Videotron
+  'crawler-19': 'AS803',   // SaskTel
+  'crawler-20': 'AS7122',  // Bell MTS
+};
+
 const HEALTH_PORT_BASE = 3100; // 第 1 个进程 -> 3101，依此类推
 
 // sessionPrefix = nodeCode 去掉所有 "-"。crawler-15 -> crawler15。
@@ -82,6 +105,25 @@ function toSessionPrefix(nodeCode) {
       );
     }
     seen.set(p, nc);
+  }
+})();
+
+// 防呆：NODE_ASN 必须覆盖每个 nodeCode 且两两不同——两个进程同 ASN 等于退回共享
+// 一个 IP 池，池侧可能分同一出口 IP（VPS v01/v02 踩过）。
+(function assertPerNodeAsn() {
+  const seen = new Map();
+  for (const nc of NODE_CODES) {
+    const asn = NODE_ASN[nc];
+    if (!asn) {
+      throw new Error('[ecosystem.canada] NODE_ASN 缺少 "' + nc + '" 的 ASN 配置。');
+    }
+    if (seen.has(asn)) {
+      throw new Error(
+        '[ecosystem.canada] ASN 冲突："' + seen.get(asn) + '" 与 "' + nc +
+        '" 都是 "' + asn + '"。每进程必须用不同 ASN。'
+      );
+    }
+    seen.set(asn, nc);
   }
 })();
 
@@ -110,6 +152,8 @@ function makeApp(nodeCode, index) {
       // cliproxy session prefix：自动派生（无 "-"），双写缺一不可
       CRAWLER_CLIPROXY_SESSION_PREFIX: prefix,
       CLIPROXY_SESSION_PREFIX: prefix,
+      // 每进程独立 ASN（防呆已保证存在且唯一）
+      CLIPROXY_ASN: NODE_ASN[nodeCode],
       // 共享代理配置
       ...SHARED_PROXY,
       // 与 stock 对齐的空闲回收参数
