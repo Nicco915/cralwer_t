@@ -143,7 +143,7 @@ curl http://localhost:3101/health
 - **禁止**多进程共用同一 `cwd` / 同一 `cliproxy-assignments.json` → sid 串号。
 - **禁止**依赖 PARAM_NAME 的代码默认值（`country/session/sticky`）→ 必须用 `region/asn/sid/t`。
 - **禁止**两个进程配同一个 ASN，或用未实测的 ASN → 同 ASN 退回共享池可能撞 IP；无库存 ASN 被 cliproxy 静默回落（AS855→AS577、AS22652→AS11260），换 ASN 后必须核对出口 org。配置内有防呆，PM2 加载时直接报错。
-- **禁止**依赖根目录 `.env` 提供任何配置 → 每进程 cwd 是 `instances/<nodeCode>`，`.env` 从 cwd 加载、找不到就**静默跳过**（cli.js:5）。`CRAWLER_TASK_URL` / `CRAWLER_CALLBACK_URL` 等必须在本配置显式注入（`SHARED_UPSTREAM`），否则回落到代码默认上游，表现为「上游查不到心跳」（2026-07-15 实踩）。
+- **禁止**依赖根目录 `.env` 提供任何配置 → 每进程 cwd 是 `instances/<nodeCode>`，`.env` 从 cwd 加载、找不到就**静默跳过**（cli.js:5）。`CRAWLER_TASK_URL` / `CRAWLER_CALLBACK_URL` / `CRAWLER_IMAGE_UPLOAD_URL` 等必须在本配置显式注入（`SHARED_UPSTREAM`），否则分别表现为「上游查不到心跳」（回落到代码默认上游）和「照片永不上传且零报错」（imageUploadUrl 默认为空，service.js 门控跳过创建 uploader）（2026-07-15 实踩）。
 - **禁止**本机与 VPS 使用相同 region+ASN 组合 → 退回同一 IP 池，失去硬隔离。
 
 ## 9. 扩容 / 缩容

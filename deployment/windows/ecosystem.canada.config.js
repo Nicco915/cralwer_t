@@ -43,6 +43,10 @@ const CLIPROXY_PASSWORD = process.env.CLIPROXY_PASSWORD || '';
 const SHARED_UPSTREAM = {
   CRAWLER_TASK_URL: 'http://47.92.233.36:8003/renren-api/classify/open/crawler/tasks',
   CRAWLER_CALLBACK_URL: 'http://47.92.233.36:8003/renren-api/classify/open/crawler/callback',
+  // 图片上传地址：不配则代码默认为空串，service.js 门控直接不创建 uploader，
+  // 任务照跑、回调照发但照片永不上传，且无任何报错（比 TASK_URL 缺失更隐蔽）。
+  CRAWLER_IMAGE_UPLOAD_URL: 'http://47.92.233.36:8003/renren-api/classify/open/image/upload',
+  // 上传并发/重试用代码默认值 2/3，与 VPS 一致，无需显式注入
   CRAWLER_NODE_TOKEN: '',
 };
 
