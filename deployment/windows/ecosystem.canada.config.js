@@ -18,6 +18,8 @@ const installDir = process.env.CRAWLER_INSTALL_DIR || path.resolve(__dirname, '.
 //     会被截断（crawler-15 -> crawler），多进程撞同一出口 IP（VPS 踩过的坑）。
 //  2. 每进程独立 cwd（instances/<nodeCode>）→ 自动隔离 logs/、output/browser-temp/、
 //     output/cliproxy-assignments.json、output/images/。目录在 PM2 加载本配置时自动创建。
+//     副作用：根目录 .env 不会被加载（cli.js 从 cwd 读），所有 env 必须在本文件显式注入
+//     （含 CRAWLER_TASK_URL / CRAWLER_CALLBACK_URL，见 SHARED_UPSTREAM）。
 //  3. 双写 SESSION_PREFIX（CRAWLER_CLIPROXY_SESSION_PREFIX 优先级更高，两个都必须设）。
 //  4. 与 VPS 硬隔离：REGION=CA（VPS 为 DE）；且本机每进程独立 ASN（NODE_ASN，
 //     2026-07-15 起），不同 AS 前缀不相交，跨进程撞 IP 结构性不可能。
@@ -31,6 +33,18 @@ const installDir = process.env.CRAWLER_INSTALL_DIR || path.resolve(__dirname, '.
 //   b) 直接把下面 '' 改成真实值（本机私有，改完勿提交）
 const CLIPROXY_USERNAME = process.env.CLIPROXY_USERNAME || '';
 const CLIPROXY_PASSWORD = process.env.CLIPROXY_PASSWORD || '';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ 上游任务/回调地址：必须与 VPS 及其他 Windows 机器一致。
+//   必须显式写在这里——每进程 cwd 是 instances/<nodeCode>，根目录 .env 根本
+//   不会被加载（cli.js:5 从 process.cwd() 读 .env，找不到就静默跳过），
+//   不配则进程回落到代码默认 taskUrl（错误的上游），表现为"上游查不到心跳"。
+// ─────────────────────────────────────────────────────────────────────────────
+const SHARED_UPSTREAM = {
+  CRAWLER_TASK_URL: 'http://47.92.233.36:8003/renren-api/classify/open/crawler/tasks',
+  CRAWLER_CALLBACK_URL: 'http://47.92.233.36:8003/renren-api/classify/open/crawler/callback',
+  CRAWLER_NODE_TOKEN: '',
+};
 
 // 所有进程共享的 cliproxy 配置（host/port/region/param 名与 VPS 对齐）
 // 注意：ASN 不在此处——每进程独立，见下方 NODE_ASN
@@ -156,6 +170,8 @@ function makeApp(nodeCode, index) {
       CLIPROXY_ASN: NODE_ASN[nodeCode],
       // 共享代理配置
       ...SHARED_PROXY,
+      // 上游任务/回调地址（根目录 .env 不会被加载，必须显式注入）
+      ...SHARED_UPSTREAM,
       // 与 stock 对齐的空闲回收参数
       CRAWLER_IDLE_RECLAIM_MS: process.env.CRAWLER_IDLE_RECLAIM_MS || '300000',
       CRAWLER_IDLE_REAP_INTERVAL_MS: process.env.CRAWLER_IDLE_REAP_INTERVAL_MS || '30000',
