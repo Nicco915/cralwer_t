@@ -39,6 +39,25 @@ ENV_OVERRIDES = {
 # 每个容器第一段唯一，获得独立 IP。
 NODE_SESSION_PREFIX = {i: "v%02d" % i for i in NODES}
 
+# 每节点独立的 cliproxy ASN（v1.3.5）：8 容器原先共用 DE/AS12897 小池，
+# 池子侧偶发给不同 session 分同一出口 IP（v01/v02 撞 94.46.92.173）。
+# 改为一容器一 ASN：不同 AS 的 IP 前缀天然不相交，跨爬虫撞 IP 在结构上不可能。
+# 以下 8 个 ASN 已在 VPS 实测（2026-07-15）cliproxy 有真实库存：
+#   AS3320=Telekom AS3209=Vodafone AS6805=O2 AS8881=1&1
+#   AS9145=EWE-Tel AS13045=htp AS8767=M-net AS12897=ENTEGA（保留现池）
+# 注意：cliproxy 对无库存的 ASN 不报错、静默回落到其他池
+# （如 AS31334->AS3209、AS29562->AS3320），换 ASN 后必须验证出口 org 与目标一致。
+NODE_ASN = {
+    1: "AS3320",
+    2: "AS3209",
+    3: "AS6805",
+    4: "AS8881",
+    5: "AS9145",
+    6: "AS13045",
+    7: "AS8767",
+    8: "AS12897",
+}
+
 
 def sh(cmd, check=True):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -94,6 +113,12 @@ def build_run_args(name, idx, spec):
         if seen.get(key) != new_val:
             print("[roll] %s: env override %s -> %s" % (name, key, node_prefix), flush=True)
         seen[key] = new_val
+    # 每节点独立的 cliproxy ASN（v1.3.5）：一容器一 ASN，跨爬虫 IP 结构性不相交
+    node_asn = NODE_ASN[idx]
+    new_val = "CLIPROXY_ASN=%s" % node_asn
+    if seen.get("CLIPROXY_ASN") != new_val:
+        print("[roll] %s: env override CLIPROXY_ASN -> %s" % (name, node_asn), flush=True)
+    seen["CLIPROXY_ASN"] = new_val
     for e in seen.values():
         args += ["-e", e]
     for b in host["Binds"] or []:
