@@ -56,6 +56,9 @@ const NODE_CODES = [
   'crawler-15',
   'crawler-16',
   'crawler-17',
+  'crawler-18',
+  'crawler-19',
+  'crawler-20',
 ];
 
 const HEALTH_PORT_BASE = 3100; // 第 1 个进程 -> 3101，依此类推

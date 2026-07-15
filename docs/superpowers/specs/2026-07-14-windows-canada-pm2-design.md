@@ -64,6 +64,9 @@ const NODE_CODES = [
   'crawler-15',
   'crawler-16',
   'crawler-17',
+  'crawler-18',
+  'crawler-19',
+  'crawler-20',
 ];
 ```
 
@@ -76,6 +79,9 @@ const NODE_CODES = [
 | crawler-15 | `crawler-15` | `crawler15` | 3103 | `instances/crawler-15` |
 | crawler-16 | `crawler-16` | `crawler16` | 3104 | `instances/crawler-16` |
 | crawler-17 | `crawler-17` | `crawler17` | 3105 | `instances/crawler-17` |
+| crawler-18 | `crawler-18` | `crawler18` | 3106 | `instances/crawler-18` |
+| crawler-19 | `crawler-19` | `crawler19` | 3107 | `instances/crawler-19` |
+| crawler-20 | `crawler-20` | `crawler20` | 3108 | `instances/crawler-20` |
 
 所有进程共享（`SHARED_PROXY`）：
 
