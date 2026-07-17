@@ -506,7 +506,7 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 | `--checkpoint` | `CRAWLER_CHECKPOINT` | `{output}/checkpoint.json` | Resume checkpoint file |
 | `--result` | `CRAWLER_RESULT` | `{output}/vevor_result.xlsx` | Result Excel path |
 | `--base-url` | `CRAWLER_BASE_URL` | `https://eur.vevor.com` | VEVOR site base URL |
-| `--regions` | `CRAWLER_REGIONS` | 内置五区域（US 当前禁用） | 区域码→站点映射（空值=禁用），如 `EU=https://eur.vevor.com,GB=...,CA=...`。US 因 DE 代理被地理重定向到 .de 而内置禁用，生产仅配 EU/GB/CA |
+| `--regions` | `CRAWLER_REGIONS` | 内置五区域（US 已启用） | 区域码→站点映射（空值=禁用），如 `EU=https://eur.vevor.com,GB=...,CA=...,US=...`。US 通过 `cdn_toggle_domain` Cookie 绕过 DE geo 重定向，默认可用 |
 | `--default-region` | `CRAWLER_DEFAULT_REGION` | `EU` | task 缺 regionCode 时的默认区域 |
 | `--clear-cookies-on-region-switch` | `CRAWLER_CLEAR_COOKIES_ON_REGION_SWITCH` | `false` | 通道热切换区域时清空 cookie |
 | `--order` | `CRAWLER_ORDER` | `forward` | `forward` or `reverse` |
