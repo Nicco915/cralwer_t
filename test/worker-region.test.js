@@ -89,3 +89,123 @@ describe('Worker multi-region routing', () => {
     assert.strictEqual(channel.crawlCalls[0].baseUrl, undefined);
   });
 });
+
+function makeChannelWithFallbackResponse() {
+  return {
+    id: 1,
+    busy: false,
+    reinitializing: false,
+    onTaskComplete: null,
+    crawlCalls: [],
+    async crawl(task) {
+      this.crawlCalls.push(task);
+      const baseUrl = task.baseUrl || '';
+      if (baseUrl === 'https://www.vevor.com') {
+        return {
+          sku: task.sku,
+          status: 'success',
+          product_name: 'X',
+          product_url: `${baseUrl}/p/X`,
+          features_details: '',
+          product_specification: '',
+        };
+      }
+      return {
+        sku: task.sku,
+        status: 'not_found',
+        error: 'Page shows no result',
+        product_name: '',
+        product_url: '',
+        features_details: '',
+        product_specification: '',
+      };
+    },
+  };
+}
+
+function makeChannelReturningNotFound(error) {
+  return {
+    id: 1,
+    busy: false,
+    reinitializing: false,
+    onTaskComplete: null,
+    crawlCalls: [],
+    async crawl(task) {
+      this.crawlCalls.push(task);
+      return {
+        sku: task.sku,
+        status: 'not_found',
+        error,
+        product_name: '',
+        product_url: '',
+        features_details: '',
+        product_specification: '',
+      };
+    },
+  };
+}
+
+describe('Worker no-result fallback to US', () => {
+  [
+    { code: 'GB', baseUrl: 'https://www.vevor.co.uk' },
+    { code: 'EU', baseUrl: 'https://eur.vevor.com' },
+    { code: 'CA', baseUrl: 'https://www.vevor.ca' },
+  ].forEach(({ code, baseUrl }) => {
+    it.todo(`${code} page shows no result -> fallback to US and keeps regionCode as ${code}`, async () => {
+      const pusher = makePusher();
+      const channel = makeChannelWithFallbackResponse();
+      const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
+      const task = { crawlerTaskId: 10, sku: 'S10', regionCode: code };
+      const result = await worker.runTask(task, channel);
+
+      assert.strictEqual(channel.crawlCalls.length, 2);
+      assert.strictEqual(channel.crawlCalls[0].baseUrl, baseUrl);
+      assert.strictEqual(channel.crawlCalls[1].baseUrl, 'https://www.vevor.com');
+      assert.strictEqual(channel.crawlCalls[1].regionCode, code);
+      assert.strictEqual(channel.crawlCalls[1].sku, task.sku);
+      assert.strictEqual(channel.crawlCalls[1].crawlerTaskId, task.crawlerTaskId);
+      assert.strictEqual(result.status, 'success');
+      assert.strictEqual(result.regionCode, code);
+      assert.strictEqual(pusher.pushed.length, 1);
+      assert.strictEqual(pusher.pushed[0].regionCode, code);
+    });
+  });
+
+  it('US page shows no result -> does not fallback again', async () => {
+    const pusher = makePusher();
+    const channel = makeChannelReturningNotFound('Page shows no result');
+    const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
+    const result = await worker.runTask({ crawlerTaskId: 13, sku: 'S13', regionCode: 'US' }, channel);
+
+    assert.strictEqual(channel.crawlCalls.length, 1);
+    assert.strictEqual(channel.crawlCalls[0].baseUrl, 'https://www.vevor.com');
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.error, 'Page shows no result');
+  });
+
+  it('does not fallback for "No product URL found"', async () => {
+    const pusher = makePusher();
+    const channel = makeChannelReturningNotFound('No product URL found');
+    const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
+    const result = await worker.runTask({ crawlerTaskId: 14, sku: 'S14', regionCode: 'GB' }, channel);
+
+    assert.strictEqual(channel.crawlCalls.length, 1);
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.error, 'No product URL found');
+  });
+
+  it('does not fallback when US is disabled in RegionRegistry', async () => {
+    const pusher = makePusher();
+    const channel = makeChannelWithFallbackResponse();
+    const worker = new Worker({
+      pusher,
+      log: () => {},
+      regionRegistry: new RegionRegistry({ regions: 'US=' }),
+    });
+    const result = await worker.runTask({ crawlerTaskId: 15, sku: 'S15', regionCode: 'GB' }, channel);
+
+    assert.strictEqual(channel.crawlCalls.length, 1);
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.error, 'Page shows no result');
+  });
+});
