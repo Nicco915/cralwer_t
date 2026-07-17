@@ -43,7 +43,7 @@ const DEFAULT_CONFIG = {
   cloudflareMaxWait: 45,
   dataLayerMaxRetries: 1,
   dataLayerFailureThreshold: 3,
-  taskTimeoutMs: 130000,
+  taskTimeoutMs: 200000,
   retryOnTimeout: true,
   handleSignals: true,
   testCount: 0,
@@ -90,8 +90,8 @@ function resolveConfig(config) {
   cfg.testCount = Number(cfg.testCount);
 
   const taskTimeoutMsRaw = process.env.CRAWLER_TASK_TIMEOUT_MS;
-  const taskTimeoutMsParsed = taskTimeoutMsRaw ? parseInt(taskTimeoutMsRaw, 10) : 130000;
-  cfg.taskTimeoutMs = Number.isNaN(taskTimeoutMsParsed) ? 130000 : taskTimeoutMsParsed;
+  const taskTimeoutMsParsed = taskTimeoutMsRaw ? parseInt(taskTimeoutMsRaw, 10) : 200000;
+  cfg.taskTimeoutMs = Number.isNaN(taskTimeoutMsParsed) ? 200000 : taskTimeoutMsParsed;
   cfg.retryOnTimeout = process.env.CRAWLER_RETRY_ON_TIMEOUT !== 'false';
 
   return cfg;

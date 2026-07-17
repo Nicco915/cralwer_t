@@ -44,7 +44,7 @@ function buildServiceConfig(config) {
     gotoMaxRetries: config.gotoMaxRetries !== undefined ? Number(config.gotoMaxRetries) : 1,
     gotoTimeout: config.gotoTimeout !== undefined ? Number(config.gotoTimeout) : 30000,
     gotoRetryDelays: config.gotoRetryDelays || [3000, 6000, 12000],
-    taskTimeoutMs: config.taskTimeoutMs !== undefined ? Number(config.taskTimeoutMs) : 130000,
+    taskTimeoutMs: config.taskTimeoutMs !== undefined ? Number(config.taskTimeoutMs) : 200000,
     retryOnTimeout: config.retryOnTimeout !== false && config.retryOnTimeout !== 'false',
     headedFallback: config.headedFallback !== false && config.headedFallback !== 'false' && config.headedFallback !== '',
     pageRefreshAfterTasks: config.pageRefreshAfterTasks !== undefined ? Number(config.pageRefreshAfterTasks) : 20,

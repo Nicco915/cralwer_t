@@ -116,7 +116,7 @@ describe('bin/run service config', () => {
 
   it('uses timeout/retry defaults when not provided', () => {
     const config = buildServiceConfig({});
-    assert.strictEqual(config.taskTimeoutMs, 130000);
+    assert.strictEqual(config.taskTimeoutMs, 200000);
     assert.strictEqual(config.retryOnTimeout, true);
   });
 

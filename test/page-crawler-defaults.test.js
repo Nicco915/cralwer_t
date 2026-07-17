@@ -23,13 +23,13 @@ describe('PageCrawler default retry counts', () => {
 
 describe('VevorCrawler timeout config defaults', () => {
   it('DEFAULT_CONFIG contains taskTimeoutMs and retryOnTimeout', () => {
-    assert.strictEqual(DEFAULT_CONFIG.taskTimeoutMs, 130000);
+    assert.strictEqual(DEFAULT_CONFIG.taskTimeoutMs, 200000);
     assert.strictEqual(DEFAULT_CONFIG.retryOnTimeout, true);
   });
 
-  it('defaults taskTimeoutMs to 130000 and retryOnTimeout to true', () => {
+  it('defaults taskTimeoutMs to 200000 and retryOnTimeout to true', () => {
     const crawler = new VevorCrawler({ inputExcel: './test/fixtures/sku-list.xlsx' });
-    assert.strictEqual(crawler.config.taskTimeoutMs, 130000);
+    assert.strictEqual(crawler.config.taskTimeoutMs, 200000);
     assert.strictEqual(crawler.config.retryOnTimeout, true);
   });
 
@@ -56,12 +56,12 @@ describe('VevorCrawler timeout config defaults', () => {
     }
   });
 
-  it('falls back to 130000 when taskTimeoutMs env var is invalid', () => {
+  it('falls back to 200000 when taskTimeoutMs env var is invalid', () => {
     const originalTaskTimeout = process.env.CRAWLER_TASK_TIMEOUT_MS;
     process.env.CRAWLER_TASK_TIMEOUT_MS = 'abc';
     try {
       const crawler = new VevorCrawler({ inputExcel: './test/fixtures/sku-list.xlsx' });
-      assert.strictEqual(crawler.config.taskTimeoutMs, 130000);
+      assert.strictEqual(crawler.config.taskTimeoutMs, 200000);
     } finally {
       if (originalTaskTimeout === undefined) {
         delete process.env.CRAWLER_TASK_TIMEOUT_MS;

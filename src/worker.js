@@ -20,7 +20,7 @@ class Worker {
     this.maxQueueSize = options.maxQueueSize || 50;
     this.inFlightTaskIds = new Set();
     this.retryOnTimeout = options.retryOnTimeout !== false;
-    this.taskTimeoutMs = (options && options.taskTimeoutMs) || 130000;
+    this.taskTimeoutMs = (options && options.taskTimeoutMs) || 200000;
   }
 
   // 决定是否对单 task 触发换 IP 重试。
@@ -214,7 +214,7 @@ class Worker {
       return result;
     })();
 
-    // Deadline 兜底：单 task 整体 crawl+retry 不超过 taskTimeoutMs（默认 130s）
+    // Deadline 兜底：单 task 整体 crawl+retry 不超过 taskTimeoutMs（默认 200s）
     let deadlineReject;
     const deadlinePromise = new Promise((_, reject) => {
       deadlineReject = reject;
