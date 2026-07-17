@@ -24,6 +24,26 @@ function encodeSkuForSearchPath(sku) {
   return sku.replace(/-/g, '%2D');
 }
 
+// VEVOR 会根据客户端 IP 的地理位置对 www.vevor.com 做 302 重定向（如 DE → .de）。
+// 注入 cdn_toggle_domain=1 Cookie 可跳过该 geo 重定向，使非美国 IP 也能访问 US 站。
+async function injectGeoBypassCookie(page, url) {
+  if (!page || typeof page.context !== 'function') return;
+  let hostname;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return;
+  }
+  if (hostname !== 'www.vevor.com') return;
+  const context = page.context();
+  if (!context || typeof context.addCookies !== 'function') return;
+  const existing = typeof context.cookies === 'function' ? await context.cookies() : [];
+  if (existing.some(c => c.name === 'cdn_toggle_domain' && c.domain === 'www.vevor.com')) return;
+  await context.addCookies([
+    { name: 'cdn_toggle_domain', value: '1', domain: 'www.vevor.com', path: '/' },
+  ]);
+}
+
 class PageCrawler {
   constructor(options) {
     this.config = resolveConfig(options);
@@ -354,6 +374,7 @@ class PageCrawler {
     try {
       const searchUrl = `${baseUrl}/s/${encodeSkuForSearchPath(sku)}`;
       this.log(`[${sku}] Searching: ${searchUrl}`);
+      await injectGeoBypassCookie(page, searchUrl);
       await gotoWithRetry(page, searchUrl, {
         sku,
         gotoMaxRetries: this.gotoMaxRetries,
@@ -411,6 +432,7 @@ class PageCrawler {
       }
 
       result.product_url = productUrl;
+      await injectGeoBypassCookie(page, productUrl);
       await gotoWithRetry(page, productUrl, {
         sku,
         gotoMaxRetries: this.gotoMaxRetries,
