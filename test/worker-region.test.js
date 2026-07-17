@@ -151,12 +151,17 @@ describe('Worker no-result fallback to US', () => {
     { code: 'EU', baseUrl: 'https://eur.vevor.com' },
     { code: 'CA', baseUrl: 'https://www.vevor.ca' },
   ].forEach(({ code, baseUrl }) => {
-    it.todo(`${code} page shows no result -> fallback to US and keeps regionCode as ${code}`, async () => {
+    it(`${code} page shows no result -> fallback to US and keeps regionCode as ${code}`, async () => {
       const pusher = makePusher();
       const channel = makeChannelWithFallbackResponse();
       const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
       const task = { crawlerTaskId: 10, sku: 'S10', regionCode: code };
       const result = await worker.runTask(task, channel);
+
+      assert.deepStrictEqual(
+        { crawlerTaskId: task.crawlerTaskId, sku: task.sku, regionCode: task.regionCode },
+        { crawlerTaskId: 10, sku: 'S10', regionCode: code }
+      );
 
       assert.strictEqual(channel.crawlCalls.length, 2);
       assert.strictEqual(channel.crawlCalls[0].baseUrl, baseUrl);

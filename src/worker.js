@@ -6,6 +6,12 @@ class TaskDeadlineError extends Error {
   }
 }
 
+const NO_RESULT_FALLBACKS = {
+  GB: 'US',
+  EU: 'US',
+  CA: 'US',
+};
+
 class Worker {
   constructor(options) {
     this.channels = [];
@@ -168,6 +174,29 @@ class Worker {
       } catch (e) {
         this.log(`[Worker] Crawl failed task ${task.crawlerTaskId} sku ${task.sku}: ${e.message}`);
         result = this.buildErrorResult(task, e);
+      }
+
+      // 区域无结果兜底：UK/EU/CA 搜索页明确无结果时，到 US 站点再试一次
+      if (result && result.status === 'not_found' && result.error === 'Page shows no result') {
+        const fallbackRegion = NO_RESULT_FALLBACKS[task.regionCode];
+        if (fallbackRegion && this.regionRegistry) {
+          const fallbackBaseUrl = this.regionRegistry.resolve(fallbackRegion);
+          if (fallbackBaseUrl) {
+            this.log(`[Worker] task ${task.crawlerTaskId} page shows no result on ${task.regionCode}, falling back to ${fallbackRegion}`);
+            if (cancelled) {
+              this.log(`[Worker] task ${task.crawlerTaskId} fallback cancelled: deadline already exceeded`);
+              return result;
+            }
+            const fallbackTask = { ...task, baseUrl: fallbackBaseUrl };
+            try {
+              result = await channel.crawl(fallbackTask);
+              this.log(`[Worker] Fallback crawl finished task ${task.crawlerTaskId} status ${result.status}`);
+            } catch (fallbackErr) {
+              this.log(`[Worker] Fallback crawl failed task ${task.crawlerTaskId}: ${fallbackErr.message}`);
+              result = this.buildErrorResult(task, fallbackErr);
+            }
+          }
+        }
       }
 
       // 换 IP 重试：针对 crawl 抛异常或返回异常 result 的场景
