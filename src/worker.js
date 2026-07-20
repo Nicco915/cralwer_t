@@ -6,6 +6,8 @@ class TaskDeadlineError extends Error {
   }
 }
 
+const { classifyGotoError } = require('./page-crawler');
+
 const NO_RESULT_FALLBACKS = {
   GB: 'US',
   EU: 'US',
@@ -41,8 +43,13 @@ class Worker {
       return true;
     }
 
-    if (result.status === 'error' && typeof result.error === 'string' && /Timeout \d+ms exceeded/.test(result.error)) {
-      return true;
+    // 网络/代理类 goto 失败（Timeout、net::ERR_TIMED_OUT、ERR_TUNNEL_CONNECTION_FAILED 等）：
+    // 坏出口的典型信号，换 IP 重试一次。HTTP 4xx/5xx 等非网络错误不触发。
+    if (result.status === 'error' && typeof result.error === 'string') {
+      const category = classifyGotoError({ message: result.error });
+      if (category === 'retryable' || category === 'proxy') {
+        return true;
+      }
     }
 
     if (result.status === 'timeout') {

@@ -48,9 +48,36 @@ describe('Worker.shouldRetryWithNewIp', () => {
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
+  it('returns true for net::ERR_TIMED_OUT goto error', () => {
+    const channel = { reinitializing: false };
+    const result = {
+      status: 'error',
+      error: 'page.goto: net::ERR_TIMED_OUT at https://www.vevor.ca/s/ABC\nCall log:\n  - navigating to "https://www.vevor.ca/s/ABC", waiting until "domcontentloaded"\n',
+    };
+    assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
+  });
+
+  it('returns true for proxy-class goto error (tunnel failed)', () => {
+    const channel = { reinitializing: false };
+    const result = { status: 'error', error: 'page.goto: net::ERR_TUNNEL_CONNECTION_FAILED' };
+    assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
+  });
+
+  it('returns true for proxy-class goto error (proxy connection failed)', () => {
+    const channel = { reinitializing: false };
+    const result = { status: 'error', error: 'page.goto: net::ERR_PROXY_CONNECTION_FAILED' };
+    assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
+  });
+
+  it('returns false for non-retryable HTTP status errors', () => {
+    const channel = { reinitializing: false };
+    const result = { status: 'error', error: 'page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE' };
+    assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), false);
+  });
+
   it('returns false for other errors', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'ERR_TUNNEL_CONNECTION_FAILED' };
+    const result = { status: 'error', error: 'Protocol error: Target closed' };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), false);
   });
 
