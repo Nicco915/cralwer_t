@@ -30,6 +30,9 @@ HEALTH_TIMEOUT = 150
 # 新容器快照延续到后续滚动更新）。不需要改 env 时保持为空 dict。
 ENV_OVERRIDES = {
     "CLIPROXY_STICKY_MINUTES": "10",  # v1.3.3: sticky 5 -> 10 分钟
+    # 2026-07-20 事故：旧入口 us2.cliproxy.io 出口间歇挂起（CONNECT 后不响应）、
+    # 延迟 2-7s；官方推荐入口 us.arxlabs.io 实测 8 个 ASN 全部命中且 <1.5s。
+    "CLIPROXY_HOST": "us.arxlabs.io",
 }
 
 # 每节点独立的 cliproxy session prefix（v1.3.4 修复）：
