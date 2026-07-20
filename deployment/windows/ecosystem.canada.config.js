@@ -50,6 +50,14 @@ const SHARED_UPSTREAM = {
   CRAWLER_NODE_TOKEN: '',
 };
 
+// 显式声明区域映射（与内置默认一致；内置 US 默认启用见 region-registry.js）。
+// 本机每进程独立 cwd，根目录 .env 不会被加载，因此必须在此显式注入。
+// 若未来 BUILT_IN_REGIONS 新增区域或改 URL，需同步更新此处。
+const SHARED_REGIONS = {
+  CRAWLER_REGIONS: 'EU=https://eur.vevor.com,GB=https://www.vevor.co.uk,CA=https://www.vevor.ca,US=https://www.vevor.com',
+  CRAWLER_DEFAULT_REGION: 'EU',
+};
+
 // 所有进程共享的 cliproxy 配置（host/port/region/param 名与 VPS 对齐）
 // 注意：ASN 不在此处——每进程独立，见下方 NODE_ASN
 const SHARED_PROXY = {
@@ -176,6 +184,7 @@ function makeApp(nodeCode, index) {
       ...SHARED_PROXY,
       // 上游任务/回调地址（根目录 .env 不会被加载，必须显式注入）
       ...SHARED_UPSTREAM,
+      ...SHARED_REGIONS,
       // 与 stock 对齐的空闲回收参数
       CRAWLER_IDLE_RECLAIM_MS: process.env.CRAWLER_IDLE_RECLAIM_MS || '300000',
       CRAWLER_IDLE_REAP_INTERVAL_MS: process.env.CRAWLER_IDLE_REAP_INTERVAL_MS || '30000',
