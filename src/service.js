@@ -10,6 +10,7 @@ const { resolveBrowserPath } = require('./crawler');
 const { KuaidailiClient } = require('./kuaidaili-client');
 const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
+const { fetchExitInfo } = require('./proxy-exit-check');
 const { ImageUploader } = require('./image-uploader');
 const { createStdoutLogger, createFileLogger, createBroadcastLogger } = require('./logger');
 const { RegionRegistry } = require('./region-registry');
@@ -158,10 +159,15 @@ class CrawlerService {
           adaptiveDataLayerThreshold: this.config.adaptiveDataLayerThreshold,
           dataLayerProxyRotationThreshold: this.config.dataLayerProxyRotationThreshold,
           cliproxyRotationCooldownMs: this.config.cliproxyRotationCooldownMs,
+          cliproxyAsn: this.config.cliproxyAsn,
+          proxyExitVerifyAttempts: this.config.proxyExitVerifyAttempts,
         },
         headedBrowserLauncher: () => this.initBrowser({ headless: false }),
         onTaskComplete: () => this.checkChannelForRotation(channel),
         proxyPool: this.proxyPool,
+        proxyExitChecker: this.proxyPool && this.config.cliproxyAsn
+          ? (proxyUrl) => fetchExitInfo(proxyUrl, { timeoutMs: this.config.proxyExitCheckTimeoutMs || 8000 })
+          : null,
         log: this.log.bind(this),
       });
       await channel.init(this.browser);

@@ -115,6 +115,21 @@ describe('CliproxyPool', () => {
     try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
   });
 
+  it('force rotation bypasses cooldown and returns a fresh session', async () => {
+    const pool = createPool({ rotationCooldownMs: 60000 });
+    await pool.assign();
+
+    const first = await pool.nextForChannel('ch-1');
+    const second = await pool.nextForChannel('ch-1', { force: true });
+    const third = await pool.nextForChannel('ch-1', { force: true });
+
+    assert.notStrictEqual(second, first);
+    assert.notStrictEqual(third, second);
+    assert.strictEqual(pool.getProxyForChannel('ch-1'), third);
+
+    try { fs.unlinkSync(pool.assignmentsFile); } catch (e) {}
+  });
+
   it('reuses nonce from previous URL even when sessionPrefix contains dashes', async () => {
     const assignmentsFile = path.join(os.tmpdir(), `cliproxy-${Date.now()}.json`);
     const pool1 = createPool({ sessionPrefix: 'crawler-t-01' }, assignmentsFile);

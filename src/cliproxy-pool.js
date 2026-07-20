@@ -97,11 +97,11 @@ class CliproxyPool {
     return this.currentAssignments[channelId];
   }
 
-  async nextForChannel(channelId) {
+  async nextForChannel(channelId, options = {}) {
     const now = Date.now();
     const last = this.lastRotation[channelId] || 0;
 
-    if (now - last < this.rotationCooldownMs) {
+    if (!options.force && now - last < this.rotationCooldownMs) {
       return this.currentAssignments[channelId];
     }
 

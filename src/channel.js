@@ -73,6 +73,14 @@ class Channel {
     // 代理池引用（由 Service.initChannels 注入），rotateProxy 换 IP 用。
     // 无池配置时为 null，rotateProxy 走 no_pool 分支。
     this.proxyPool = options.proxyPool || null;
+    // 出口校验（可选）：rotateProxy 换 IP 前验证新出口 org 命中目标 ASN。
+    // cliproxy 对无效 ASN 静默回落、也可能分到挂起的出口，不校验会把浏览器
+    // reinit 到死代理上。checker 签名：async (proxyUrl) => ({ ip, org })，失败抛异常。
+    this.proxyExitChecker = options.proxyExitChecker || null;
+    this.expectedProxyAsn = this.config.cliproxyAsn || '';
+    this.proxyExitVerifyAttempts = this.config.proxyExitVerifyAttempts !== undefined
+      ? this.config.proxyExitVerifyAttempts
+      : 3;
   }
 
   _createProfile() {
@@ -543,11 +551,45 @@ class Channel {
       }
 
       const channelId = `ch-${this.id}`;
-      const newProxy = await this.proxyPool.nextForChannel(channelId);
+      const verifyExit = !!(this.proxyExitChecker && this.expectedProxyAsn);
+      const maxCandidates = verifyExit ? Math.max(1, this.proxyExitVerifyAttempts) : 1;
+      let newProxy = null;
+      let exitOrg = null;
+      let degraded = false;
+
+      for (let i = 0; i < maxCandidates; i++) {
+        newProxy = await this.proxyPool.nextForChannel(channelId, { force: i > 0 });
+        if (!verifyExit) {
+          break;
+        }
+        try {
+          const exit = await this.proxyExitChecker(newProxy);
+          // 兼容两种出口查询格式：mayips 的 asn 字段（精确匹配）与 ipinfo 的 org 字段（包含匹配）
+          exitOrg = exit && (exit.asn || exit.org) ? (exit.asn || exit.org) : null;
+          const matched = exit && (
+            (exit.asn && exit.asn === this.expectedProxyAsn) ||
+            (exit.org && exit.org.includes(this.expectedProxyAsn))
+          );
+          if (matched) {
+            degraded = false;
+            break;
+          }
+          this.log(`[Channel ${this.id}] rotateProxy(${reason}): candidate ${i + 1}/${maxCandidates} exit org "${exitOrg || 'unknown'}" does not match ${this.expectedProxyAsn}, re-rolling`);
+          degraded = true;
+        } catch (checkErr) {
+          this.log(`[Channel ${this.id}] rotateProxy(${reason}): candidate ${i + 1}/${maxCandidates} exit check failed: ${checkErr.message}, re-rolling`);
+          exitOrg = null;
+          degraded = true;
+        }
+      }
+
+      if (degraded) {
+        this.log(`[Channel ${this.id}] rotateProxy(${reason}): WARNING no candidate matched ${this.expectedProxyAsn} after ${maxCandidates} attempt(s), using last candidate anyway (exit org: ${exitOrg || 'unknown'})`);
+      }
       this.log(`[Channel ${this.id}] rotateProxy(${reason}): rotating to ${maskProxyUrl(newProxy)}`);
       await this.reinit(browser, newProxy);
       this.recordIpRotation();
-      return { rotated: true, reason: 'success' };
+      return { rotated: true, reason: 'success', degraded, exitOrg };
     } catch (e) {
       this.log(`[Channel ${this.id}] rotateProxy(${reason}) failed: ${e.message}`);
       return { rotated: false, reason: 'error', error: e.message };

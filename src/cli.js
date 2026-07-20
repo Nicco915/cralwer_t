@@ -239,6 +239,8 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_ADAPTIVE_DATA_LAYER_THRESHOLD: 'adaptiveDataLayerThreshold',
     CRAWLER_DATA_LAYER_PROXY_ROTATION_THRESHOLD: 'dataLayerProxyRotationThreshold',
     CRAWLER_CLIPROXY_ROTATION_COOLDOWN_MS: 'cliproxyRotationCooldownMs',
+    CRAWLER_PROXY_EXIT_VERIFY_ATTEMPTS: 'proxyExitVerifyAttempts',
+    CRAWLER_PROXY_EXIT_CHECK_TIMEOUT_MS: 'proxyExitCheckTimeoutMs',
     CRAWLER_REGIONS: 'regions',
     CRAWLER_DEFAULT_REGION: 'defaultRegion',
     CRAWLER_CLEAR_COOKIES_ON_REGION_SWITCH: 'clearCookiesOnRegionSwitch',
