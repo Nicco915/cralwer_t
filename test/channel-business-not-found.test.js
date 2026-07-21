@@ -111,13 +111,22 @@ describe('Channel.crawl business not-found (dataLayerNotFound=true) does not tri
 
 describe('Channel.crawl real dataLayer failure (dataLayerFailed=true, dataLayerNotFound=false)', () => {
   it('when status is not_found, increments dataLayerFailureCount', async () => {
-    // 真 dataLayer 异常（HTML 也没救回来）→ 计入失败（IP 可能有问题）
-    // 这个场景由 catch 块处理：crawlSingleSku 抛 DATA_LAYER_* → result 被翻译成 not_found
-    // 我们直接验证 count 递增
+    // 真 dataLayer 异常（HTML 也没救回来）→ 计入失败（IP 可能有问题）。
+    // 真实路径：page-crawler 外层 catch 把 DATA_LAYER_* 翻译成
+    // not_found + dataLayerFailed 返回（不再抛异常），channel 递增计数。
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      sku: 'STUB-SKU',
+      status: 'not_found',
+      product_url: '',
+      product_name: '',
+      features_details: '',
+      product_specification: '',
+      image_paths: '',
+      error: 'DATA_LAYER_NEVER_PUSHED',
+      dataLayerFailed: true,
+      dataLayerNotFound: false,
+    });
 
     await channel.crawl({ sku: 'STUB-SKU', crawlerTaskId: 1 });
     assert.strictEqual(channel.dataLayerFailureCount, 1);
@@ -149,10 +158,19 @@ describe('Channel.crawl real dataLayer failure (dataLayerFailed=true, dataLayerN
 
   it('resets dataLayerFailureCount to 0 on full success', async () => {
     const channel = await createSilentChannel();
-    // 第一次：dataLayer 异常 catch 块处理
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
+    // 第一次：dataLayer 异常（result 标志位路径）
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      sku: 'A',
+      status: 'not_found',
+      product_url: '',
+      product_name: '',
+      features_details: '',
+      product_specification: '',
+      image_paths: '',
+      error: 'DATA_LAYER_NEVER_PUSHED',
+      dataLayerFailed: true,
+      dataLayerNotFound: false,
+    });
     await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
     assert.strictEqual(channel.dataLayerFailureCount, 1);
 
@@ -175,12 +193,21 @@ describe('Channel.crawl real dataLayer failure (dataLayerFailed=true, dataLayerN
 });
 
 describe('Channel.crawl CF challenge and DATA_LAYER_* errors still increment', () => {
-  it('DATA_LAYER_NEVER_PUSHED thrown by crawlSingleSku still increments (catch block path)', async () => {
-    // 这个测试保证我们对 catch 块的 DATA_LAYER_* 处理不动
+  it('DATA_LAYER_NEVER_PUSHED result (dataLayerFailed=true, notFound=false) still increments', async () => {
+    // 真实路径：DATA_LAYER_* 由 page-crawler 翻译成 result 标志位返回
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
+    channel.pageCrawler.crawlSingleSku = async () => ({
+      sku: 'A',
+      status: 'not_found',
+      product_url: '',
+      product_name: '',
+      features_details: '',
+      product_specification: '',
+      image_paths: '',
+      error: 'DATA_LAYER_NEVER_PUSHED',
+      dataLayerFailed: true,
+      dataLayerNotFound: false,
+    });
 
     await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
     assert.strictEqual(channel.dataLayerFailureCount, 1);

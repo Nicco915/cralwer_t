@@ -2,6 +2,10 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { Channel } = require('../src/channel');
 
+// DATA_LAYER_* 失败的真实路径（page-crawler 外层 catch 翻译，不再抛异常）：
+// crawlSingleSku 返回 status=not_found + dataLayerFailed=true + dataLayerNotFound=false，
+// channel 透传 result 并递增 dataLayerFailureCount，由 service 换 IP。
+
 function createMockBrowser() {
   const browser = {
     isConnected: () => true,
@@ -34,13 +38,26 @@ async function createSilentChannel(options = {}) {
   return channel;
 }
 
+function dataLayerFailureResult(sku, error) {
+  return {
+    sku,
+    status: 'not_found',
+    product_url: '',
+    product_name: '',
+    features_details: '',
+    product_specification: '',
+    image_paths: '',
+    error,
+    dataLayerFailed: true,
+    dataLayerNotFound: false,
+  };
+}
+
 describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
-  it('returns not_found result and does not throw when crawlSingleSku throws DATA_LAYER_NEVER_PUSHED', async () => {
+  it('passes through not_found result from crawlSingleSku', async () => {
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      const err = new Error('DATA_LAYER_NEVER_PUSHED');
-      throw err;
-    };
+    channel.pageCrawler.crawlSingleSku = async () =>
+      dataLayerFailureResult('STUB-SKU', 'DATA_LAYER_NEVER_PUSHED');
 
     const result = await channel.crawl({ sku: 'STUB-SKU', crawlerTaskId: 1 });
 
@@ -49,35 +66,33 @@ describe('Channel DATA_LAYER_NEVER_PUSHED handling', () => {
     assert.strictEqual(result.crawlerTaskId, 1);
   });
 
-  it('increments dataLayerFailureCount when DATA_LAYER_NEVER_PUSHED is thrown', async () => {
+  it('increments dataLayerFailureCount on DATA_LAYER_NEVER_PUSHED result', async () => {
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
+    channel.pageCrawler.crawlSingleSku = async () =>
+      dataLayerFailureResult('A', 'DATA_LAYER_NEVER_PUSHED');
 
     await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
     assert.strictEqual(channel.dataLayerFailureCount, 1);
     assert.strictEqual(channel.needsProxyRotation(), true);
   });
 
-  it('does not throw to caller even when headed fallback would otherwise be triggered', async () => {
+  it('does not trigger headed fallback for dataLayer failure results', async () => {
     const channel = await createSilentChannel();
+    channel.headedFallback = true;
     channel.headedBrowserLauncher = async () => { throw new Error('headed launcher should not run'); };
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
+    channel.pageCrawler.crawlSingleSku = async () =>
+      dataLayerFailureResult('A', 'DATA_LAYER_NEVER_PUSHED');
 
-    // 不能向上抛
-    await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
+    const result = await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
+    assert.strictEqual(result.status, 'not_found');
   });
 });
 
 describe('Channel DATA_LAYER_MISSING handling', () => {
-  it('returns not_found result when DATA_LAYER_MISSING is thrown', async () => {
+  it('passes through not_found result for DATA_LAYER_MISSING', async () => {
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_MISSING: page.waitForFunction: Timeout 20000ms exceeded.');
-    };
+    channel.pageCrawler.crawlSingleSku = async () =>
+      dataLayerFailureResult('GHOST-SKU', 'DATA_LAYER_MISSING: page.waitForFunction: Timeout 20000ms exceeded.');
 
     const result = await channel.crawl({ sku: 'GHOST-SKU', crawlerTaskId: 2 });
 
@@ -88,9 +103,8 @@ describe('Channel DATA_LAYER_MISSING handling', () => {
 
   it('increments dataLayerFailureCount for DATA_LAYER_MISSING too', async () => {
     const channel = await createSilentChannel();
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_MISSING: timeout');
-    };
+    channel.pageCrawler.crawlSingleSku = async () =>
+      dataLayerFailureResult('A', 'DATA_LAYER_MISSING: timeout');
 
     await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
     assert.strictEqual(channel.dataLayerFailureCount, 1);

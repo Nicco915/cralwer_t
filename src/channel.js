@@ -345,42 +345,13 @@ class Channel {
       } catch (e) {
         const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
-        const isDataLayerError = e.message && (
-          /^DATA_LAYER_NEVER_PUSHED/.test(e.message) ||
-          /^DATA_LAYER_MISSING/.test(e.message) ||
-          /^CF_CHALLENGE_UNRESOLVED/.test(e.message)
-        );
+        // 注：DATA_LAYER_* / CF_CHALLENGE_UNRESOLVED 不会以异常到达这里——
+        // crawlSingleSku 外层 catch 会把它们翻译成 not_found + dataLayerFailed
+        // 标志位返回，由上面的 result 分支（:335）计数。
         if ((isTimeout || isRetryableNetwork) && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless request failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
           usedHeadedFallback = true;
-        } else if (isDataLayerError) {
-          // dataLayer 异常通常意味着 IP/反爬问题，原地 retry 无效。
-          // 翻译成 not_found 并累计 dataLayerFailureCount。
-          // 受 cooldown 限制：cooldown 期内不再 reinstall（耗资源但 IP 没变），
-          // 由 service.checkChannelForRotation 在 cooldown 解除后自动换 IP。
-          this.log(`[Channel ${this.id}] ${e.message}; treating as not_found, requesting proxy rotation`);
-          this.dataLayerFailureCount++;
-          if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
-            this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
-          }
-          const cooldownMs = this.config.cliproxyRotationCooldownMs || 30000;
-          const didReinstall = await this.maybeTriggerReinstall(cooldownMs);
-          if (!didReinstall) {
-            this.log(`[Channel ${this.id}] cooldown active, skipping reinstall (failures=${this.dataLayerFailureCount})`);
-          }
-          result = {
-            sku: task.sku,
-            product_name: '',
-            product_url: '',
-            features_details: '',
-            product_specification: '',
-            image_paths: '',
-            status: 'not_found',
-            error: e.message,
-            dataLayerFailed: true,
-            dataLayerNotFound: false,
-          };
         } else {
           throw e;
         }
@@ -491,15 +462,14 @@ class Channel {
   }
 
   // 由 service 在每次真正换 IP 后调用，记录时间戳。
-  // DATA_LAYER_* 失败路径调用 maybeTriggerReinstall，会参考这个时间戳
-  // 决定是否真的 reinstall（在 cooldown 内即使失败也不 reinstall）。
+  // maybeTriggerReinstall 参考该时间戳做 cooldown 判定。
   recordIpRotation() {
     this.lastIpRotationAt = Date.now();
   }
 
-  // 在 cooldown 期内失败时调用：返回 true 表示已 reinstall（cooldown 已过），
-  // false 表示跳过 reinstall（cooldown 仍在，IP 不会变）。
-  // 调用方应无条件递增 dataLayerFailureCount。
+  // cooldown 判定辅助：cooldown 已过则 reinstall 并返回 true，否则返回 false。
+  // 注意：原唯一生产调用方（catch 中的 isDataLayerError 分支）已随死代码清理移除，
+  // 当前无生产调用方，仅保留实现与 channel-cooldown.test.js；如需 reinstall 能力可复用。
   async maybeTriggerReinstall(cooldownMs) {
     const now = Date.now();
     if (this.lastIpRotationAt > 0 && (now - this.lastIpRotationAt) < cooldownMs) {

@@ -90,37 +90,10 @@ describe('Channel maybeTriggerReinstall cooldown gating', () => {
   });
 });
 
-describe('Channel DATA_LAYER_* failure path honors cooldown', () => {
-  it('first DATA_LAYER_NEVER_PUSHED triggers reinit and increments counter', async () => {
-    const channel = await createInitializedChannel();
-    let reinitCalls = 0;
-    channel.reinit = async () => { reinitCalls++; };
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
-
-    await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
-
-    assert.strictEqual(channel.dataLayerFailureCount, 1);
-    assert.strictEqual(reinitCalls, 1);
-  });
-
-  it('second DATA_LAYER_NEVER_PUSHED within cooldown does NOT reinit', async () => {
-    const channel = await createInitializedChannel();
-    let reinitCalls = 0;
-    channel.reinit = async () => { reinitCalls++; };
-    channel.pageCrawler.crawlSingleSku = async () => {
-      throw new Error('DATA_LAYER_NEVER_PUSHED');
-    };
-
-    await channel.crawl({ sku: 'A', crawlerTaskId: 1 });
-    await channel.crawl({ sku: 'B', crawlerTaskId: 2 });
-
-    // 失败 2 次但只在第一次触发 reinstall
-    assert.strictEqual(channel.dataLayerFailureCount, 2);
-    assert.strictEqual(reinitCalls, 1);
-  });
-});
+// 注：原 "DATA_LAYER_* failure path honors cooldown" 端到端测试已删除——
+// 它 stub crawlSingleSku 抛 DATA_LAYER_*，驱动的是 channel catch 中的死分支
+//（真实 page-crawler 从不抛 DATA_LAYER_*，外层 catch 翻译成 result 标志位）。
+// 该分支已随死代码清理移除。
 
 describe('Channel recordIpRotation updates lastIpRotationAt', () => {
   it('updates lastIpRotationAt when called', async () => {
