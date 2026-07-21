@@ -4,6 +4,14 @@ const path = require('path');
 function getCircularReplacer() {
   const seen = new WeakSet();
   return (key, value) => {
+    // poller.js 把数值型任务 id 转成原生 BigInt 防精度丢失；
+    // 普通 JSON.stringify 遇到 BigInt 直接抛错，导致整条日志被 broadcast 吞掉。
+    // 安全整数转 number，超出精度范围的转字符串（与 pusher 回调体的字符串语义一致）。
+    if (typeof value === 'bigint') {
+      return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(-Number.MAX_SAFE_INTEGER)
+        ? Number(value)
+        : value.toString();
+    }
     if (typeof value === 'object' && value !== null) {
       if (seen.has(value)) {
         return '[Circular]';

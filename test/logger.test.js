@@ -76,6 +76,36 @@ describe('Logger', () => {
     assert.strictEqual(parsed.msg, 'circular');
     assert.strictEqual(parsed.self.self, '[Circular]');
   });
+
+  it('serializes BigInt extra fields instead of dropping the log line', () => {
+    const logs = [];
+    const logger = createLogger({
+      nodeCode: 'test-node',
+      write: (line) => logs.push(line),
+    });
+
+    // poller.js 把数值型任务 id 转成原生 BigInt（防精度丢失），
+    // 普通 JSON.stringify 遇到 BigInt 会抛 "Do not know how to serialize a BigInt"
+    logger.info('task', 'finished', { crawlerTaskId: BigInt('2079038831085428737'), retries: 1 });
+
+    assert.strictEqual(logs.length, 1);
+    const parsed = JSON.parse(logs[0]);
+    assert.strictEqual(parsed.crawlerTaskId, '2079038831085428737');
+    assert.strictEqual(parsed.retries, 1);
+  });
+
+  it('serializes small BigInt values as numbers', () => {
+    const logs = [];
+    const logger = createLogger({
+      nodeCode: 'test-node',
+      write: (line) => logs.push(line),
+    });
+
+    logger.info('task', 'finished', { crawlerTaskId: BigInt(1001) });
+
+    const parsed = JSON.parse(logs[0]);
+    assert.strictEqual(parsed.crawlerTaskId, 1001);
+  });
 });
 
 describe('createStdoutLogger / createBroadcastLogger', () => {
