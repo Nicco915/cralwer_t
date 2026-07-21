@@ -390,7 +390,12 @@ class Worker {
     if (this.loopPromise) {
       await this.loopPromise;
     }
-    while (this.taskQueue.length > 0 || this.channels.some(c => c.busy)) {
+    // 只等在途（busy）任务完成。不能等 taskQueue 清空：drain 的调用方
+    // （service.stop / restartBrowser）在调用时 loop 已停，排队任务永远不会
+    // 再被分发，等队列清空就是死锁（曾现网复现：draining: queue=1, busy=0
+    // 死循环）。排队任务保留在队列里——restartBrowser 场景会在 worker.start()
+    // 后分发到重启后的新 channel；service.stop 场景随进程退出由上游重派。
+    while (this.channels.some(c => c.busy)) {
       this.log(`[Worker] draining: queue=${this.taskQueue.length}, busy=${this.channels.filter(c => c.busy).length}`);
       await this.sleep(500);
     }
