@@ -46,6 +46,13 @@ async function injectGeoBypassCookie(page, url) {
   ]);
 }
 
+// SKU 可能含路径分隔符（如 HJLGY32.2525/24OOV0）。直接拼进文件名会产生
+// 嵌套目录：图片下载 ENOENT、诊断文件散落到子目录、上传端 basename 丢前缀。
+// 文件名场景统一把分隔符替换为下划线（payload 里的 sku 仍是原始值，不受影响）。
+function sanitizeSkuForFilename(sku) {
+  return String(sku).replace(/[/\\]/g, '_');
+}
+
 class PageCrawler {
   constructor(options) {
     this.config = resolveConfig(options);
@@ -545,7 +552,7 @@ class PageCrawler {
           let ext = '.jpg';
           if (imgUrl.toLowerCase().includes('.png')) ext = '.png';
           else if (imgUrl.toLowerCase().includes('.webp')) ext = '.webp';
-          const imgFilename = `${sku}_${i + 1}${ext}`;
+          const imgFilename = `${sanitizeSkuForFilename(sku)}_${i + 1}${ext}`;
           const imgPath = path.join(imageDir, imgFilename);
           const buffer = await this.downloadImage(imgUrl);
           fs.writeFileSync(imgPath, buffer);
@@ -669,7 +676,7 @@ async function captureDiagnostics(page, sku, label, outputDir) {
   fs.mkdirSync(dir, { recursive: true });
 
   const ts = now.toISOString().replace(/[:.]/g, '-');
-  const baseName = `${ts}-${label}-${sku}`;
+  const baseName = `${ts}-${label}-${sanitizeSkuForFilename(sku)}`;
   const meta = {
     sku,
     label,
@@ -735,4 +742,4 @@ async function captureDiagnostics(page, sku, label, outputDir) {
   return meta;
 }
 
-module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath, captureDiagnostics };
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath, sanitizeSkuForFilename, captureDiagnostics };

@@ -257,6 +257,36 @@ describe('PageCrawler.crawlSingleSku search URL encoding', () => {
   });
 });
 
+describe('PageCrawler.crawlSingleSku image filename sanitization', () => {
+  it('saves images without path separators when SKU contains a slash', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'img-test-'));
+    const crawler = new PageCrawler({ imageDir: tmpDir });
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['https://eur.vevor.com/p/X-1', ''];
+    crawler.extractFromHtml = async () => ['', ''];
+    crawler.extractPageSku = async () => 'HJLGY32.2525/24OOV0';
+    crawler.extractAllProductImages = async () => ['https://img.vevorstatic.com/goods_img/a.jpg'];
+    crawler.downloadImage = async () => Buffer.from('fake-jpg');
+
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/p/X-1',
+      elements: { 'h1': { innerText: async () => 'Product X' } },
+    });
+
+    try {
+      const result = await crawler.crawlSingleSku('HJLGY32.2525/24OOV0', page);
+      assert.strictEqual(result.status, 'success');
+      assert.ok(result.image_paths, 'image_paths should not be empty');
+      const rel = path.relative(tmpDir, result.image_paths);
+      assert.ok(!rel.includes('/') && !rel.includes('\\'), `image path must stay flat in imageDir, got: ${result.image_paths}`);
+      assert.ok(fs.existsSync(result.image_paths), 'image file should exist on disk');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('captureDiagnostics', () => {
   it('saves screenshot, html snippet, and metadata when outputDir is set', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-test-'));
@@ -299,5 +329,33 @@ describe('captureDiagnostics', () => {
     };
     const meta = await captureDiagnostics(page, 'SKU', 'timeout', '');
     assert.strictEqual(meta, null);
+  });
+
+  it('keeps diagnostic files flat in the date dir when SKU contains a slash', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-slash-'));
+    const page = {
+      title: async () => 'No Results',
+      url: () => 'https://www.vevor.ca/s/HJLGY32.2525/24OOV0',
+      screenshot: async ({ path: screenshotPath }) => {
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+        fs.writeFileSync(screenshotPath, 'fake-png');
+      },
+      content: async () => '<html><body>no results</body></html>',
+      evaluate: async () => ({ ip: '198.51.100.1' }),
+    };
+
+    const meta = await captureDiagnostics(page, 'HJLGY32.2525/24OOV0', 'dataLayer-never-pushed', tmpDir);
+
+    try {
+      const dateDir = fs.readdirSync(tmpDir)[0];
+      for (const p of [meta.screenshot, meta.htmlSnippet]) {
+        assert.ok(p, 'diagnostic path should be set');
+        assert.strictEqual(path.dirname(p), path.join(tmpDir, dateDir),
+          `diagnostic file must sit directly in the date dir, got: ${p}`);
+        assert.ok(fs.existsSync(p), `diagnostic file should exist: ${p}`);
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
