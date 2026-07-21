@@ -223,6 +223,13 @@ describe('PageCrawler.encodeSkuForSearchPath', () => {
   it('leaves SKUs without hyphens unchanged', () => {
     assert.strictEqual(encodeSkuForSearchPath('ABC123'), 'ABC123');
   });
+
+  it('replaces slashes with commas so the search route is not truncated', () => {
+    assert.strictEqual(
+      encodeSkuForSearchPath('HJLGY32.2525/24OOV0'),
+      'HJLGY32.2525,24OOV0'
+    );
+  });
 });
 
 describe('PageCrawler.crawlSingleSku search URL encoding', () => {

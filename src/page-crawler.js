@@ -21,7 +21,9 @@ function resolveConfig(config) {
 function encodeSkuForSearchPath(sku) {
   // Vevor 将搜索路径中的连字符（-）视为分词符，会把 PQFJYNF-250-2T001V7
   // 拆成多个词返回泛匹配结果。将连字符编码为 %2D 后服务端会按完整 SKU 精确搜索。
-  return sku.replace(/-/g, '%2D');
+  // 斜杠（/）会被当成路径分隔符截断搜索词（HJLGY32.2525/24OOV0 只搜 HJLGY32.2525），
+  // 替换为逗号后服务端按完整 SKU 搜索（逗号与 %2D 的精确匹配语义一致）。
+  return sku.replace(/-/g, '%2D').replace(/\//g, ',');
 }
 
 // VEVOR 会根据客户端 IP 的地理位置对 www.vevor.com 做 302 重定向（如 DE → .de）。
@@ -280,8 +282,9 @@ class PageCrawler {
         return { productUrl: '', productName: '', dataLayerFailed: false, dataLayerNotFound: true };
       }
 
-      // 第一次 dataLayer 抛错后 HTML 也没救，且 attempt 走完了 → 重抛原 dataLayer 错误
-      // 让 channel 知道这次需要换 IP；否则会被 caller 翻译成 not_found 但 channel 不会触发换 IP
+      // 第一次 dataLayer 抛错后 HTML 也没救，且 attempt 走完了 → 重抛原 dataLayer 错误。
+      // crawlSingleSku 外层 catch 会把它翻译成 not_found + dataLayerFailed，
+      // 由 worker/service 触发换 IP；直接当 not_found 返回会丢失换 IP 信号。
       if (dataLayerThrew && attempt === maxAttempts - 1) {
         throw lastDataLayerError;
       }
@@ -558,6 +561,17 @@ class PageCrawler {
       this.log(`[${sku}] Crawl success! Images: ${downloadedPaths.length}`);
 
     } catch (e) {
+      // DATA_LAYER_*：与 CF_CHALLENGE_UNRESOLVED 同款——翻译成 not_found +
+      // dataLayerFailed 标志位返回，由 channel 计数 / worker 换 IP 重试 /
+      // service.checkChannelForRotation 兜底。抛异常会被这里吞成 status=error，
+      // channel 的 isDataLayerError 分支永远收不到。
+      if (e.message && /^DATA_LAYER_/.test(e.message)) {
+        result.status = 'not_found';
+        result.error = e.message;
+        result.dataLayerFailed = true;
+        this.log(`[${sku}] ${e.message}; marking not_found + dataLayerFailed`);
+        return result;
+      }
       result.status = 'error';
       result.error = e.message;
       this.log(`[${sku}] Error: ${e.message}`);
