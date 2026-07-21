@@ -61,7 +61,8 @@ const SHARED_REGIONS = {
 // 所有进程共享的 cliproxy 配置（host/port/region/param 名与 VPS 对齐）
 // 注意：ASN 不在此处——每进程独立，见下方 NODE_ASN
 const SHARED_PROXY = {
-  CLIPROXY_HOST: 'us2.cliproxy.io',
+  // 官方推荐入口（us2.cliproxy.io 已退化：出口间歇挂起、延迟 2-7s，见 2026-07-20 事故）
+  CLIPROXY_HOST: 'us.arxlabs.io',
   CLIPROXY_PORT: '3010',
   CLIPROXY_REGION: 'CA',
   CLIPROXY_STICKY_MINUTES: '10',
