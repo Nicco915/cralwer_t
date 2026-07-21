@@ -280,6 +280,7 @@ describe('PageCrawler.crawlSingleSku image filename sanitization', () => {
       assert.ok(result.image_paths, 'image_paths should not be empty');
       const rel = path.relative(tmpDir, result.image_paths);
       assert.ok(!rel.includes('/') && !rel.includes('\\'), `image path must stay flat in imageDir, got: ${result.image_paths}`);
+      assert.ok(rel.startsWith('HJLGY32.2525%2F24OOV0_1.'), `filename should encode slash as %2F, got: ${rel}`);
       assert.ok(fs.existsSync(result.image_paths), 'image file should exist on disk');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -354,6 +355,8 @@ describe('captureDiagnostics', () => {
           `diagnostic file must sit directly in the date dir, got: ${p}`);
         assert.ok(fs.existsSync(p), `diagnostic file should exist: ${p}`);
       }
+      assert.ok(path.basename(meta.screenshot).includes('HJLGY32.2525%2F24OOV0'),
+        `diagnostic filename should encode slash as %2F, got: ${meta.screenshot}`);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

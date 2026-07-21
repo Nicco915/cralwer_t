@@ -48,9 +48,11 @@ async function injectGeoBypassCookie(page, url) {
 
 // SKU 可能含路径分隔符（如 HJLGY32.2525/24OOV0）。直接拼进文件名会产生
 // 嵌套目录：图片下载 ENOENT、诊断文件散落到子目录、上传端 basename 丢前缀。
-// 文件名场景统一把分隔符替换为下划线（payload 里的 sku 仍是原始值，不受影响）。
+// 文件名场景统一做 URL 编码（与 vevor 图片 URL 的约定一致：
+// img.vevorstatic.com/us%2F<SKU>%2Fgoods_thumb-v1/... 中 / 即 %2F）。
+// payload 里的 sku 仍是原始值，不受影响。
 function sanitizeSkuForFilename(sku) {
-  return String(sku).replace(/[/\\]/g, '_');
+  return String(sku).replace(/\//g, '%2F').replace(/\\/g, '%5C');
 }
 
 class PageCrawler {
