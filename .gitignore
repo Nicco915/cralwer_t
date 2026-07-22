@@ -34,3 +34,6 @@ test/batch-runs/
 # 本地多区域模板（不入库，按机器自定义复制使用）
 templates/
 __pycache__/
+
+# Debug 排查记录（本地统计用，不入库）
+debug.md
