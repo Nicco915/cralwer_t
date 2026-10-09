@@ -1,4 +1,4 @@
-# install-windows-exporter.ps1
+﻿# install-windows-exporter.ps1
 # 安装 Prometheus windows_exporter 并开 9182 给 Tailscale IP 段
 
 [CmdletBinding()]

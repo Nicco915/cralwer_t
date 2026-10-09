@@ -1,4 +1,4 @@
-# 安装并配置 pm2-logrotate：轮转 PM2 托管日志（crawler-combined-*.log / crawler-out-*.log / crawler-error-*.log）
+﻿# 安装并配置 pm2-logrotate：轮转 PM2 托管日志（crawler-combined-*.log / crawler-out-*.log / crawler-error-*.log）
 # 解决 Windows 节点长期运行后 PM2 日志涨到几百 MB ~ 几 GB、无法打开的问题。
 #
 # 用法（PowerShell，建议在部署爬虫之后再执行）：

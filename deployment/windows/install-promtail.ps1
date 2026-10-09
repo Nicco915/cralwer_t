@@ -1,4 +1,4 @@
-# install-promtail.ps1
+﻿# install-promtail.ps1
 # 用 NSSM 把 Promtail 装成 Windows 服务，从 PM2 抓日志推到 Loki
 
 [CmdletBinding()]
