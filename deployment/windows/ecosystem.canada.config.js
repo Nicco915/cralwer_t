@@ -95,7 +95,7 @@ const NODE_CODES = [
 //   池侧可能给不同 session 分同一出口 IP（VPS 上 v01/v02 已实测撞车）。
 //   改为一进程一 ASN：不同 AS 的 IP 前缀天然不相交，跨爬虫撞 IP 在结构上不可能。
 //   以下 ASN 全部在 VPS 实测（2026-07-15）cliproxy 加拿大区有真实库存。
-//   备用池（同样实测可用）：AS5645 TekSavvy、AS21949 Beanfield、AS1403 EBOX。
+//   备用池（同样实测可用）：AS21949 Beanfield、AS1403 EBOX（AS5645 已分配给 crawler-16）。
 //   注意：cliproxy 对无库存的 ASN 不报错、静默回落其他池（如 AS855→AS577、
 //   AS22652→AS11260），换 ASN 后必须验证出口 org 与此处目标一致。
 //   增删进程时：NODE_CODES 与 NODE_ASN 必须同步增删（下方有防呆检查）。
@@ -104,7 +104,8 @@ const NODE_ASN = {
   'crawler-13': 'AS11290', // Cogeco（保留现池）
   'crawler-14': 'AS577',   // Bell Canada
   'crawler-15': 'AS812',   // Rogers
-  'crawler-16': 'AS852',   // Telus
+  'crawler-16': 'AS5645',  // TekSavvy（2026-10-09 由 AS852 Telus 换入：AS852 出口被 vevor 风控，
+                           // ERR_CONNECTION_CLOSED 为对照组 18 倍、近 14 天失败率 59.4%，见 debug.md）
   'crawler-17': 'AS6327',  // Shaw
   'crawler-18': 'AS5769',  // Videotron
   'crawler-19': 'AS803',   // SaskTel
