@@ -26,6 +26,7 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
   it('returns not_found + dataLayerFailed when dataLayer never pushed', async () => {
     const crawler = createCrawler();
+    crawler.sleep = async () => {};
     crawler.extractProductUrlWithRetry = async () => {
       throw new Error('DATA_LAYER_NEVER_PUSHED');
     };
@@ -40,6 +41,7 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
   it('returns not_found + dataLayerFailed when dataLayer missing (message contains Timeout text)', async () => {
     const crawler = createCrawler();
+    crawler.sleep = async () => {};
     crawler.extractProductUrlWithRetry = async () => {
       throw new Error('DATA_LAYER_MISSING: page.waitForFunction: Timeout 20000ms exceeded.');
     };
@@ -53,6 +55,7 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
   it('non-DATA_LAYER errors still return status=error', async () => {
     const crawler = createCrawler();
+    crawler.sleep = async () => {};
     crawler.extractProductUrlWithRetry = async () => {
       throw new Error('some unexpected failure');
     };

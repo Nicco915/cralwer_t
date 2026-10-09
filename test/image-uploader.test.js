@@ -305,6 +305,7 @@ describe('ImageUploader.upload', () => {
     const uploader = new ImageUploader({
       uploadUrl: 'http://example.com/upload',
       maxRetries: 1,
+      retryDelays: [1],
       fetch: fakeFetch,
     });
     try {

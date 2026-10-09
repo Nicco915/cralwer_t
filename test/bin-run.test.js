@@ -147,12 +147,3 @@ describe('loadEnvFile', () => {
     assert.doesNotThrow(() => loadEnvFile('/nonexistent/crawler/dir'));
   });
 });
-
-describe('loadEnvFile', () => {
-  const { loadEnvFile } = require('../src/cli');
-
-  it('returns silently when .env is missing (Docker / env_file 场景)', () => {
-    // 容器内不挂载 .env 文件时，env 变量已由 env_file/environment 注入
-    assert.doesNotThrow(() => loadEnvFile('/nonexistent/crawler/dir'));
-  });
-});

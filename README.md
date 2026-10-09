@@ -544,6 +544,8 @@ npm test
 
 Covers Poller, Pusher, proxy configuration, stub server, and the service integration test.
 
+The mock-production server/dashboard tests under `test/mock-production/` are not part of `npm test`; run them separately with `npm run test:mock`.
+
 ### Load test
 
 ```bash

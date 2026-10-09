@@ -152,6 +152,8 @@ describe('Pusher.push', () => {
       callbackUrl: 'http://example.com/callback',
       nodeCode: 'node-1',
       nodeToken: 'token-1',
+      maxRetries: 3,
+      retryDelays: [1, 1, 1],
       fetch: fakeFetch,
     });
 

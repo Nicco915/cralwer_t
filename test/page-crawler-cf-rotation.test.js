@@ -18,6 +18,8 @@ describe('PageCrawler Cloudflare challenge failure', () => {
       async content() { return '<html><body>cf-browser-verification</body></html>'; },
     };
 
+    crawler.waitForCloudflare = async () => false;
+
     const result = await crawler.crawlSingleSku('TEST-SKU', fakePage, async () => fakePage);
 
     assert.strictEqual(result.status, 'not_found');
@@ -53,6 +55,7 @@ describe('PageCrawler Cloudflare challenge failure', () => {
       return cfCallCount >= 2;
     };
     crawler.waitForCloudflare = async () => false;
+    crawler.sleep = async () => {};
     crawler.extractProductUrlWithRetry = async () => ({ productUrl: 'https://eur.vevor.com/p/TEST', productName: 'Test', dataLayerFailed: false });
 
     const result = await crawler.crawlSingleSku('TEST-SKU', fakePage, async () => fakePage);

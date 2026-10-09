@@ -8,7 +8,8 @@
     "vevor-crawler-test": "bin/run-test.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js test/fixtures/stub-server.test.js test/mock-production/*.test.js",
+    "test": "node --test test/*.test.js test/fixtures/stub-server.test.js",
+    "test:mock": "node --test test/mock-production/*.test.js",
     "test:integration": "node --test test/service.integration.test.js",
     "test:load": "node --test test/load/load-test.js",
     "test:deployment:local": "bash test/deployment/run-local.sh",

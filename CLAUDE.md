@@ -52,6 +52,7 @@ node test-sku.js <sku>      # 单 SKU 调试
 ## 测试约定
 
 - 测试框架：`node:test`（无 jest/mocha），测试文件在 `test/` 与 src 模块一一对应。
+- `test/mock-production/`（mock 上游服务器/仪表盘测试）不在 `npm test` 默认套件内，用 `npm run test:mock` 单独跑。
 - 改动某模块后至少跑对应测试文件：`node --test test/<name>.test.js`。
 - 声称完成前必须实际运行验证命令，用输出佐证。
 

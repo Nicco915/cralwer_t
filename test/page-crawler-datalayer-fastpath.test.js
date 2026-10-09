@@ -132,6 +132,16 @@ describe('PageCrawler.extractProductUrlFromDataLayer fast-path', () => {
       page.content = async () => { htmlSnippets.push('html'); return '<html></html>'; };
       const crawler = new PageCrawler({ diagnosticDir: tmpDir });
 
+      // captureDiagnostics 里的 ipinfo fetch 会打真实外网（~800ms），
+      // 第二次 evaluate 起直接 stub 掉，只保留 fast-path 的第一次真实判定。
+      const origEvaluate = page.evaluate.bind(page);
+      let evaluateCalls = 0;
+      page.evaluate = async (fn, arg) => {
+        evaluateCalls++;
+        if (evaluateCalls === 1) return origEvaluate(fn, arg);
+        return { stubbed: true };
+      };
+
       await assert.rejects(
         crawler.extractProductUrlFromDataLayer(page, 'STUB-SKU', 20000),
         /DATA_LAYER_NEVER_PUSHED/

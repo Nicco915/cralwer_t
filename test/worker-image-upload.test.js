@@ -55,6 +55,50 @@ describe('Worker image upload after callback', () => {
     assert.strictEqual(uploadCalled, true);
   });
 
+  it('does not call imageUploader.upload when crawl fails (status != success)', async () => {
+    let callbackPushed = false;
+    let uploadCalled = false;
+
+    const fakePusher = {
+      push: async (result) => {
+        assert.strictEqual(result.status, 'not_found');
+        callbackPushed = true;
+      },
+    };
+
+    const fakeUploader = {
+      upload: async () => {
+        uploadCalled = true;
+        return { uploaded: [] };
+      },
+    };
+
+    const worker = new Worker({
+      pusher: fakePusher,
+      imageUploader: fakeUploader,
+      log: () => {},
+    });
+
+    worker.addChannel(createChannel({
+      crawl: async () => ({
+        status: 'not_found',
+        sku: 'ABC-001',
+        product_name: '',
+        features_details: '',
+        product_specification: '',
+        product_url: '',
+        error: 'SKU not found',
+        image_paths: '',
+      }),
+    }));
+    worker.pushTasks([{ crawlerTaskId: 1n, sku: 'ABC-001' }]);
+    worker.start();
+    await worker.drain();
+
+    assert.strictEqual(callbackPushed, true);
+    assert.strictEqual(uploadCalled, false);
+  });
+
   it('does not call imageUploader.upload when callback push fails', async () => {
     let uploadCalled = false;
 
