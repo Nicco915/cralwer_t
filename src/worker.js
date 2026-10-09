@@ -272,6 +272,23 @@ class Worker {
       if (err instanceof TaskDeadlineError || err.code === 'TASK_DEADLINE_EXCEEDED') {
         timedOut = true;
         this.log(`[Worker] Task ${task.crawlerTaskId} deadline exceeded, forcing timeout result`);
+        // 任务令牌作废：channel 上仍在跑的僵尸 crawl 迟到完成时，
+        // 不再触碰 channel 状态（计数/刷新/adaptive/currentTask）。
+        if (typeof channel.cancelActiveCrawl === 'function') {
+          try {
+            channel.cancelActiveCrawl();
+          } catch (cancelErr) {
+            this.log(`[Worker] cancelActiveCrawl failed task ${task.crawlerTaskId}: ${cancelErr.message}`);
+          }
+        }
+        // 显式兜底僵尸 Promise：迟到完成只打日志，不再有任何副作用；
+        // rejection 在此吞掉，杜绝 unhandledRejection
+        // （不再隐式依赖 Promise.race 内部 handler + finishPromise 全 try/catch 的现状）。
+        const deadlineAt = Date.now();
+        finishPromise.then(
+          () => this.log(`[Worker] late completion dropped task ${task.crawlerTaskId} sku ${task.sku} (resolved ${Date.now() - deadlineAt}ms after deadline)`),
+          (lateErr) => this.log(`[Worker] late completion dropped task ${task.crawlerTaskId} sku ${task.sku} (rejected ${Date.now() - deadlineAt}ms after deadline: ${lateErr && lateErr.message})`),
+        );
         result = this.buildErrorResult(task, err);
         result.status = 'timeout';
         result.error = err.message;

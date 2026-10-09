@@ -27,6 +27,10 @@ class Channel {
     this.currentTask = null;
     this.consecutiveFailures = 0;
     this.lastFailureWasProxy = false;
+    // 任务令牌（单调递增 epoch）：crawl() 开始时领取新 epoch；
+    // worker deadline 超时调 cancelActiveCrawl() 使在途 epoch 作废。
+    // 完成路径上 epoch 不匹配即为僵尸迟到完成，只返回结果、不触碰 channel 状态。
+    this.crawlEpoch = 0;
     this.nodeCode = this.config.nodeCode || 'crawler-01';
     this.stealthMode = this.config.stealthMode || 'channel';
     this.effectiveStealthMode = this.stealthMode === 'adaptive' ? 'channel' : this.stealthMode;
@@ -302,7 +306,18 @@ class Channel {
     }
   }
 
+  // worker 的 deadline 超时不会中断在途 crawl（僵尸仍在 page 上跑）。
+  // 调用本方法使在途 crawl 的 epoch 作废：僵尸迟到完成时检测到
+  // epoch 不匹配，不再触碰 channel 状态（计数/刷新/adaptive/currentTask），
+  // 只把结果还给已放弃它的调用方。
+  cancelActiveCrawl() {
+    this.crawlEpoch++;
+  }
+
   async crawl(task) {
+    const crawlEpoch = ++this.crawlEpoch;
+    // 迟到完成判定：本 crawl 的 epoch 已被 deadline 作废，或已被更新的 crawl 取代
+    const isStale = () => crawlEpoch !== this.crawlEpoch;
     this.currentTask = task;
 
     try {
@@ -332,17 +347,24 @@ class Channel {
           return this.recreateContext(browser);
         };
         result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext, { baseUrl: task.baseUrl });
-        if (result.dataLayerFailed && !result.dataLayerNotFound) {
-          this.dataLayerFailureCount++;
-          if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
-            this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+        if (!isStale()) {
+          if (result.dataLayerFailed && !result.dataLayerNotFound) {
+            this.dataLayerFailureCount++;
+            if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
+              this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+            }
+          } else if (!result.dataLayerNotFound) {
+            // 业务无结果（dataLayerNotFound=true）保留 dataLayerFailureCount 不变；
+            // 真正的成功（或无 dataLayer 信号）才重置计数
+            this.dataLayerFailureCount = 0;
           }
-        } else if (!result.dataLayerNotFound) {
-          // 业务无结果（dataLayerNotFound=true）保留 dataLayerFailureCount 不变；
-          // 真正的成功（或无 dataLayer 信号）才重置计数
-          this.dataLayerFailureCount = 0;
         }
       } catch (e) {
+        if (isStale()) {
+          // 僵尸迟到失败：不启动 headed fallback、不计数，直接抛给外层
+          // （外层 catch 的 stale 分支打日志后 rethrow，worker 会丢弃该结果）
+          throw e;
+        }
         const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
         const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
         // 注：DATA_LAYER_* / CF_CHALLENGE_UNRESOLVED 不会以异常到达这里——
@@ -357,7 +379,7 @@ class Channel {
         }
       }
 
-      if (!usedHeadedFallback && result && result.status === 'error' && result.error) {
+      if (!isStale() && !usedHeadedFallback && result && result.status === 'error' && result.error) {
         const errMsg = result.error;
         const isNetworkError = errMsg.includes('net::ERR') || /Timeout \d+ms exceeded/.test(errMsg) || errMsg.includes('Navigation failed');
         if (isNetworkError && this.headedFallback && this.headedBrowserLauncher) {
@@ -366,11 +388,15 @@ class Channel {
         }
       }
 
-      if (result && result.status === 'success') {
-        this.dataLayerFailureCount = 0;
+      if (!isStale()) {
+        if (result && result.status === 'success') {
+          this.dataLayerFailureCount = 0;
+        }
+        const isTimeoutResult = result && /Timeout \d+ms exceeded/.test(result.error || '');
+        this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult, result && result.dataLayerFailed);
+        this.consecutiveFailures = 0;
+        this.lastFailureWasProxy = false;
       }
-      const isTimeoutResult = result && /Timeout \d+ms exceeded/.test(result.error || '');
-      this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult, result && result.dataLayerFailed);
       result.crawlerTaskId = task.crawlerTaskId;
       const summary = {
         status: result.status,
@@ -379,11 +405,19 @@ class Channel {
         error: result.error,
         image_count: result.images ? result.images.length : 0,
       };
-      this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status} result=${JSON.stringify(summary)}`);
-      this.consecutiveFailures = 0;
-      this.lastFailureWasProxy = false;
+      if (isStale()) {
+        this.log(`[Channel ${this.id}] late completion dropped task ${task.crawlerTaskId} status ${result.status} result=${JSON.stringify(summary)} (superseded, channel state untouched)`);
+      } else {
+        this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status ${result.status} result=${JSON.stringify(summary)}`);
+      }
       return result;
     } catch (e) {
+      if (isStale()) {
+        // 僵尸迟到失败：不计 consecutiveFailures、不动 adaptive 状态，
+        // 避免污染新任务的失败计数与 service 的换 IP 判定（service.js 消费这两个字段）
+        this.log(`[Channel ${this.id}] late completion dropped task ${task.crawlerTaskId} status error message=${e.message} (superseded, channel state untouched)`);
+        throw e;
+      }
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
@@ -394,23 +428,30 @@ class Channel {
       this.updateAdaptiveState(e.status || 'error', isTimeout, false);
       throw e;
     } finally {
-      this.currentTask = null;
-      this.tasksSincePageRefresh++;
-      try {
-        await this.refreshPageIfNeeded();
-      } catch (refreshErr) {
-        this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
-      }
-      if (this.profileStale) {
+      if (!isStale()) {
+        this.currentTask = null;
+        this.tasksSincePageRefresh++;
         try {
-          const browser = this.browserContext ? this.browserContext.browser() : null;
-          if (browser && browser.isConnected()) {
-            await this.recreateContext(browser);
-            this.profileStale = false;
-          }
-        } catch (e) {
-          this.log(`[Channel ${this.id}] context recreate after adaptive switch failed: ${e.message}`);
+          await this.refreshPageIfNeeded();
+        } catch (refreshErr) {
+          this.log(`[Channel ${this.id}] page refresh failed: ${refreshErr.message}`);
         }
+        if (this.profileStale) {
+          try {
+            const browser = this.browserContext ? this.browserContext.browser() : null;
+            if (browser && browser.isConnected()) {
+              await this.recreateContext(browser);
+              this.profileStale = false;
+            }
+          } catch (e) {
+            this.log(`[Channel ${this.id}] context recreate after adaptive switch failed: ${e.message}`);
+          }
+        }
+      } else if (this.currentTask === task) {
+        // 僵尸迟到完成：channel 状态（tasksSincePageRefresh / refreshPageIfNeeded /
+        // profileStale / 各计数）一律不碰，留给新任务的完成路径处理；
+        // 仅当 currentTask 仍指向自己（deadline 后尚无新任务接管）时顺手清空。
+        this.currentTask = null;
       }
     }
   }
