@@ -212,6 +212,45 @@ describe('PageCrawler.crawlSingleSku SKU mismatch interception', () => {
   });
 });
 
+describe('PageCrawler.crawlSingleSku no-result errorCode', () => {
+  it('sets errorCode PAGE_NO_RESULT when the page confirms no result', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['', '', 'not_found'];
+    crawler.extractFromHtml = async () => ['', ''];
+
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/s/ABC-123',
+      html: '<html><body>No Results Found</body></html>',
+    });
+    const result = await crawler.crawlSingleSku('ABC-123', page);
+
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.errorCode, 'PAGE_NO_RESULT');
+    // 上游可见文案必须保持不变（pusher 透传为 errorMessage）
+    assert.strictEqual(result.error, 'Page shows no result');
+  });
+
+  it('does not set errorCode when no URL is extracted but page has no no-result marker', async () => {
+    const crawler = new PageCrawler();
+    crawler.sleep = async () => {};
+    crawler.isCloudflareChallenge = async () => false;
+    crawler.extractProductUrlFromDataLayer = async () => ['', '', 'not_found'];
+    crawler.extractFromHtml = async () => ['', ''];
+
+    const page = createMockPage({
+      url: 'https://eur.vevor.com/s/ABC-123',
+      html: '<html><body>some other page</body></html>',
+    });
+    const result = await crawler.crawlSingleSku('ABC-123', page);
+
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.error, 'No product URL found');
+    assert.strictEqual(result.errorCode, undefined);
+  });
+});
+
 describe('PageCrawler.encodeSkuForSearchPath', () => {
   it('encodes hyphens as %2D to avoid Vevor tokenizing the SKU', () => {
     assert.strictEqual(

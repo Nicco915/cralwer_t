@@ -183,8 +183,10 @@ class Worker {
         result = this.buildErrorResult(task, e);
       }
 
-      // 区域无结果兜底：UK/EU/CA 搜索页明确无结果时，到 US 站点再试一次
-      if (result && result.status === 'not_found' && result.error === 'Page shows no result') {
+      // 区域无结果兜底：UK/EU/CA 搜索页明确无结果时，到 US 站点再试一次。
+      // 判定依据是机器可读的 errorCode（page-crawler 产出），不依赖 error 文案，
+      // 避免上游可见文案改动导致兜底静默失效。
+      if (result && result.status === 'not_found' && result.errorCode === 'PAGE_NO_RESULT') {
         const fallbackRegion = NO_RESULT_FALLBACKS[task.regionCode];
         if (fallbackRegion && this.regionRegistry) {
           const fallbackBaseUrl = this.regionRegistry.resolve(fallbackRegion);

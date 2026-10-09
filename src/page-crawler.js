@@ -438,7 +438,12 @@ class PageCrawler {
       if (!productUrl) {
         const noResult = await this.hasNoResult(page);
         result.status = 'not_found';
+        // error 字段文案是上游可见的报错（pusher 会透传为 errorMessage），不可改；
+        // 区域回退等内部决策改用稳定的机器可读 errorCode，避免依赖文案精确匹配。
         result.error = noResult ? 'Page shows no result' : 'No product URL found';
+        if (noResult) {
+          result.errorCode = 'PAGE_NO_RESULT';
+        }
         this.log(`[${sku}] Product not found (${noResult ? 'page confirms no result' : 'no URL extracted'})`);
         return result;
       }

@@ -114,6 +114,7 @@ function makeChannelWithFallbackResponse() {
         sku: task.sku,
         status: 'not_found',
         error: 'Page shows no result',
+        errorCode: 'PAGE_NO_RESULT',
         product_name: '',
         product_url: '',
         features_details: '',
@@ -123,7 +124,7 @@ function makeChannelWithFallbackResponse() {
   };
 }
 
-function makeChannelReturningNotFound(error) {
+function makeChannelReturningNotFound(error, errorCode) {
   return {
     id: 1,
     busy: false,
@@ -136,6 +137,7 @@ function makeChannelReturningNotFound(error) {
         sku: task.sku,
         status: 'not_found',
         error,
+        errorCode,
         product_name: '',
         product_url: '',
         features_details: '',
@@ -178,12 +180,37 @@ describe('Worker no-result fallback to US', () => {
 
   it('US page shows no result -> does not fallback again', async () => {
     const pusher = makePusher();
-    const channel = makeChannelReturningNotFound('Page shows no result');
+    const channel = makeChannelReturningNotFound('Page shows no result', 'PAGE_NO_RESULT');
     const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
     const result = await worker.runTask({ crawlerTaskId: 13, sku: 'S13', regionCode: 'US' }, channel);
 
     assert.strictEqual(channel.crawlCalls.length, 1);
     assert.strictEqual(channel.crawlCalls[0].baseUrl, 'https://www.vevor.com');
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(result.error, 'Page shows no result');
+  });
+
+  it('fallback is driven by errorCode, not the error message text', async () => {
+    // 文案不同但 errorCode 相同 → 仍应触发回退
+    const pusher = makePusher();
+    const channel = makeChannelReturningNotFound('Some reworded no-result message', 'PAGE_NO_RESULT');
+    const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
+    const result = await worker.runTask({ crawlerTaskId: 16, sku: 'S16', regionCode: 'GB' }, channel);
+
+    assert.strictEqual(channel.crawlCalls.length, 2);
+    assert.strictEqual(channel.crawlCalls[0].baseUrl, 'https://www.vevor.co.uk');
+    assert.strictEqual(channel.crawlCalls[1].baseUrl, 'https://www.vevor.com');
+  });
+
+  it('same error message without errorCode does not trigger fallback', async () => {
+    // 文案相同但缺 errorCode → 不应触发回退（防止退回到字符串匹配）
+    const pusher = makePusher();
+    const channel = makeChannelReturningNotFound('Page shows no result');
+    const worker = new Worker({ pusher, log: () => {}, regionRegistry: new RegionRegistry() });
+    const result = await worker.runTask({ crawlerTaskId: 17, sku: 'S17', regionCode: 'GB' }, channel);
+
+    assert.strictEqual(channel.crawlCalls.length, 1);
+    assert.strictEqual(channel.crawlCalls[0].baseUrl, 'https://www.vevor.co.uk');
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'Page shows no result');
   });
