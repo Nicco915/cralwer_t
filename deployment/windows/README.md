@@ -77,6 +77,41 @@ C:\hs-sku-crawler\deployment\windows\deploy.ps1 `
 
 应用自身的 `logs/crawler.jsonl` 与 `logs/callbacks/` 由代码内轮转/清理（`CRAWLER_LOG_MAX_SIZE_MB`、`CRAWLER_LOG_RETENTION_DAYS`），与 pm2-logrotate 互不影响。
 
+## 国内机器双爬虫（原生 IP）部署
+
+适用场景：国内 Windows 机器、原生国内 IP 直连（不配任何代理），从每台 1 个爬虫进程扩到每台 2 个进程。模板文件：`deployment/windows/ecosystem.local-dual.config.js`。
+
+### 迁移步骤
+
+```powershell
+# 1. 备份当前根目录 .env 里的配置值（尤其 CRAWLER_NODE_TOKEN 等敏感值），
+#    迁移后根目录 .env 不再被加载，需要时可对照补回模板
+# 2. 编辑 deployment\windows\ecosystem.local-dual.config.js：
+#    - NODE_CODES：填本台机器的两个 nodeCode（如 crawler-21 / crawler-21b）
+#    - SHARED_UPSTREAM：CRAWLER_NODE_TOKEN 等填真实值（URL 已与现网一致，一般不用改）
+# 3. 停掉旧单进程并启动双进程
+pm2 delete crawler
+pm2 start deployment/windows/ecosystem.local-dual.config.js
+pm2 save
+# 4. 验证
+pm2 list   # 应看到两个进程（如 crawler-21 / crawler-21b）均为 online
+```
+
+### 注意事项
+
+- **nodeCode 全网唯一**：不同机器的 NODE_CODES 不能重复，否则上游任务端心跳/节点归属混乱。
+- **日志位置变化**：迁移后根目录旧 `logs/` 不再增长；新日志在各进程自己的 `instances/<nodeCode>/logs/` 下（应用日志 crawler.jsonl 与 PM2 日志 pm2-*.log 都在里面）。Promtail 的 `-LogDir` 如需采集新路径请相应调整。
+- **资源占用**：两个进程 = 两个 Chromium 实例，内存占用约为原先两倍，低内存机器注意。
+- **无双 IP 自愈**：两进程共享同一个原生出口 IP，被 CF 风控时没有备用 IP 可换。日常靠 Grafana 的 CF 挑战率/失败率告警监控，异常时人工介入。
+
+### 回滚
+
+```powershell
+pm2 delete all
+pm2 start ecosystem.config.js   # 根目录单进程配置 + 根目录 .env
+pm2 save
+```
+
 ## PM2 Windows 服务注册
 
 如果首次部署时未成功注册服务，或需要重新注册：
