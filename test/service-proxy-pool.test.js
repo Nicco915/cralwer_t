@@ -5,7 +5,6 @@ const path = require('path');
 const { CrawlerService } = require('../src/service');
 
 test('service assigns different proxies per channel from pool', async () => {
-  const assignmentsFile = path.join(os.tmpdir(), `svc-pool-${Date.now()}.json`);
   const proxies = ['1.1.1.1:8080', '2.2.2.2:8080'];
   const service = new CrawlerService({
     baseUrl: 'https://example.com',
@@ -19,12 +18,6 @@ test('service assigns different proxies per channel from pool', async () => {
     nodeCode: 'test-node',
     nodeToken: '',
     taskUrl: 'http://localhost:9999/tasks',
-    kuaidailiSecretId: 'sid',
-    kuaidailiSecretKey: 'skey',
-    proxyMachineIndex: 0,
-    proxyMachineTotal: 1,
-    proxyRefreshIntervalMs: 60000,
-    proxyAssignmentsFile: assignmentsFile,
   });
 
   const fakeBrowser = {
@@ -58,7 +51,6 @@ test('service assigns different proxies per channel from pool', async () => {
 });
 
 test('service rotates proxy after consecutive proxy failures', async () => {
-  const assignmentsFile = path.join(os.tmpdir(), `svc-rotate-${Date.now()}.json`);
   const proxies = ['1.1.1.1:8080', '2.2.2.2:8080'];
   const rotatedChannels = [];
 
@@ -74,12 +66,6 @@ test('service rotates proxy after consecutive proxy failures', async () => {
     nodeCode: 'test-node',
     nodeToken: '',
     taskUrl: 'http://localhost:9999/tasks',
-    kuaidailiSecretId: 'sid',
-    kuaidailiSecretKey: 'skey',
-    proxyMachineIndex: 0,
-    proxyMachineTotal: 1,
-    proxyRefreshIntervalMs: 60000,
-    proxyAssignmentsFile: assignmentsFile,
   });
 
   const fakeBrowser = {
@@ -124,7 +110,6 @@ test('service rotates proxy after consecutive proxy failures', async () => {
 });
 
 test('service injects proxyPool into channels so rotateProxy can switch IP', async () => {
-  const assignmentsFile = path.join(os.tmpdir(), `svc-inject-${Date.now()}.json`);
   const service = new CrawlerService({
     baseUrl: 'https://example.com',
     imageDir: path.join(os.tmpdir(), 'imgs'),
@@ -137,12 +122,6 @@ test('service injects proxyPool into channels so rotateProxy can switch IP', asy
     nodeCode: 'test-node',
     nodeToken: '',
     taskUrl: 'http://localhost:9999/tasks',
-    kuaidailiSecretId: 'sid',
-    kuaidailiSecretKey: 'skey',
-    proxyMachineIndex: 0,
-    proxyMachineTotal: 1,
-    proxyRefreshIntervalMs: 60000,
-    proxyAssignmentsFile: assignmentsFile,
   });
 
   const fakeBrowser = {

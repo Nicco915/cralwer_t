@@ -1091,14 +1091,13 @@ CLIPROXY_STICKY_MINUTES=30
 CLIPROXY_SESSION_PREFIX=crawler-01
 ```
 
-### 5.1 互斥校验
+### 5.1 代理选择逻辑
 
-`startProxyPool()` 启动时检查：
+`startProxyPool()` 启动时按优先级选择代理：
 
-- 不能同时配置 Kuaidaili 和 Cliproxy（互斥）
-- 不配置任何代理池则使用静态代理或直连
-
-误配会立即报错，避免静默走错路径。
+- 配置了静态代理 `CRAWLER_PROXY` → 直接使用静态代理（优先级最高，所有 Channel 共用）
+- 否则配置了 Cliproxy 凭据（`CLIPROXY_USERNAME` / `CLIPROXY_PASSWORD`）→ 启用 Cliproxy 池
+- 都不配置 → 直连（无代理）
 
 ---
 
@@ -1253,7 +1252,6 @@ docker compose logs --tail=100 crawler
 
 - `.env` 缺少 `CRAWLER_IMAGE_BASE` 或 `CRAWLER_NODE_TOKEN`
 - Cliproxy 用户名 / 密码错误
-- 同时配置了 Kuaidaili 和 Cliproxy
 
 #### Q3：升级后 IP 变了
 

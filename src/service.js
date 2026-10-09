@@ -7,8 +7,6 @@ const { Worker } = require('./worker');
 const { Channel } = require('./channel');
 const { Pusher } = require('./pusher');
 const { resolveBrowserPath } = require('./crawler');
-const { KuaidailiClient } = require('./kuaidaili-client');
-const { ProxyPool } = require('./proxy-pool');
 const { CliproxyPool } = require('./cliproxy-pool');
 const { fetchExitInfo } = require('./proxy-exit-check');
 const { ImageUploader } = require('./image-uploader');
@@ -188,32 +186,7 @@ class CrawlerService {
       return;
     }
 
-    const hasKuaidaili = this.config.kuaidailiSecretId && this.config.kuaidailiSecretKey;
     const hasCliproxy = this.config.cliproxyUsername && this.config.cliproxyPassword;
-
-    if (hasKuaidaili && hasCliproxy) {
-      throw new Error('Kuaidaili and Cliproxy credentials are mutually exclusive; configure only one proxy pool');
-    }
-
-    if (hasKuaidaili) {
-      const client = new KuaidailiClient({
-        secretId: this.config.kuaidailiSecretId,
-        secretKey: this.config.kuaidailiSecretKey,
-        proxyType: this.config.kuaidailiProxyType,
-        proxyNum: this.config.kuaidailiProxyNum,
-        tokenCacheFile: this.config.kuaidailiTokenCacheFile,
-      });
-      this.proxyPool = new ProxyPool({
-        client,
-        machineIndex: this.config.proxyMachineIndex,
-        machineTotal: this.config.proxyMachineTotal,
-        channels: this.config.channels,
-        assignmentsFile: this.config.proxyAssignmentsFile,
-      });
-      await this.proxyPool.assign();
-      this.startProxyRefresh();
-      return;
-    }
 
     if (hasCliproxy) {
       this.proxyPool = new CliproxyPool({

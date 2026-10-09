@@ -246,81 +246,6 @@ cd C:\hs-sku-crawler\deployment\windows
 
 > 回滚依赖 `.deployment-state.json` 中记录的历史版本。如果该文件丢失，可手动通过 `git log` 查找目标 commit。
 
-### 2.7 代理池日常维护
-
-如果启用了 Kuaidaili 独享代理池（配置了 `KUAIDAILI_SECRET_ID` / `KUAIDAILI_SECRET_KEY`），需要进行以下日常维护。
-
-#### 查看当前 Channel-IP 分配
-
-```powershell
-Get-Content C:\hs-sku-crawler\proxy-assignments.json
-```
-
-#### 手动刷新代理池
-
-服务会按 `PROXY_REFRESH_INTERVAL_MS` 自动刷新。如需立即刷新（例如发现多个 Channel 被拦截）：
-
-```powershell
-cd C:\hs-sku-crawler
-node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const { ProxyPool } = require('./src/proxy-pool'); (async () => { const client = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY, proxyNum: process.env.KUAIDAILI_PROXY_NUM || 1000 }); const pool = new ProxyPool({ client, machineIndex: process.env.PROXY_MACHINE_INDEX || 0, machineTotal: process.env.PROXY_MACHINE_TOTAL || 1, channels: process.env.CRAWLER_CHANNELS || 4, assignmentsFile: process.env.PROXY_ASSIGNMENTS_FILE || 'C:\\\\hs-sku-crawler\\\\proxy-assignments.json' }); const map = await pool.assign(); console.log(JSON.stringify(map, null, 2)); })().catch(console.error);"
-```
-
-然后平滑重载服务使新分配生效：
-
-```powershell
-pm2 reload crawler
-```
-
-#### 手动切换指定 Channel 的 IP
-
-当某个 Channel 频繁被拦截时，可手动让它切换到分区中的下一个 IP：
-
-```powershell
-cd C:\hs-sku-crawler
-node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const { ProxyPool } = require('./src/proxy-pool'); (async () => { const client = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY }); const pool = new ProxyPool({ client, machineIndex: process.env.PROXY_MACHINE_INDEX || 0, machineTotal: process.env.PROXY_MACHINE_TOTAL || 1, channels: process.env.CRAWLER_CHANNELS || 4, assignmentsFile: process.env.PROXY_ASSIGNMENTS_FILE || 'C:\\\\hs-sku-crawler\\\\proxy-assignments.json' }); await pool.assign(); const next = await pool.nextForChannel('ch-1'); console.log('ch-1 next proxy:', next); })().catch(console.error);"
-pm2 reload crawler
-```
-
-#### 清理 Token 缓存（历史兼容）
-
-当前版本已改用本地 `hmacsha1` 签名鉴权，不再调用快代理 `get_secret_token` 接口，因此 `.kdl_token` 缓存文件不再影响代理池运行。如果旧版本遗留了该文件，可以删除：
-
-```powershell
-Remove-Item C:\hs-sku-crawler\.kdl_token -ErrorAction SilentlyContinue
-pm2 reload crawler
-```
-
-#### 水平扩展时调整机器分区
-
-新增机器时，需要为每台机器分配唯一的 `PROXY_MACHINE_INDEX`：
-
-| 机器 | `PROXY_MACHINE_INDEX` | `PROXY_MACHINE_TOTAL` |
-|------|----------------------:|----------------------:|
-| machine-01 | 0 | N |
-| machine-02 | 1 | N |
-| ... | ... | N |
-| machine-N | N-1 | N |
-
-确保：
-
-- 所有机器使用相同的 `PROXY_MACHINE_TOTAL`（机器总数）
-- 每台机器的 `PROXY_MACHINE_INDEX` 从 `0` 开始递增，不重复
-- 单个分区内的 IP 数 ≥ 该机器的 `CRAWLER_CHANNELS`
-
-如果 `KUAIDAILI_PROXY_NUM / PROXY_MACHINE_TOTAL < CRAWLER_CHANNELS`，需要增加 `KUAIDAILI_PROXY_NUM` 或减少 Channel 数。
-
-#### 代理池健康监控要点
-
-日常巡检时关注日志中的以下关键字：
-
-| 关键字 | 含义 | 处理建议 |
-|--------|------|----------|
-| `[PROXY] Refresh failed:` | 刷新代理列表失败 | 检查网络、Kuaidaili 凭据是否正确、能否访问 `kps.kdlapi.com` |
-| `[PROXY] Refresh changed proxies:` | 部分 Channel IP 已变更 | 观察后续任务成功率 |
-| `[SERVICE] Channel X unhealthy detected` | Channel 不健康 | 服务会自动尝试切换 IP，若持续失败则检查代理可用性 |
-| `[SERVICE] Rotating channel X to ...` | 正在切换 IP | 正常自愈行为 |
-| `Proxy partition too small` | 分区 IP 不足 | 增加 `KUAIDAILI_PROXY_NUM` 或减少 `CRAWLER_CHANNELS` |
-
 ---
 
 ## 3. 测试方法
@@ -407,165 +332,7 @@ RESULT: PASS
 
 测试日志保留在 `test/real/smoke-test.log`，可用于事后分析。
 
-### 3.4 代理池 IP 测试
-
-本项目支持 Kuaidaili 独享代理池：按机器分区、每台机器上的每个 Channel 分配不同 IP，并定时刷新。使用代理池时，必须验证 IP 分配、可用性、自动刷新与失败重切。
-
-#### 环境准备
-
-在 `.env` 中配置 Kuaidaili 凭据与分区参数：
-
-```env
-# Kuaidaili 独享代理池凭据
-KUAIDAILI_SECRET_ID=your-secret-id
-KUAIDAILI_SECRET_KEY=your-secret-key
-KUAIDAILI_PROXY_TYPE=kps
-KUAIDAILI_PROXY_NUM=1000
-
-# 机器分区（3 台机器时分别设为 0/1/2）
-PROXY_MACHINE_INDEX=0
-PROXY_MACHINE_TOTAL=3
-
-# Channel-IP 映射持久化文件
-PROXY_ASSIGNMENTS_FILE=C:\hs-sku-crawler\proxy-assignments.json
-
-# 刷新间隔（默认 5 分钟）
-PROXY_REFRESH_INTERVAL_MS=300000
-
-# 每个 Channel 使用不同 IP
-CRAWLER_CHANNELS=2
-```
-
-> **优先级说明：** 静态代理 `CRAWLER_PROXY` 优先级高于代理池。如果同时配置了 `CRAWLER_PROXY`，代理池不会生效。
-
-#### 3.4.1 检查 Channel-IP 分配
-
-启动服务后，查看持久化文件：
-
-```powershell
-Get-Content C:\hs-sku-crawler\proxy-assignments.json
-```
-
-预期输出：
-
-```json
-{
-  "ch-1": "1.2.3.4:8080",
-  "ch-2": "5.6.7.8:8080"
-}
-```
-
-通过标准：
-
-- 每个 Channel 都有独立的 IP
-- 同一机器内不同 Channel 的 IP 不相同
-- IP 格式为 `host:port`
-
-#### 3.4.2 验证代理可用性
-
-通过代理访问 VEVOR 网站：
-
-```powershell
-$proxy = "http://1.2.3.4:8080"
-Invoke-WebRequest -Uri "https://eur.vevor.com" -Proxy $proxy -UseBasicParsing -TimeoutSec 30
-```
-
-通过标准：
-
-- 返回 HTTP 200
-- 响应时间合理（通常 < 10 秒）
-
-Kuaidaili `kps` 产品的认证信息通常已嵌入 IP 中，无需额外 `-ProxyCredential`。
-
-#### 3.4.3 验证服务启动日志
-
-启动服务后观察日志：
-
-```powershell
-pm2 logs crawler --lines 50
-```
-
-应看到类似输出：
-
-```text
-[PROXY] Assigned proxies: { 'ch-1': '1.2.3.4:8080', 'ch-2': '5.6.7.8:8080' }
-[SERVICE] Running with nodeCode=crawler-01, channels=2
-```
-
-#### 3.4.4 验证自动刷新
-
-默认每 5 分钟（`PROXY_REFRESH_INTERVAL_MS`）代理池会从 Kuaidaili 重新拉取 IP 列表并刷新映射。当日志出现：
-
-```text
-[PROXY] Refresh changed proxies: [ 'ch-1' ]
-[PROXY] Reinitializing channel 1 with 9.8.7.6:8080
-```
-
-表示刷新成功，Channel 1 的 IP 已变更并重新初始化。
-
-#### 3.4.5 验证失败重切
-
-当某个 Channel 被 Cloudflare 拦截或代理失效时，服务会自动切换到该 Channel 分区中的下一个 IP。观察日志：
-
-```text
-[SERVICE] Channel 1 unhealthy detected
-[SERVICE] Rotating channel 1 to 9.8.7.6:8080
-[SERVICE] Channel 1 recovered after proxy rotation
-```
-
-通过标准：
-
-- unhealthy 检测后成功切换到新 IP
-- Channel 恢复在线，任务继续处理
-
-#### 3.4.6 多机器分区验证
-
-对于多机器部署，确保每台机器的 `PROXY_MACHINE_INDEX` 不同且 `PROXY_MACHINE_TOTAL` 相同：
-
-| 机器 | PROXY_MACHINE_INDEX | PROXY_MACHINE_TOTAL |
-|------|---------------------|---------------------|
-| machine-01 | 0 | 3 |
-| machine-02 | 1 | 3 |
-| machine-03 | 2 | 3 |
-
-验证方法：
-
-1. 在每台机器上启动服务
-2. 分别查看 `proxy-assignments.json`
-3. 确认不同机器的 IP 无重叠
-
-```powershell
-# 在 machine-01 上
-Get-Content C:\hs-sku-crawler\proxy-assignments.json
-
-# 在 machine-02 上
-Get-Content C:\hs-sku-crawler\proxy-assignments.json
-```
-
-通过标准：
-
-- 同一机器内不同 Channel IP 不重复
-- 不同机器之间的 IP 不重叠
-
-#### 3.4.7 代理池常见问题
-
-1. **启动报错 `Proxy partition too small for machine X: got N IPs but need M channels`**
-   - 原因：该机器分区到的 IP 数少于 Channel 数
-   - 解决：减少 `CRAWLER_CHANNELS`，或增加 `KUAIDAILI_PROXY_NUM`，或减少 `PROXY_MACHINE_TOTAL`
-
-2. **`proxy-assignments.json` 为空或不生成**
-   - 原因：未配置 `KUAIDAILI_SECRET_ID` / `KUAIDAILI_SECRET_KEY`，或凭据错误
-   - 解决：检查 `.env` 并确认 Kuaidaili 账户可用
-
-3. **所有 Channel 使用同一 IP**
-   - 原因：可能同时配置了 `CRAWLER_PROXY`（静态代理优先级更高）
-   - 解决：删除或注释 `CRAWLER_PROXY`
-
-4. **代理刷新失败**
-   - 原因：网络不稳定、Kuaidaili 接口限流、凭据错误
-   - 解决：检查日志中 `[PROXY] Refresh failed:` 错误信息，确认能访问 `kps.kdlapi.com`，并验证 `KUAIDAILI_SECRET_ID` / `KUAIDAILI_SECRET_KEY` 是否正确
-
-### 3.5 负载测试（可选）
+### 3.4 负载测试（可选）
 
 ```powershell
 npm run test:load
@@ -573,7 +340,7 @@ npm run test:load
 
 使用本地 stub server 验证 4 并发通道下任务不重复、全部成功回调。
 
-### 3.6 多机部署测试（可选）
+### 3.5 多机部署测试（可选）
 
 - **本地 Docker Compose 模拟：** `npm run test:deployment:local`
 - **真实多机部署：** 参考 `test/deployment/README.md`
@@ -673,22 +440,7 @@ C:\hs-sku-crawler\deployment\windows\setup-pm2-service.ps1
    .\rollback.ps1 -InstallDir "C:\hs-sku-crawler"
    ```
 
-### 4.7 代理池 IP 失效或分配异常
-
-1. 检查 `proxy-assignments.json` 是否生成：
-   ```powershell
-   Get-Content C:\hs-sku-crawler\proxy-assignments.json
-   ```
-2. 检查日志中 `[PROXY]` 相关输出，确认 `assign`、`refresh`、`rotate` 是否正常。
-3. 验证 Kuaidaili 凭据：
-   ```powershell
-   node -e "const { KuaidailiClient } = require('./src/kuaidaili-client'); const c = new KuaidailiClient({ secretId: process.env.KUAIDAILI_SECRET_ID, secretKey: process.env.KUAIDAILI_SECRET_KEY }); c.getKpsProxies().then(list => console.log('OK, got', list.length)).catch(e => console.error(e.message));" 2>&1
-   ```
-   如果凭据正确且网络可达，会输出 `OK, got N`；如果失败，会打印具体错误（如 `-130 missing parameters` 表示凭据错误，`-120 req over limit` 表示限流）。
-4. 使用 `Invoke-WebRequest -Proxy` 测试单个代理是否可用（见 3.4.2）。
-5. 如果问题持续，参考 3.4.7「代理池常见问题」逐项排查。
-
-### 4.8 回滚失败
+### 4.7 回滚失败
 
 1. 确认 `.deployment-state.json` 存在：
    ```powershell
@@ -724,15 +476,7 @@ C:\hs-sku-crawler\deployment\windows\setup-pm2-service.ps1
 | `CRAWLER_MIN_DELAY` | SKU 间最小延迟（秒） | `5` |
 | `CRAWLER_MAX_DELAY` | SKU 间最大延迟（秒） | `10` |
 | `CRAWLER_PROXY` | 静态代理地址（优先级高于代理池） | `http://proxy.example.com:8080` |
-| `KUAIDAILI_SECRET_ID` | Kuaidaili 订单 SecretId | - |
-| `KUAIDAILI_SECRET_KEY` | Kuaidaili 订单 SecretKey | - |
-| `KUAIDAILI_PROXY_TYPE` | Kuaidaili 产品类型 | `kps` |
-| `KUAIDAILI_PROXY_NUM` | 每次拉取代理数量 | `1000` |
-| `KUAIDAILI_TOKEN_CACHE_FILE` | ~~Kuaidaili token 缓存文件~~（当前已改用 `hmacsha1` 签名，保留兼容） | `.kdl_token` |
-| `PROXY_MACHINE_INDEX` | 当前机器序号（从 0 开始） | `0` |
-| `PROXY_MACHINE_TOTAL` | 机器总数 | `1` |
 | `PROXY_REFRESH_INTERVAL_MS` | 代理池刷新间隔（毫秒） | `300000` |
-| `PROXY_ASSIGNMENTS_FILE` | Channel-IP 映射持久化文件 | `./proxy-assignments.json` |
 
 ### 5.2 PM2 命令速查表
 
@@ -757,8 +501,6 @@ C:\hs-sku-crawler\deployment\windows\setup-pm2-service.ps1
 | `C:\hs-sku-crawler\.env` | 环境变量配置 |
 | `C:\hs-sku-crawler\.deployment-state.json` | 部署状态（当前/历史 commit） |
 | `C:\hs-sku-crawler\logs\` | 应用日志目录 |
-| `C:\hs-sku-crawler\proxy-assignments.json` | Channel-IP 映射持久化文件 |
-| `C:\hs-sku-crawler\.kdl_token` | ~~Kuaidaili token 缓存文件~~（当前已改用 `hmacsha1` 签名，旧文件可删除） |
 | `C:\hs-sku-crawler\deployment\windows\` | 部署脚本目录 |
 | `C:\hs-sku-crawler\deployment\windows\ecosystem.config.js` | PM2 进程配置 |
 | `C:\hs-sku-crawler\bin\run.js` | 服务入口文件 |

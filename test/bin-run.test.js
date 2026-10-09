@@ -14,27 +14,6 @@ describe('bin/run service config', () => {
     assert.strictEqual(config.proxy, undefined);
   });
 
-  it('passes proxy pool config to service config', () => {
-    const config = buildServiceConfig({
-      kuaidailiSecretId: 'sid',
-      kuaidailiSecretKey: 'skey',
-      proxyMachineIndex: '1',
-      proxyMachineTotal: '3',
-      proxyRefreshIntervalMs: '60000',
-      proxyAssignmentsFile: './pool.json',
-      kuaidailiProxyNum: '500',
-    });
-    assert.strictEqual(config.kuaidailiSecretId, 'sid');
-    assert.strictEqual(config.kuaidailiSecretKey, 'skey');
-    assert.strictEqual(config.kuaidailiProxyType, 'kps');
-    assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
-    assert.strictEqual(config.proxyMachineIndex, 1);
-    assert.strictEqual(config.proxyMachineTotal, 3);
-    assert.strictEqual(config.proxyRefreshIntervalMs, 60000);
-    assert.strictEqual(config.proxyAssignmentsFile, './pool.json');
-    assert.strictEqual(config.kuaidailiProxyNum, 500);
-  });
-
   it('passes cliproxy config to service config', () => {
     const config = buildServiceConfig({
       cliproxyHost: 'us.cliproxy.io',
@@ -76,13 +55,7 @@ describe('bin/run service config', () => {
 
   it('uses proxy pool defaults when not provided', () => {
     const config = buildServiceConfig({});
-    assert.ok(config.proxyAssignmentsFile.includes(path.join('output', 'proxy-assignments.json')));
-    assert.strictEqual(config.proxyMachineIndex, 0);
-    assert.strictEqual(config.proxyMachineTotal, 1);
     assert.strictEqual(config.proxyRefreshIntervalMs, 300000);
-    assert.strictEqual(config.kuaidailiProxyType, 'kps');
-    assert.strictEqual(config.kuaidailiTokenCacheFile, '.kdl_token');
-    assert.strictEqual(config.kuaidailiProxyNum, 1000);
   });
 
   it('passes dataLayer retry config to service config', () => {

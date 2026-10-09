@@ -23,7 +23,7 @@ function log(...args) { console.log(...args); }
 function redact(text) {
   if (!text) return text;
   // 脱敏 .env 中的代理凭据
-  return String(text).replace(/(CLIPROXY_PASSWORD|KUAIDAILI_SECRET_KEY|KUAIDAILI_SECRET_ID)="?[^"\s]+"?/g, '$1=***');
+  return String(text).replace(/(CLIPROXY_PASSWORD)="?[^"\s]+"?/g, '$1=***');
 }
 
 function parseResultJson(stdout) {

@@ -28,7 +28,7 @@ node test-sku.js <sku>      # 单 SKU 调试
 | `src/channel.js` | 浏览器上下文生命周期、健康检查、headed 回退、代理轮换 |
 | `src/page-crawler.js` | 单 SKU 页面抓取：URL 编码、dataLayer/HTML 提取、SKU 校验、图片下载 |
 | `src/poller.js` / `src/pusher.js` | 上游拉任务 / 回调上报 |
-| `src/proxy-pool.js` / `src/cliproxy-pool.js` / `src/kuaidaili-client.js` | 代理池（cliproxy 一爬虫一 ASN / Kuaidaili 备用） |
+| `src/cliproxy-pool.js` | Cliproxy 住宅代理池（一爬虫一 ASN） |
 | `src/region-registry.js` | 多区域站点映射（EU/US/GB/CA 等） |
 | `src/image-uploader.js` | 图片上传 |
 | `src/crawler.js` | cli Excel 模式编排 + 翻译（仅 cli 模式用） |
@@ -41,7 +41,7 @@ node test-sku.js <sku>      # 单 SKU 调试
 - **图片文件名**：`<sku>_<index>.<ext>`，SKU 从文件名推断时去掉末尾 `_数字.扩展名`。
 - **配置优先级**：CLI flag > 环境变量 > 默认值（见 `src/cli.js`）。
 - **日志**：`src/logger.js` 输出 NDJSON（BigInt 需安全序列化），Loki + Promtail + Grafana 统一监控。`crawler.jsonl` 按 `CRAWLER_LOG_MAX_SIZE_MB`（默认 50MB）轮转为 `crawler-YYYYMMDD-HHMMSS.jsonl`，与 `logs/callbacks/` 一起按 `CRAWLER_LOG_RETENTION_DAYS`（默认 7 天）清理；PM2 托管日志（crawler-combined/out/error-*.log）由 `deployment/windows/setup-pm2-logrotate.ps1` 配置的 pm2-logrotate 轮转。
-- **代理**：静态代理 `CRAWLER_PROXY` 与代理池互斥，静态优先级更高；`CRAWLER_CHANNELS` 不能超过本机分到的 IP 数；Channel-IP 映射持久化到 `PROXY_ASSIGNMENTS_FILE`。
+- **代理**：静态代理 `CRAWLER_PROXY` 与 Cliproxy 池互斥，静态优先级更高；`CRAWLER_CHANNELS` 不能超过本机分到的 IP 数；Channel-IP 映射持久化到 `CLIPROXY_ASSIGNMENTS_FILE`。
 
 ## 部署
 
