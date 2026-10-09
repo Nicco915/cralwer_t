@@ -53,6 +53,7 @@ class CrawlerService {
     this.restartPromise = null;
     this.proxyPool = null;
     this.proxyRefreshTimer = null;
+    this.lastProxyRefreshAt = null;
     this.healthServer = null;
     this.healthServerStartTime = null;
     this.heartbeatTimer = null;
@@ -205,6 +206,7 @@ class CrawlerService {
         sessionParamName: this.config.cliproxySessionParamName,
         stickyParamName: this.config.cliproxyStickyParamName,
         rotationCooldownMs: this.config.cliproxyRotationCooldownMs,
+        log: this.log.bind(this),
       });
       await this.proxyPool.assign();
       this.startProxyRefresh();
@@ -314,24 +316,51 @@ class CrawlerService {
 
   startProxyRefresh() {
     const interval = this.config.proxyRefreshIntervalMs || 300000;
-    this.proxyRefreshTimer = setInterval(async () => {
-      try {
-        const changed = await this.proxyPool.refresh();
-        if (changed.length > 0) {
-          this.log('[PROXY] Refresh changed proxies:', changed);
-          for (const channel of this.channels) {
-            const channelId = `ch-${channel.id}`;
-            if (changed.includes(channelId)) {
-              const newProxy = this.proxyPool.getProxyForChannel(channelId);
-              this.log(`[PROXY] Reinitializing channel ${channel.id} with ${newProxy}`);
-              await channel.reinit(this.browser, newProxy);
-            }
-          }
-        }
-      } catch (e) {
-        this.log('[PROXY] Refresh failed:', e.message);
-      }
+    this.lastProxyRefreshAt = Date.now();
+    this.proxyRefreshTimer = setInterval(() => {
+      this.refreshProxiesOnce().catch((e) => this.log('[PROXY] Refresh failed:', e.message));
     }, interval);
+  }
+
+  async refreshProxiesOnce() {
+    const interval = this.config.proxyRefreshIntervalMs || 300000;
+    const busyCount = this.channels.filter((c) => c.busy).length;
+    const elapsed = Date.now() - (this.lastProxyRefreshAt || 0);
+    if (busyCount > 0) {
+      // 有在途任务时跳过本轮 refresh，避免掐断在途 crawl；
+      // 但超过 3 个刷新周期没刷成则强制执行，防止永久饥饿。
+      if (elapsed <= 3 * interval) {
+        this.log(`[PROXY] Refresh skipped: ${busyCount} channel(s) busy`);
+        return;
+      }
+      this.log(`[PROXY] Refresh forced despite ${busyCount} busy channel(s): no successful refresh for ${Math.round(elapsed / interval)} intervals`);
+    }
+
+    // CliproxyPool.refresh() 返回的是 assignments 对象（channelId -> url），不是变化列表；
+    // 变化通过在 refresh 前后快照 getProxyForChannel 对比得出。
+    const previousProxies = {};
+    for (const channel of this.channels) {
+      previousProxies[`ch-${channel.id}`] = this.proxyPool.getProxyForChannel(`ch-${channel.id}`);
+    }
+    await this.proxyPool.refresh();
+    this.lastProxyRefreshAt = Date.now();
+
+    const changed = this.channels
+      .map((c) => `ch-${c.id}`)
+      .filter((id) => this.proxyPool.getProxyForChannel(id) !== previousProxies[id]);
+    if (changed.length === 0) {
+      return;
+    }
+
+    this.log('[PROXY] Refresh changed proxies:', changed);
+    for (const channel of this.channels) {
+      const channelId = `ch-${channel.id}`;
+      if (changed.includes(channelId)) {
+        const newProxy = this.proxyPool.getProxyForChannel(channelId);
+        this.log(`[PROXY] Reinitializing channel ${channel.id} with ${maskProxyUrl(newProxy)}`);
+        await channel.reinit(this.browser, newProxy);
+      }
+    }
   }
 
   stopProxyRefresh() {
@@ -508,7 +537,7 @@ class CrawlerService {
           channel.reinitializing = true;
           const channelId = `ch-${channel.id}`;
           const newProxy = await this.proxyPool.nextForChannel(channelId);
-          this.log(`[SERVICE] Rotating channel ${channel.id} to ${newProxy}`);
+          this.log(`[SERVICE] Rotating channel ${channel.id} to ${maskProxyUrl(newProxy)}`);
           channel.consecutiveFailures = 0;
           channel.lastFailureWasProxy = false;
           channel.dataLayerFailureCount = 0;

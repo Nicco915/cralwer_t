@@ -23,6 +23,8 @@ class CliproxyPool {
     this.currentAssignments = {};
     this.nonces = {};
     this.lastRotation = {};
+    // 可选日志回调（service 注入 this.log），缺省静默，保持容错语义
+    this.log = typeof options.log === 'function' ? options.log : () => {};
   }
 
   generateNonce() {
@@ -44,14 +46,35 @@ class CliproxyPool {
       const raw = fs.readFileSync(this.assignmentsFile, 'utf-8');
       return JSON.parse(raw);
     } catch (e) {
+      if (e.code === 'ENOENT') return {};
+      this.log(`[CLIPROXY] assignments 主文件读取/解析失败(${e.message})，尝试 .bak 备份`);
+    }
+    try {
+      const raw = fs.readFileSync(this.assignmentsFile + '.bak', 'utf-8');
+      const parsed = JSON.parse(raw);
+      this.log('[CLIPROXY] assignments 已从 .bak 备份恢复');
+      return parsed;
+    } catch (e2) {
+      this.log(`[CLIPROXY] assignments .bak 备份也不可用(${e2.code || e2.message})，回退为空 assignments`);
       return {};
     }
   }
 
   saveAssignments(assignments) {
-    const dir = path.dirname(this.assignmentsFile);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(this.assignmentsFile, JSON.stringify(assignments, null, 2), 'utf-8');
+    try {
+      const dir = path.dirname(this.assignmentsFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      // 原子写：先写 .tmp，替换前把旧文件留 .bak，最后 rename 原子替换，
+      // 避免进程崩溃截断主文件导致下次 load 丢全部 nonce（集体换 IP）。
+      const tmpFile = this.assignmentsFile + '.tmp';
+      fs.writeFileSync(tmpFile, JSON.stringify(assignments, null, 2), 'utf-8');
+      if (fs.existsSync(this.assignmentsFile)) {
+        fs.copyFileSync(this.assignmentsFile, this.assignmentsFile + '.bak');
+      }
+      fs.renameSync(tmpFile, this.assignmentsFile);
+    } catch (e) {
+      this.log(`[CLIPROXY] assignments 写盘失败: ${e.message}`);
+    }
   }
 
   extractNonceFromUrl(url) {
