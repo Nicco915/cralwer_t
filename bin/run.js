@@ -79,6 +79,8 @@ function buildServiceConfig(config) {
     imageUploadUrl: config.imageUploadUrl || '',
     imageUploadConcurrency: config.imageUploadConcurrency !== undefined ? Number(config.imageUploadConcurrency) : 2,
     imageUploadRetries: config.imageUploadRetries !== undefined ? Number(config.imageUploadRetries) : 3,
+    logMaxSizeMb: config.logMaxSizeMb !== undefined ? Number(config.logMaxSizeMb) : 50,
+    logRetentionDays: config.logRetentionDays !== undefined ? Number(config.logRetentionDays) : 7,
   };
 }
 

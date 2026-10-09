@@ -59,11 +59,17 @@ class CrawlerService {
     this.healthServerStartTime = null;
     this.heartbeatTimer = null;
     this.idleReapTimer = null;
-    this.logger = createBroadcastLogger([
+    this.logger = this._buildLogger(this.config.customLogDir || path.resolve('./logs'));
+  }
+
+  _buildLogger(logDir) {
+    return createBroadcastLogger([
       createStdoutLogger({ nodeCode: this.config.nodeCode }),
       createFileLogger({
         nodeCode: this.config.nodeCode,
-        logDir: this.config.customLogDir || path.resolve('./logs'),
+        logDir,
+        maxBytes: this.config.logMaxSizeMb !== undefined ? this.config.logMaxSizeMb * 1024 * 1024 : undefined,
+        retentionDays: this.config.logRetentionDays,
       }),
     ]);
   }
@@ -235,13 +241,7 @@ class CrawlerService {
   async start(options = {}) {
     if (options.customLogDir) {
       this.config.customLogDir = options.customLogDir;
-      this.logger = createBroadcastLogger([
-        createStdoutLogger({ nodeCode: this.config.nodeCode }),
-        createFileLogger({
-          nodeCode: this.config.nodeCode,
-          logDir: options.customLogDir,
-        }),
-      ]);
+      this.logger = this._buildLogger(options.customLogDir);
     }
     this.log('[SERVICE] Starting crawler service...');
     this.ensureImageDir();
@@ -256,6 +256,7 @@ class CrawlerService {
       nodeToken: this.config.nodeToken,
       maxRetries: this.config.pushRetries,
       retryDelays: [1000, 2000, 4000],
+      retentionDays: this.config.logRetentionDays,
     });
 
     let imageUploader = null;

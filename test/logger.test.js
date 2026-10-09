@@ -1,6 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { createLogger, createStdoutLogger, createBroadcastLogger } = require('../src/logger');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { createLogger, createFileLogger, createStdoutLogger, createBroadcastLogger, cleanupRotatedLogs } = require('../src/logger');
 
 function createMockLogger() {
   const records = [];
@@ -141,5 +144,73 @@ describe('createStdoutLogger / createBroadcastLogger', () => {
     const logger = createBroadcastLogger([failing, ok]);
     assert.doesNotThrow(() => logger.info('comp', 'x'));
     assert.strictEqual(ok.records.length, 1);
+  });
+});
+
+describe('createFileLogger rotation', () => {
+  function makeTempDir() {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'crawler-log-test-'));
+  }
+
+  it('rotates crawler.jsonl when size exceeds maxBytes', () => {
+    const dir = makeTempDir();
+    const logger = createFileLogger({ nodeCode: 'test-node', logDir: dir, maxBytes: 200, retentionDays: 7 });
+
+    // 每行约 100+ 字节，写几行必然超过 200 字节上限
+    for (let i = 0; i < 5; i++) {
+      logger.info('comp', `line-${i}`, { payload: 'x'.repeat(50) });
+    }
+
+    const files = fs.readdirSync(dir);
+    const rotated = files.filter((f) => /^crawler-\d{8}-\d{6}(-\d+)?\.jsonl$/.test(f));
+    assert.ok(rotated.length >= 1, `expected rotated files, got: ${files.join(',')}`);
+    // 当前文件仍在继续写入
+    assert.ok(files.includes('crawler.jsonl'));
+    const currentSize = fs.statSync(path.join(dir, 'crawler.jsonl')).size;
+    assert.ok(currentSize > 0 && currentSize <= 400, `current log size ${currentSize} should stay small after rotation`);
+  });
+
+  it('continues byte counting across restarts (existing file size is honored)', () => {
+    const dir = makeTempDir();
+    // 模拟重启前已存在的 150 字节日志
+    fs.writeFileSync(path.join(dir, 'crawler.jsonl'), 'x'.repeat(150));
+
+    const logger = createFileLogger({ nodeCode: 'test-node', logDir: dir, maxBytes: 200, retentionDays: 7 });
+    logger.info('comp', 'after restart', { payload: 'y'.repeat(50) });
+
+    const files = fs.readdirSync(dir);
+    const rotated = files.filter((f) => /^crawler-\d{8}-\d{6}(-\d+)?\.jsonl$/.test(f));
+    assert.strictEqual(rotated.length, 1, 'should rotate immediately because pre-existing file already near limit');
+  });
+
+  it('cleanupRotatedLogs deletes rotated files older than retentionDays', () => {
+    const dir = makeTempDir();
+    const oldFile = path.join(dir, 'crawler-20200101-000000.jsonl');
+    const newFile = path.join(dir, 'crawler-20990101-000000.jsonl');
+    const currentFile = path.join(dir, 'crawler.jsonl');
+    fs.writeFileSync(oldFile, 'old');
+    fs.writeFileSync(newFile, 'new');
+    fs.writeFileSync(currentFile, 'current');
+    // 把 oldFile 的 mtime 改成 30 天前
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(oldFile, thirtyDaysAgo, thirtyDaysAgo);
+
+    cleanupRotatedLogs(dir, 7);
+
+    assert.ok(!fs.existsSync(oldFile), 'old rotated file should be deleted');
+    assert.ok(fs.existsSync(newFile), 'future-dated rotated file should be kept');
+    assert.ok(fs.existsSync(currentFile), 'active crawler.jsonl should never be deleted');
+  });
+
+  it('cleanupRotatedLogs with retentionDays=0 disables cleanup', () => {
+    const dir = makeTempDir();
+    const oldFile = path.join(dir, 'crawler-20200101-000000.jsonl');
+    fs.writeFileSync(oldFile, 'old');
+    const longAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(oldFile, longAgo, longAgo);
+
+    cleanupRotatedLogs(dir, 0);
+
+    assert.ok(fs.existsSync(oldFile), 'retentionDays=0 should not delete anything');
   });
 });

@@ -244,6 +244,8 @@ function parse(rawArgs, defaults = {}) {
     CRAWLER_REGIONS: 'regions',
     CRAWLER_DEFAULT_REGION: 'defaultRegion',
     CRAWLER_CLEAR_COOKIES_ON_REGION_SWITCH: 'clearCookiesOnRegionSwitch',
+    CRAWLER_LOG_MAX_SIZE_MB: 'logMaxSizeMb',
+    CRAWLER_LOG_RETENTION_DAYS: 'logRetentionDays',
   };
   for (const [envKey, configKey] of Object.entries(envMap)) {
     if (process.env[envKey] !== undefined && config[configKey] === undefined) {

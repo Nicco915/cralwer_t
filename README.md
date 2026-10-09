@@ -540,6 +540,8 @@ Configuration precedence: **CLI flags > environment variables > defaults**.
 | `--proxy-machine-total` | `PROXY_MACHINE_TOTAL` | `1` | Total machines |
 | `--proxy-refresh-interval-ms` | `PROXY_REFRESH_INTERVAL_MS` | `300000` | Proxy list refresh interval |
 | `--proxy-assignments-file` | `PROXY_ASSIGNMENTS_FILE` | `./proxy-assignments.json` | Channel-IP assignment file |
+| - | `CRAWLER_LOG_MAX_SIZE_MB` | `50` | `logs/crawler.jsonl` 单文件大小上限，超过即轮转成 `crawler-YYYYMMDD-HHMMSS.jsonl` |
+| - | `CRAWLER_LOG_RETENTION_DAYS` | `7` | 轮转日志与 `logs/callbacks/` 审计目录的保留天数，过期自动删除 |
 
 Secrets:
 - `DASHSCOPE_API_KEY` — required only if translation is enabled.

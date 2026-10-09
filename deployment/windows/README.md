@@ -63,6 +63,20 @@ C:\hs-sku-crawler\deployment\windows\deploy.ps1 `
 - 确保 `C:\ProgramData\pm2\home` 存在且对 `LOCAL SERVICE` 可写
 - 安装服务后等待 PM2 服务进入 `Running` 状态，失败时输出诊断信息
 
+## PM2 日志轮转（pm2-logrotate）
+
+长期运行后 PM2 托管日志（`crawler-combined-*.log` / `crawler-out-*.log` / `crawler-error-*.log`）会涨到几百 MB 甚至几 GB。部署完成后执行一次：
+
+```powershell
+.\deployment\windows\setup-pm2-logrotate.ps1
+# 默认：单文件 50MB 轮转，保留 7 份，每天 0 点强制轮转
+# 自定义：.\setup-pm2-logrotate.ps1 -MaxSize 100M -Retain 14
+```
+
+注意：脚本末尾会自动 `pm2 restart all`（pm2 set 的配置必须重启进程才生效）。验证：`pm2 list` 中 `pm2-logrotate` 为 online，`pm2 conf pm2-logrotate` 核对配置。
+
+应用自身的 `logs/crawler.jsonl` 与 `logs/callbacks/` 由代码内轮转/清理（`CRAWLER_LOG_MAX_SIZE_MB`、`CRAWLER_LOG_RETENTION_DAYS`），与 pm2-logrotate 互不影响。
+
 ## PM2 Windows 服务注册
 
 如果首次部署时未成功注册服务，或需要重新注册：

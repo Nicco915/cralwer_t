@@ -60,6 +60,33 @@ function writeCallbackBody(taskId, body) {
   }
 }
 
+// 清理 logs/callbacks/ 下超过保留天数的日期目录（目录名 YYYY-MM-DD）。
+function cleanupOldCallbacks(retentionDays, baseDir = process.cwd()) {
+  if (!retentionDays || retentionDays <= 0) return;
+  const callbacksRoot = path.resolve(baseDir, 'logs', 'callbacks');
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  let entries;
+  try {
+    entries = fs.readdirSync(callbacksRoot);
+  } catch (e) {
+    return; // 目录不存在等情况无需清理
+  }
+  for (const name of entries) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(name)) continue;
+    const dirPath = path.join(callbacksRoot, name);
+    try {
+      const stats = fs.statSync(dirPath);
+      // 用目录 mtime 与目录名日期双重判断，都过期才删除，避免误删
+      const dirDate = new Date(`${name}T00:00:00`).getTime();
+      if (stats.mtimeMs < cutoff && dirDate < cutoff) {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.error(`[PUSHER] Failed to clean callbacks dir ${name}: ${e.message}`);
+    }
+  }
+}
+
 class Pusher {
   constructor(options) {
     this.callbackUrl = options.callbackUrl;
@@ -67,6 +94,9 @@ class Pusher {
     this.nodeToken = options.nodeToken || '';
     this.maxRetries = options.maxRetries || 3;
     this.retryDelays = options.retryDelays || [1000, 2000, 4000];
+    this.retentionDays = options.retentionDays !== undefined ? options.retentionDays : 7;
+    this.lastCallbackCleanup = 0;
+    cleanupOldCallbacks(this.retentionDays);
     this.fetch = options.fetch || globalThis.fetch;
   }
 
@@ -92,6 +122,11 @@ class Pusher {
   }
 
   async push(result) {
+    // 每小时最多清理一次过期回调审计目录（构造时已做过首次清理）
+    if (Date.now() - this.lastCallbackCleanup > 60 * 60 * 1000) {
+      this.lastCallbackCleanup = Date.now();
+      cleanupOldCallbacks(this.retentionDays);
+    }
     const body = this.buildBody(result);
     const taskId = result.crawlerTaskId;
     let lastError = null;
@@ -143,4 +178,4 @@ class Pusher {
   }
 }
 
-module.exports = { Pusher };
+module.exports = { Pusher, cleanupOldCallbacks };

@@ -1,7 +1,10 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const JSONbig = require('json-bigint')({ useNativeBigInt: true });
-const { Pusher } = require('../src/pusher');
+const { Pusher, cleanupOldCallbacks } = require('../src/pusher');
 
 describe('Pusher.push', () => {
   it('posts success result with mapped fields', async () => {
@@ -198,5 +201,60 @@ describe('Pusher.push', () => {
     assert.ok(rawBody.includes('"crawlerTaskId":2070043611483398145,'), `body did not preserve precision: ${rawBody}`);
     const body = JSONbig.parse(rawBody);
     assert.strictEqual(body.crawlerTaskId, 2070043611483398145n);
+  });
+});
+
+describe('cleanupOldCallbacks', () => {
+  function makeCallbacksDir() {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pusher-callbacks-test-'));
+    const callbacksRoot = path.join(baseDir, 'logs', 'callbacks');
+    fs.mkdirSync(callbacksRoot, { recursive: true });
+    return { baseDir, callbacksRoot };
+  }
+
+  function daysAgo(n) {
+    const d = new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+    const pad = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  it('deletes date directories older than retentionDays, keeps recent ones', () => {
+    const { baseDir, callbacksRoot } = makeCallbacksDir();
+    const oldDir = path.join(callbacksRoot, daysAgo(30));
+    const recentDir = path.join(callbacksRoot, daysAgo(1));
+    fs.mkdirSync(oldDir);
+    fs.mkdirSync(recentDir);
+    fs.writeFileSync(path.join(oldDir, 'a.json'), '{}');
+    fs.writeFileSync(path.join(recentDir, 'b.json'), '{}');
+    // cleanupOldCallbacks 要求 mtime 与目录名日期都过期才删除
+    const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(oldDir, longAgo, longAgo);
+
+    cleanupOldCallbacks(7, baseDir);
+
+    assert.ok(!fs.existsSync(oldDir), 'old callbacks dir should be deleted');
+    assert.ok(fs.existsSync(recentDir), 'recent callbacks dir should be kept');
+  });
+
+  it('ignores non-date entries and missing callbacks root', () => {
+    const { baseDir, callbacksRoot } = makeCallbacksDir();
+    const otherDir = path.join(callbacksRoot, 'not-a-date');
+    fs.mkdirSync(otherDir);
+
+    assert.doesNotThrow(() => cleanupOldCallbacks(7, baseDir));
+    assert.ok(fs.existsSync(otherDir), 'non-date directory should be kept');
+    assert.doesNotThrow(() => cleanupOldCallbacks(7, fs.mkdtempSync(path.join(os.tmpdir(), 'pusher-empty-'))));
+  });
+
+  it('retentionDays=0 disables cleanup', () => {
+    const { baseDir, callbacksRoot } = makeCallbacksDir();
+    const oldDir = path.join(callbacksRoot, daysAgo(30));
+    fs.mkdirSync(oldDir);
+    const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(oldDir, longAgo, longAgo);
+
+    cleanupOldCallbacks(0, baseDir);
+
+    assert.ok(fs.existsSync(oldDir));
   });
 });

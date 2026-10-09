@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
+const DEFAULT_LOG_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+const DEFAULT_LOG_RETENTION_DAYS = 7;
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// 轮转文件命名：crawler-YYYYMMDD-HHMMSS(-seq).jsonl
+const ROTATED_LOG_PATTERN = /^crawler-\d{8}-\d{6}(-\d+)?\.jsonl$/;
+
 function getCircularReplacer() {
   const seen = new WeakSet();
   return (key, value) => {
@@ -45,15 +51,84 @@ function createLogger(options = {}) {
   };
 }
 
+function rotatedLogName(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `crawler-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.jsonl`;
+}
+
+function cleanupRotatedLogs(logDir, retentionDays) {
+  if (!retentionDays || retentionDays <= 0) return;
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  let entries;
+  try {
+    entries = fs.readdirSync(logDir);
+  } catch (err) {
+    process.stderr.write(`[LOGGER] Log cleanup readdir error: ${err.message}\n`);
+    return;
+  }
+  for (const name of entries) {
+    if (!ROTATED_LOG_PATTERN.test(name)) continue;
+    const filePath = path.join(logDir, name);
+    try {
+      const stats = fs.statSync(filePath);
+      if (stats.mtimeMs < cutoff) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      process.stderr.write(`[LOGGER] Log cleanup error for ${name}: ${err.message}\n`);
+    }
+  }
+}
+
 function createFileLogger(options = {}) {
   const logDir = options.logDir || path.resolve('./logs');
+  const maxBytes = options.maxBytes !== undefined ? Number(options.maxBytes) : DEFAULT_LOG_MAX_BYTES;
+  const retentionDays = options.retentionDays !== undefined ? Number(options.retentionDays) : DEFAULT_LOG_RETENTION_DAYS;
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, 'crawler.jsonl');
+
+  // 以已有文件大小初始化计数，进程重启后不会丢失已写入的量。
+  let bytesWritten = 0;
+  try {
+    if (fs.existsSync(logFile)) {
+      bytesWritten = fs.statSync(logFile).size;
+    }
+  } catch (err) {
+    process.stderr.write(`[LOGGER] Log stat error: ${err.message}\n`);
+  }
+
+  function rotate() {
+    try {
+      if (!fs.existsSync(logFile)) return;
+      let rotated = path.join(logDir, rotatedLogName());
+      // 同一秒内多次轮转时追加序号避免覆盖。
+      let seq = 1;
+      while (fs.existsSync(rotated)) {
+        rotated = path.join(logDir, rotatedLogName().replace(/\.jsonl$/, `-${seq}.jsonl`));
+        seq += 1;
+      }
+      fs.renameSync(logFile, rotated);
+      bytesWritten = 0;
+    } catch (err) {
+      process.stderr.write(`[LOGGER] Log rotate error: ${err.message}\n`);
+    }
+  }
+
+  cleanupRotatedLogs(logDir, retentionDays);
+  // 低流量节点也要定期清理过期轮转文件；unref 避免阻止进程退出。
+  const cleanupTimer = setInterval(() => cleanupRotatedLogs(logDir, retentionDays), CLEANUP_INTERVAL_MS);
+  if (cleanupTimer.unref) cleanupTimer.unref();
+
   return createLogger({
     nodeCode: options.nodeCode,
     write: (line) => {
       try {
+        if (maxBytes > 0 && bytesWritten + Buffer.byteLength(line) > maxBytes) {
+          rotate();
+        }
         fs.appendFileSync(logFile, line);
+        bytesWritten += Buffer.byteLength(line);
       } catch (err) {
         process.stderr.write(`[LOGGER] File write error: ${err.message}\n`);
       }
@@ -82,4 +157,4 @@ function createBroadcastLogger(loggers) {
   };
 }
 
-module.exports = { createLogger, createFileLogger, createStdoutLogger, createBroadcastLogger };
+module.exports = { createLogger, createFileLogger, createStdoutLogger, createBroadcastLogger, cleanupRotatedLogs };
