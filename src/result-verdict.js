@@ -78,10 +78,10 @@ function deriveDataLayerOutcome(result) {
 // 不含 channel 状态（reinitializing）与全局开关（retryOnTimeout）两个守卫，
 // 那两个留在 worker。
 //
-// classifyFallback（可选，阶段 2 末删除）：旧 result 无 errorCode 时的兼容兜底。
-// 由调用方注入 classifyGotoError，本模块保持零依赖、不解析 error 文案；
-// 注入后按 { retryable, proxy } 判定，等价于接入前的 worker.js 行为。
-function shouldRetryWithNewIp(result, classifyFallback) {
+// error 分支只认 errorCode：所有 error result 必带码（page-crawler 通用 catch
+// + worker buildErrorResult 双产出点打码）；阶段 1 的无码 classify 兜底已于
+// 阶段 2 PR-4 删除，无码形态防御性判 false。
+function shouldRetryWithNewIp(result) {
   if (!result) return false;
 
   // outcome 驱动（阶段 2）：failed → 换 IP；business_empty / unknown → 不换。
@@ -92,15 +92,7 @@ function shouldRetryWithNewIp(result, classifyFallback) {
   }
 
   if (result.status === 'error') {
-    if (result.errorCode) {
-      return RETRYABLE_ERROR_CODES.has(result.errorCode);
-    }
-    // 兼容兜底（阶段 2 末删除）：防御 cli 模式/测试构造的无码 result
-    if (typeof classifyFallback === 'function' && typeof result.error === 'string') {
-      const category = classifyFallback({ message: result.error });
-      return category === 'retryable' || category === 'proxy';
-    }
-    return false;
+    return RETRYABLE_ERROR_CODES.has(result.errorCode);
   }
 
   // timeout 双产地（TASK_DEADLINE_EXCEEDED / GOTO_TIMEOUT）合并在此，
@@ -150,7 +142,12 @@ function isHeadedFallbackCandidate(result) {
 
 // result 是否为超时终态（任一产地）。
 // status === 'timeout' 为主判定；errorCode 双码为辅。
-// 最后一段 error 文案正则是旧 result（无 errorCode）兼容兜底，阶段 2 末可删。
+// 末尾的 error 文案正则不是纯遗留兜底，而是 live 行为（阶段 2 PR-4 决定保留，
+// 与 plan §3.3 的删除项有偏差，理由如下）：page-crawler 通用 catch 会把
+// goto 重试耗尽的 Timeout 异常吞成 status=error + NAVIGATION_FAILED_RETRYABLE
+// 的 result（errorCode 不含超时语义），channel 的 adaptive timeout 记账依赖
+// 本正则识别该形态；删除会把这类 result 从 timeout 改判为普通 error
+// （consecutiveTimeouts 清零而非累加）。是否将其归并为新 errorCode 另行评估。
 function isTimeoutResult(result) {
   if (!result) return false;
   if (result.status === 'timeout') return true;
@@ -158,7 +155,7 @@ function isTimeoutResult(result) {
       result.errorCode === ERROR_CODES.GOTO_TIMEOUT) {
     return true;
   }
-  // 过渡兼容（阶段 2 末可删）：无 errorCode 的旧 result 回落文案正则
+  // goto 超时耗尽被 page-crawler 吞成的 error result（见函数头注释）
   return TIMEOUT_MESSAGE_RE.test(result.error || '');
 }
 

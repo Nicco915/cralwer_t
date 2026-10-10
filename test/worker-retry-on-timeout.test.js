@@ -36,9 +36,13 @@ describe('Worker.shouldRetryWithNewIp', () => {
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
-  it('returns true for page.goto timeout error', () => {
+  it('returns true for page.goto timeout error (coded)', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'page.goto: Timeout 30000ms exceeded.' };
+    // 真实带码形态：goto 超时耗尽被 page-crawler 吞成 error result
+    const result = {
+      status: 'error', errorCode: 'NAVIGATION_FAILED_RETRYABLE',
+      error: 'page.goto: Timeout 30000ms exceeded.',
+    };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
@@ -57,9 +61,22 @@ describe('Worker.shouldRetryWithNewIp', () => {
     assert.strictEqual(result.errorCode, 'TASK_DEADLINE_EXCEEDED');
   });
 
-  it('buildErrorResult leaves errorCode unset for plain errors', () => {
-    const result = worker.buildErrorResult({ crawlerTaskId: 't1', sku: 'SKU' }, new Error('renderer crash'));
-    assert.strictEqual(result.errorCode, undefined);
+  it('buildErrorResult codes non-timeout errors via classifyGotoError (PR-4)', () => {
+    // 产出点打码使 shouldRetryWithNewIp 的无码兜底成为死路径（阶段 2 PR-4）
+    const proxy = worker.buildErrorResult(
+      { crawlerTaskId: 't1', sku: 'SKU' },
+      new Error('page.goto: net::ERR_TUNNEL_CONNECTION_FAILED'),
+    );
+    assert.strictEqual(proxy.errorCode, 'PROXY_CONNECTION_FAILED');
+
+    const retryable = worker.buildErrorResult(
+      { crawlerTaskId: 't1', sku: 'SKU' },
+      new Error('page.goto: net::ERR_TIMED_OUT'),
+    );
+    assert.strictEqual(retryable.errorCode, 'NAVIGATION_FAILED_RETRYABLE');
+
+    const plain = worker.buildErrorResult({ crawlerTaskId: 't1', sku: 'SKU' }, new Error('renderer crash'));
+    assert.strictEqual(plain.errorCode, 'UNEXPECTED_ERROR');
   });
 
   it('returns true for timeout status', () => {
@@ -68,36 +85,55 @@ describe('Worker.shouldRetryWithNewIp', () => {
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
-  it('returns true for net::ERR_TIMED_OUT goto error', () => {
+  it('returns true for net::ERR_TIMED_OUT goto error (coded)', () => {
     const channel = { reinitializing: false };
     const result = {
       status: 'error',
+      errorCode: 'NAVIGATION_FAILED_RETRYABLE',
       error: 'page.goto: net::ERR_TIMED_OUT at https://www.vevor.ca/s/ABC\nCall log:\n  - navigating to "https://www.vevor.ca/s/ABC", waiting until "domcontentloaded"\n',
     };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
-  it('returns true for proxy-class goto error (tunnel failed)', () => {
+  it('returns true for proxy-class goto error (tunnel failed, coded)', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'page.goto: net::ERR_TUNNEL_CONNECTION_FAILED' };
+    const result = {
+      status: 'error', errorCode: 'PROXY_CONNECTION_FAILED',
+      error: 'page.goto: net::ERR_TUNNEL_CONNECTION_FAILED',
+    };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
-  it('returns true for proxy-class goto error (proxy connection failed)', () => {
+  it('returns true for proxy-class goto error (proxy connection failed, coded)', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'page.goto: net::ERR_PROXY_CONNECTION_FAILED' };
+    const result = {
+      status: 'error', errorCode: 'PROXY_CONNECTION_FAILED',
+      error: 'page.goto: net::ERR_PROXY_CONNECTION_FAILED',
+    };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
-  it('returns false for non-retryable HTTP status errors', () => {
+  it('returns false for non-retryable HTTP status errors (coded)', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE' };
+    const result = {
+      status: 'error', errorCode: 'UNEXPECTED_ERROR',
+      error: 'page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE',
+    };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), false);
   });
 
-  it('returns false for other errors', () => {
+  it('returns false for other errors (coded)', () => {
     const channel = { reinitializing: false };
-    const result = { status: 'error', error: 'Protocol error: Target closed' };
+    const result = {
+      status: 'error', errorCode: 'UNEXPECTED_ERROR',
+      error: 'Protocol error: Target closed',
+    };
+    assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), false);
+  });
+
+  it('returns false for uncoded error results (defensive, fallback deleted in PR-4)', () => {
+    const channel = { reinitializing: false };
+    const result = { status: 'error', error: 'page.goto: net::ERR_TIMED_OUT' };
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), false);
   });
 

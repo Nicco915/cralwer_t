@@ -36,13 +36,13 @@ class Worker {
   // 决定是否对单 task 触发换 IP 重试。
   // 触发条件：业务异常强信号（dataLayer 异常 / page.goto 全 timeout / crawl timeout）
   // 不触发：业务无结果（dataLayerNotFound=true）/ 成功 / 普通 error / channel 正在重建 / 全局开关关闭
-  // 判定语义收拢在 result-verdict（docs/plan-信号重构-阶段1.md）；
-  // 第二个参数是无 errorCode 旧 result 的兼容兜底（注入 classifyGotoError，
-  // 防御 cli 模式/测试构造的无码 result），阶段 2 末删除。
+  // 判定语义收拢在 result-verdict（docs/plan-信号重构-阶段1.md）。
+  // 到达这里的 error result 必带 errorCode：crawlSingleSku 通用 catch 与
+  // buildErrorResult 双产出点打码（阶段 2 PR-4），无码兼容兜底已删除。
   shouldRetryWithNewIp(result, channel) {
     if (this.retryOnTimeout === false) return false;
     if (!channel || channel.reinitializing) return false;
-    return verdict.shouldRetryWithNewIp(result, classifyGotoError);
+    return verdict.shouldRetryWithNewIp(result);
   }
 
   getTaskIdKey(task) {
@@ -68,6 +68,20 @@ class Worker {
       result.errorCode = ERROR_CODES.TASK_DEADLINE_EXCEEDED;
     } else if (err.status === 'timeout' || verdict.isTimeoutError(err)) {
       result.errorCode = ERROR_CODES.GOTO_TIMEOUT;
+    } else {
+      // 非 timeout 异常同样在产出点打码（与 page-crawler 通用 catch 同一
+      // classifyGotoError 映射）：channel 抛出的非 timeout 异常（如无 headed
+      // 回退时的 net::ERR）经此变为带码 result，使 shouldRetryWithNewIp 的
+      // 无码兜底成为死路径并于阶段 2 PR-4 删除。与旧兜底行为逐案等价：
+      // retryable/proxy → 换 IP（true），non-retryable → 不换（false）。
+      const category = classifyGotoError(err);
+      if (category === 'proxy') {
+        result.errorCode = ERROR_CODES.PROXY_CONNECTION_FAILED;
+      } else if (category === 'retryable') {
+        result.errorCode = ERROR_CODES.NAVIGATION_FAILED_RETRYABLE;
+      } else {
+        result.errorCode = ERROR_CODES.UNEXPECTED_ERROR;
+      }
     }
     return result;
   }

@@ -71,32 +71,19 @@ describe('result-verdict shouldRetryWithNewIp', () => {
     }), false);
   });
 
-  it('error without errorCode: goto timeout message -> true via injected classify fallback', () => {
+  it('error without errorCode -> false (defensive; 兜底已于阶段 2 PR-4 删除)', () => {
+    // 所有 error result 必带码（page-crawler 通用 catch + worker buildErrorResult
+    // 双产出点），无码形态防御性判 false
     assert.strictEqual(verdict.shouldRetryWithNewIp({
       status: 'error', error: 'page.goto: Timeout 30000ms exceeded',
-    }, classifyGotoError), true);
-  });
-
-  it('error without errorCode: tunnel failure message -> true via injected classify fallback', () => {
+    }), false);
     assert.strictEqual(verdict.shouldRetryWithNewIp({
       status: 'error', error: 'net::ERR_TUNNEL_CONNECTION_FAILED',
-    }, classifyGotoError), true);
-  });
-
-  it('error without errorCode: status code 404 -> false via injected classify fallback', () => {
-    assert.strictEqual(verdict.shouldRetryWithNewIp({
-      status: 'error', error: 'status code 404',
-    }, classifyGotoError), false);
-  });
-
-  it('error without errorCode and without fallback -> false', () => {
-    assert.strictEqual(verdict.shouldRetryWithNewIp({
-      status: 'error', error: 'page.goto: Timeout 30000ms exceeded',
     }), false);
   });
 
   it('error without error string -> false', () => {
-    assert.strictEqual(verdict.shouldRetryWithNewIp({ status: 'error' }, classifyGotoError), false);
+    assert.strictEqual(verdict.shouldRetryWithNewIp({ status: 'error' }), false);
   });
 
   it('status=timeout -> true regardless of origin', () => {
@@ -257,9 +244,16 @@ describe('result-verdict isTimeoutResult', () => {
     }), true);
   });
 
-  it('status=error + Timeout message without errorCode -> true (legacy fallback)', () => {
+  it('status=error + Timeout 文案 -> true（load-bearing：goto 超时耗尽被吞成的 error result）', () => {
+    // 无码旧形态
     assert.strictEqual(verdict.isTimeoutResult({
       status: 'error', error: 'page.goto: Timeout 30000ms exceeded',
+    }), true);
+    // 带码 live 形态：page-crawler 通用 catch 产出 NAVIGATION_FAILED_RETRYABLE，
+    // 文案正则仍负责识别其超时语义（PR-4 保留，见 verdict 注释）
+    assert.strictEqual(verdict.isTimeoutResult({
+      status: 'error', errorCode: ERROR_CODES.NAVIGATION_FAILED_RETRYABLE,
+      error: 'page.goto: Timeout 30000ms exceeded',
     }), true);
   });
 
