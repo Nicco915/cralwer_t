@@ -952,4 +952,58 @@ async function captureDiagnostics(page, sku, label, outputDir) {
   return meta;
 }
 
-module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath, sanitizeSkuForFilename, captureDiagnostics };
+const DIAG_DATE_DIR_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// 清理诊断快照目录。兼容两种布局：
+//   <diagnosticDir>/<YYYY-MM-DD>/           （无 nodeCode 中间层）
+//   <diagnosticDir>/<nodeCode>/<YYYY-MM-DD>/（service 模式按节点分目录）
+// 删除条件与 pusher.cleanupOldCallbacks 一致：目录名日期与 mtime 都早于
+// cutoff 才删（保守，防误删）；retentionDays<=0 禁用。
+function cleanupDiagnostics(diagnosticDir, retentionDays) {
+  if (!retentionDays || retentionDays <= 0) return;
+  if (!diagnosticDir) return;
+  const root = path.resolve(diagnosticDir);
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+
+  let entries;
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch (e) {
+    return; // 目录不存在等情况无需清理
+  }
+
+  const maybeClean = (dirPath, name) => {
+    if (!DIAG_DATE_DIR_RE.test(name)) return;
+    try {
+      const stats = fs.statSync(dirPath);
+      const dirDate = new Date(`${name}T00:00:00`).getTime();
+      if (stats.mtimeMs < cutoff && dirDate < cutoff) {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.error(`[DIAGNOSTICS] Failed to clean dir ${dirPath}: ${e.message}`);
+    }
+  };
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const entryPath = path.join(root, entry.name);
+    if (DIAG_DATE_DIR_RE.test(entry.name)) {
+      maybeClean(entryPath, entry.name);
+      continue;
+    }
+    // 非日期名目录视为可能的 nodeCode 中间层，只向下扫一层
+    let subEntries;
+    try {
+      subEntries = fs.readdirSync(entryPath, { withFileTypes: true });
+    } catch (e) {
+      continue;
+    }
+    for (const sub of subEntries) {
+      if (!sub.isDirectory()) continue;
+      maybeClean(path.join(entryPath, sub.name), sub.name);
+    }
+  }
+}
+
+module.exports = { PageCrawler, classifyGotoError, gotoWithRetry, encodeSkuForSearchPath, sanitizeSkuForFilename, captureDiagnostics, cleanupDiagnostics };

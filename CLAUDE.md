@@ -40,7 +40,7 @@ node test-sku.js <sku>      # 单 SKU 调试
 - **SKU 含 `/`**：用 `%2F` 编码，与 vevor 图片 URL 约定一致；注意含 `/` 的 SKU 会截断搜索路由导致 dataLayer 误报（已知边界）。
 - **图片文件名**：`<sku>_<index>.<ext>`，SKU 从文件名推断时去掉末尾 `_数字.扩展名`。
 - **配置优先级**：CLI flag > 环境变量 > 默认值（见 `src/cli.js`）。
-- **日志**：`src/logger.js` 输出 NDJSON（BigInt 需安全序列化），Loki + Promtail + Grafana 统一监控。`crawler.jsonl` 按 `CRAWLER_LOG_MAX_SIZE_MB`（默认 50MB）轮转为 `crawler-YYYYMMDD-HHMMSS.jsonl`，与 `logs/callbacks/` 一起按 `CRAWLER_LOG_RETENTION_DAYS`（默认 7 天）清理；PM2 托管日志（crawler-combined/out/error-*.log）由 `deployment/windows/setup-pm2-logrotate.ps1` 配置的 pm2-logrotate 轮转。
+- **日志**：`src/logger.js` 输出 NDJSON（BigInt 需安全序列化），Loki + Promtail + Grafana 统一监控。`crawler.jsonl` 按 `CRAWLER_LOG_MAX_SIZE_MB`（默认 50MB）轮转为 `crawler-YYYYMMDD-HHMMSS.jsonl`，与 `logs/callbacks/` 一起按 `CRAWLER_LOG_RETENTION_DAYS`（默认 7 天）清理；`output/diagnostics/` 诊断快照同受 `CRAWLER_LOG_RETENTION_DAYS` 清理（service 模式启动时+每小时，0=禁用）；PM2 托管日志（crawler-combined/out/error-*.log）由 `deployment/windows/setup-pm2-logrotate.ps1` 配置的 pm2-logrotate 轮转。
 - **代理**：静态代理 `CRAWLER_PROXY` 与 Cliproxy 池互斥，静态优先级更高；`CRAWLER_CHANNELS` 不能超过本机分到的 IP 数；Channel-IP 映射持久化到 `CLIPROXY_ASSIGNMENTS_FILE`。
 
 ## 部署

@@ -12,6 +12,7 @@ const { fetchExitInfo } = require('./proxy-exit-check');
 const { ImageUploader } = require('./image-uploader');
 const { createStdoutLogger, createFileLogger, createBroadcastLogger } = require('./logger');
 const { RegionRegistry } = require('./region-registry');
+const { cleanupDiagnostics } = require('./page-crawler');
 
 function maskProxyUrl(url) {
   if (!url) return url;
@@ -58,6 +59,7 @@ class CrawlerService {
     this.healthServerStartTime = null;
     this.heartbeatTimer = null;
     this.idleReapTimer = null;
+    this.diagnosticsCleanupTimer = null;
     this.logger = this._buildLogger(this.config.customLogDir || path.resolve('./logs'));
   }
 
@@ -282,6 +284,7 @@ class CrawlerService {
     this.startHealthCheck();
     this.startHeartbeat();
     this.startIdleReaper();
+    this.startDiagnosticsCleanup();
     await this.startHealthServer();
     this.registerSignalHandlers();
   }
@@ -295,6 +298,7 @@ class CrawlerService {
     this.stopHeartbeat();
     this.stopIdleReaper();
     this.stopProxyRefresh();
+    this.stopDiagnosticsCleanup();
     if (this.healthServer) {
       this.healthServer.close();
       this.healthServer = null;
@@ -491,6 +495,31 @@ class CrawlerService {
     if (this.idleReapTimer) {
       clearInterval(this.idleReapTimer);
       this.idleReapTimer = null;
+    }
+  }
+
+  // 诊断快照目录清理：启动时先清一次，之后每小时一次。
+  // 保留天数复用 config.logRetentionDays（CRAWLER_LOG_RETENTION_DAYS，0=禁用，
+  // 由 cleanupDiagnostics 内部判空直接返回）。
+  startDiagnosticsCleanup() {
+    if (!this.config.diagnosticDir) {
+      return;
+    }
+    const run = () => {
+      try {
+        cleanupDiagnostics(this.config.diagnosticDir, this.config.logRetentionDays);
+      } catch (e) {
+        this.log('[DIAGNOSTICS] Cleanup error:', e.message);
+      }
+    };
+    run();
+    this.diagnosticsCleanupTimer = setInterval(run, 60 * 60 * 1000);
+  }
+
+  stopDiagnosticsCleanup() {
+    if (this.diagnosticsCleanupTimer) {
+      clearInterval(this.diagnosticsCleanupTimer);
+      this.diagnosticsCleanupTimer = null;
     }
   }
 
