@@ -119,6 +119,28 @@ class PageCrawler {
     }
   }
 
+  // AWS WAF JS challenge 页识别（与 isCloudflareChallenge 并列，不并入——
+  // CF indicators 保持原样以免搅动 waitForCloudflare 既有测试）。
+  // 标记来自 crawler-09 真实快照核实（docs/plan-datalayer判定修复.md §0，52/56 份）：
+  //   window.gokuProps、*.token.awswaf.com/*/challenge.js、
+  //   <div id="challenge-container">、空 <title>、AwsWafIntegration.getToken() 自动 reload。
+  async isAwsWafChallenge(page) {
+    try {
+      const content = await page.content().catch(() => '');
+      const lower = (content || '').toLowerCase();
+      if (lower.includes('gokuprops')) return true;
+      if (lower.includes('awswaf')) return true;
+      // challenge-container 单独不够特异（普通页面可能有同名容器），叠加空 title 限定
+      if (lower.includes('challenge-container') && (await page.title().catch(() => '')) === '') {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      this.log(`[WAF_CHECK] Error: ${e.message}`);
+      return false;
+    }
+  }
+
   async waitForCloudflare(page, sku) {
     const { cloudflareMaxWait } = this.config;
     this.log(`[${sku}] Cloudflare challenge detected, waiting up to ${cloudflareMaxWait}s...`);
@@ -741,7 +763,9 @@ async function captureDiagnostics(page, sku, label, outputDir) {
   try {
     const html = await page.content();
     const snippetPath = path.join(dir, `${baseName}.html`);
-    fs.writeFileSync(snippetPath, html.slice(0, 8000));
+    // 诊断 HTML 截断 8000 → 200000：VEVOR 搜索页 head 即超 8KB，旧截断下
+    // 快照永远看不到 body，搜索结果区 DOM 无法核实（docs/plan-datalayer判定修复.md §0）。
+    fs.writeFileSync(snippetPath, html.slice(0, 200000));
     meta.htmlSnippet = snippetPath;
   } catch (e) {
     meta.htmlError = e.message;
