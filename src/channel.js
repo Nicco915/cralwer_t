@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const { PageCrawler, classifyGotoError } = require('./page-crawler');
+const verdict = require('./result-verdict');
 const { createProfile } = require('./stealth-profile');
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
@@ -379,10 +380,12 @@ class Channel {
         }
       }
 
-      if (!isStale() && !usedHeadedFallback && result && result.status === 'error' && result.error) {
-        const errMsg = result.error;
-        const isNetworkError = errMsg.includes('net::ERR') || /Timeout \d+ms exceeded/.test(errMsg) || errMsg.includes('Navigation failed');
-        if (isNetworkError && this.headedFallback && this.headedBrowserLauncher) {
+      // error-result 的 headed 回退：判读收拢在 result-verdict（按 errorCode 判定，
+      // 不再解析 error 文案正则）。已知行为差异（plan 已批准）：HTTP 4xx/5xx 等
+      // 非网络错误（UNEXPECTED_ERROR）不再触发 headed 重试——现状下 HTTP 500 页面
+      // 会浪费一次 headed 启动。
+      if (!isStale() && !usedHeadedFallback && verdict.isHeadedFallbackCandidate(result)) {
+        if (this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless page load failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
         }
@@ -392,8 +395,8 @@ class Channel {
         if (result && result.status === 'success') {
           this.dataLayerFailureCount = 0;
         }
-        const isTimeoutResult = result && /Timeout \d+ms exceeded/.test(result.error || '');
-        this.updateAdaptiveState(result ? result.status : 'error', isTimeoutResult, result && result.dataLayerFailed);
+        const timeoutResult = verdict.isTimeoutResult(result);
+        this.updateAdaptiveState(result ? result.status : 'error', timeoutResult, result && result.dataLayerFailed);
         this.consecutiveFailures = 0;
         this.lastFailureWasProxy = false;
       }
