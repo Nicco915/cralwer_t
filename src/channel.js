@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const { PageCrawler, classifyGotoError } = require('./page-crawler');
+const { PageCrawler } = require('./page-crawler');
 const verdict = require('./result-verdict');
 const { createProfile } = require('./stealth-profile');
 
@@ -348,30 +348,19 @@ class Channel {
           return this.recreateContext(browser);
         };
         result = await this.pageCrawler.crawlSingleSku(task.sku, this.page, recreateContext, { baseUrl: task.baseUrl });
-        if (!isStale()) {
-          if (result.dataLayerFailed && !result.dataLayerNotFound) {
-            this.dataLayerFailureCount++;
-            if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
-              this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
-            }
-          } else if (!result.dataLayerNotFound) {
-            // 业务无结果（dataLayerNotFound=true）保留 dataLayerFailureCount 不变；
-            // 真正的成功（或无 dataLayer 信号）才重置计数
-            this.dataLayerFailureCount = 0;
-          }
-        }
       } catch (e) {
         if (isStale()) {
           // 僵尸迟到失败：不启动 headed fallback、不计数，直接抛给外层
           // （外层 catch 的 stale 分支打日志后 rethrow，worker 会丢弃该结果）
           throw e;
         }
-        const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
-        const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
+        // 异常路径 headed fallback：判定收拢在 result-verdict（作用在 Error 对象上，
+        // 异常没有 errorCode 可用；语义为原内联判定的原样搬运，含比 classifyGotoError
+        // retryable 更宽的 includes('net::ERR') 析取项，见 verdict.isHeadedFallbackError）。
         // 注：DATA_LAYER_* / CF_CHALLENGE_UNRESOLVED 不会以异常到达这里——
         // crawlSingleSku 外层 catch 会把它们翻译成 not_found + dataLayerFailed
-        // 标志位返回，由上面的 result 分支（:335）计数。
-        if ((isTimeout || isRetryableNetwork) && this.headedFallback && this.headedBrowserLauncher) {
+        // 标志位返回，由下方计数判定块统一处理。
+        if (verdict.isHeadedFallbackError(e) && this.headedFallback && this.headedBrowserLauncher) {
           this.log(`[Channel ${this.id}] Headless request failed, trying headed fallback for task ${task.crawlerTaskId}`);
           result = await this.runHeadedFallback(task);
           usedHeadedFallback = true;
@@ -392,11 +381,30 @@ class Channel {
       }
 
       if (!isStale()) {
-        if (result && result.status === 'success') {
+        // dataLayerFailureCount 单点判定（信号重构阶段 2，雷②）：一个 result 只产生
+        // 一个动作（increment / reset / hold），物理上不存在"先 ++ 后清零"的顺序依赖。
+        // 计数作用在 headed fallback 之后的最终 result 上（plan-信号重构-阶段2 §3.2）。
+        // 显式偏差：HTML 兜底成功（success + dataLayerFailed=true）且计数达阈值时，
+        // 旧实现先 ++ 误发一条 WARNING 再由 success 清零；现 outcome='hit' → reset，
+        // WARNING 不再误发——Grafana 若对该 WARNING 日志有告警需同步摘除。
+        const action = verdict.dataLayerCounterAction(result);
+        if (action === 'increment') {
+          this.dataLayerFailureCount++;
+          if (this.dataLayerFailureCount >= this.dataLayerFailureThreshold) {
+            this.log(`[Channel ${this.id}] WARNING: dataLayer extraction failed for ${this.dataLayerFailureCount} consecutive tasks (threshold: ${this.dataLayerFailureThreshold}); possible network/IP/rendering issue`);
+          }
+        } else if (action === 'reset') {
+          // 业务无结果（business_empty → hold）保留计数不变；
+          // 命中（hit）或无 dataLayer 信号（unknown）才重置计数
           this.dataLayerFailureCount = 0;
         }
         const timeoutResult = verdict.isTimeoutResult(result);
-        this.updateAdaptiveState(result ? result.status : 'error', timeoutResult, result && result.dataLayerFailed);
+        // adaptive 的 dataLayer 维度入参改由 outcome 派生：仅终态 'failed' 计。
+        // 旧实现传 result.dataLayerFailed 原始布尔位：success + HTML 兜底场景为
+        // true 参与 streakHit 计算，但因计数已先清零恒不触发——净行为一致，
+        // 由 channel-counter-baseline 用例 4 的扩展断言钉住。
+        const dataLayerFailed = verdict.deriveDataLayerOutcome(result) === 'failed';
+        this.updateAdaptiveState(result ? result.status : 'error', timeoutResult, dataLayerFailed);
         this.consecutiveFailures = 0;
         this.lastFailureWasProxy = false;
       }
@@ -424,7 +432,7 @@ class Channel {
       this.consecutiveFailures++;
       this.lastFailureWasProxy = this.isProxyError(e);
       this.log(`[Channel ${this.id}] done task ${task.crawlerTaskId} status error message=${e.message}`);
-      const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
+      const isTimeout = verdict.isTimeoutError(e);
       if (isTimeout) {
         e.status = 'timeout';
       }

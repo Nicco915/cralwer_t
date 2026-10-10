@@ -66,8 +66,7 @@ class Worker {
     // 运维含义不同（前者任务卡死/慢代理，后者坏出口信号），用码区分。
     if (err.code === 'TASK_DEADLINE_EXCEEDED') {
       result.errorCode = ERROR_CODES.TASK_DEADLINE_EXCEEDED;
-    } else if (err.status === 'timeout' || err.name === 'TimeoutError'
-        || /Timeout \d+ms exceeded/.test(err.message || '')) {
+    } else if (err.status === 'timeout' || verdict.isTimeoutError(err)) {
       result.errorCode = ERROR_CODES.GOTO_TIMEOUT;
     }
     return result;

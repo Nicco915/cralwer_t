@@ -151,11 +151,12 @@ describe('channel 计数段基线（plan 阶段2 §2）', () => {
   });
 
   // 用例 4（顺序抵消场景）：success + dataLayerFailed=true + dataLayerNotFound=false
-  // （HTML 兜底成功）。现状事实：计数先 ++ 到阈值触发一次 WARNING，随后被 success
+  // （HTML 兜底成功）。旧现状事实：计数先 ++ 到阈值触发一次 WARNING，随后被 success
   // 清零，最终计数为 0。
-  // ⚠ 显式偏差用例（plan §3.3）：PR-3 重写后 WARNING 误发消失，届时更新本用例的
-  // WARNING 断言；最终计数=0 与不触发 adaptive 的净行为不变。
-  it('case 4: HTML 兜底成功达阈值时 WARNING 误发一次、最终计数 0、不触发 adaptive', async () => {
+  // ⚠ 显式偏差用例（plan §3.3，PR-3 已落地）：重写后单点判定 outcome='hit' → reset，
+  // WARNING 误发消失；最终计数=0 与不触发 adaptive 的净行为不变。
+  // Grafana 若对 WARNING 日志有告警需同步摘除（用户侧处理）。
+  it('case 4: HTML 兜底成功达阈值不再误发 WARNING、最终计数 0、不触发 adaptive', async () => {
     const { channel, logs } = await createChannel({
       stealthMode: 'adaptive',
       adaptiveTimeoutThreshold: 2,
@@ -168,13 +169,12 @@ describe('channel 计数段基线（plan 阶段2 §2）', () => {
     channel.pageCrawler.crawlSingleSku = async () => htmlFallbackSuccess('D');
     await channel.crawl({ sku: 'D', crawlerTaskId: 't3' });
 
-    // 现状：L351-355 先 ++ 到 3 触发 WARNING，L392-394 再清零
     assert.strictEqual(channel.dataLayerFailureCount, 0, 'net effect must be reset');
     assert.strictEqual(
-      warningLogs(logs).length, 1,
-      'current behavior: WARNING misfires once when ++ reaches threshold (deviation case, removed in PR-3)',
+      warningLogs(logs).length, 0,
+      'PR-3 deviation: WARNING misfire removed (single-shot verdict, outcome=hit -> reset)',
     );
-    // 扩展断言：adaptive 不被该形态触发（success 清零后 streakHit 恒 false）
+    // 扩展断言：adaptive 不被该形态触发（outcome='hit' → dataLayer 维度不计）
     assert.strictEqual(channel.effectiveStealthMode, 'channel');
     assert.strictEqual(channel.consecutiveTimeouts, 0);
     assert.strictEqual(channel.consecutiveSuccesses, 1);
@@ -407,5 +407,78 @@ describe('channel 计数段基线（plan 阶段2 §2）', () => {
     assert.strictEqual(channel.currentTask, null);
     assert.strictEqual(channel.effectiveStealthMode, 'channel');
     assert.ok(logs.some(m => m.includes('late completion dropped') && m.includes('t9')));
+  });
+});
+
+describe('channel 计数段重写后新增行为钉例（plan 阶段2 §3.2 / §6.3）', () => {
+  // §3.2：计数作用在 headed fallback 之后的最终 result 上。
+  // 旧实现计数作用在 headless result（error 无布尔位 → reset），headed 结果不再
+  // 参与计数；重写后由最终 result 单点判定。此处钉住新行为。
+  it('headed fallback 后的最终 result 参与计数（error-result 回退路径）', async () => {
+    const mockHeadedBrowser = {
+      isConnected: () => true,
+      async newContext() {
+        const ctx = {
+          closed: false,
+          async addInitScript() {},
+          async newPage() { return { closed: false, isClosed: () => false, async close() {} }; },
+          async close() { this.closed = true; },
+        };
+        ctx.browser = () => mockHeadedBrowser;
+        return ctx;
+      },
+      async close() { this.closed = true; },
+      closed: false,
+    };
+    const { channel } = await createChannel();
+    channel.headedFallback = true;
+    channel.headedBrowserLauncher = async () => mockHeadedBrowser;
+
+    let call = 0;
+    channel.pageCrawler.crawlSingleSku = async () => {
+      call++;
+      if (call === 1) {
+        // headless：error + retryable 码 → 触发 error-result headed 回退
+        return {
+          sku: 'HF', status: 'error',
+          error: 'page.goto: net::ERR_TIMED_OUT',
+          errorCode: 'NAVIGATION_FAILED_RETRYABLE',
+        };
+      }
+      // headed：dataLayer 失败形态 → 最终 result，计数 ++
+      return cfSearchPageFailure('HF');
+    };
+
+    const result = await channel.crawl({ sku: 'HF', crawlerTaskId: 'hf1' });
+    assert.strictEqual(result.status, 'not_found');
+    assert.strictEqual(channel.dataLayerFailureCount, 1, 'final (headed) result drives the counter');
+  });
+
+  // §6.3：混合序列 increment → hold → increment(WARNING) → reset → hold
+  it('混合序列：increment 后 hold 后 increment 后 reset 后 hold', async () => {
+    const { channel, logs } = await createChannel();
+
+    channel.pageCrawler.crawlSingleSku = async () => cfSearchPageFailure('S1');
+    await channel.crawl({ sku: 'S1', crawlerTaskId: 's1' });
+    assert.strictEqual(channel.dataLayerFailureCount, 1);
+
+    channel.pageCrawler.crawlSingleSku = async () => businessNoResult('S2');
+    await channel.crawl({ sku: 'S2', crawlerTaskId: 's2' });
+    assert.strictEqual(channel.dataLayerFailureCount, 1, 'hold keeps the counter');
+
+    channel.pageCrawler.crawlSingleSku = async () => cfSearchPageFailure('S3');
+    await channel.crawl({ sku: 'S3', crawlerTaskId: 's3' });
+    await channel.crawl({ sku: 'S3', crawlerTaskId: 's4' });
+    assert.strictEqual(channel.dataLayerFailureCount, 3);
+    assert.strictEqual(warningLogs(logs).length, 1, 'WARNING fires exactly once at threshold');
+
+    channel.pageCrawler.crawlSingleSku = async () => successResult('S4');
+    await channel.crawl({ sku: 'S4', crawlerTaskId: 's5' });
+    assert.strictEqual(channel.dataLayerFailureCount, 0, 'success resets');
+
+    channel.pageCrawler.crawlSingleSku = async () => businessNoResult('S5');
+    await channel.crawl({ sku: 'S5', crawlerTaskId: 's6' });
+    assert.strictEqual(channel.dataLayerFailureCount, 0, 'hold at zero stays zero');
+    assert.strictEqual(warningLogs(logs).length, 1, 'no additional WARNING');
   });
 });
