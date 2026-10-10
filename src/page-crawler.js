@@ -224,8 +224,10 @@ class PageCrawler {
   }
 
   // WAF 挑战未过的产物（与 CF 分支同款形态：not_found + dataLayerFailed +
-  // cfChallengeFailed，换 IP / 计数由 verdict 的 errorCode 驱动）。
-  // errorCode 字符串先写字面量，PR-3 起由 ERROR_CODES.WAF_CHALLENGE_UNRESOLVED 提供。
+  // cfChallengeFailed，换 IP / 计数由 verdict 的 errorCode 驱动——
+  // WAF_CHALLENGE_UNRESOLVED ∈ DATA_LAYER_FAILED_CODES，语义同 CF_CHALLENGE_UNRESOLVED）。
+  // 注意：errorCode 在产出点直接赋值，不走 mapDataLayerErrorCode 的 message 映射
+  // （其正则 /^DATA_LAYER_/ 不匹配 WAF_*，会落 UNEXPECTED_ERROR）。
   async buildWafUnresolvedResult(sku, page, result, vendor) {
     try {
       await captureDiagnostics(page, sku, 'waf-challenge', this.config.diagnosticDir);
@@ -234,7 +236,7 @@ class PageCrawler {
     }
     result.status = 'not_found';
     result.error = `WAF_CHALLENGE_UNRESOLVED: ${vendor}`;
-    result.errorCode = 'WAF_CHALLENGE_UNRESOLVED';
+    result.errorCode = ERROR_CODES.WAF_CHALLENGE_UNRESOLVED;
     result.dataLayerFailed = true;
     result.cfChallengeFailed = true;
     this.log(`[${sku}] ${vendor} challenge unresolved, marking not_found + rotation trigger`);
@@ -645,7 +647,7 @@ class PageCrawler {
           }
           result.status = 'not_found';
           result.error = productCfChallenge ? 'CF_CHALLENGE_UNRESOLVED' : 'WAF_CHALLENGE_UNRESOLVED: aws_waf';
-          result.errorCode = productCfChallenge ? ERROR_CODES.CF_CHALLENGE_UNRESOLVED : 'WAF_CHALLENGE_UNRESOLVED';
+          result.errorCode = productCfChallenge ? ERROR_CODES.CF_CHALLENGE_UNRESOLVED : ERROR_CODES.WAF_CHALLENGE_UNRESOLVED;
           result.dataLayerFailed = true;
           result.cfChallengeFailed = true;
           this.log(`[${sku}] ${productCfChallenge ? 'Cloudflare' : 'AWS WAF'} challenge on product page not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);

@@ -8,7 +8,7 @@ describe('result-verdict ERROR_CODES', () => {
   it('is frozen and contains all stage-1 codes', () => {
     assert.strictEqual(Object.isFrozen(ERROR_CODES), true);
     const expected = [
-      'CF_CHALLENGE_UNRESOLVED', 'PAGE_NO_RESULT', 'NO_PRODUCT_URL', 'SKU_MISMATCH',
+      'CF_CHALLENGE_UNRESOLVED', 'WAF_CHALLENGE_UNRESOLVED', 'PAGE_NO_RESULT', 'NO_PRODUCT_URL', 'SKU_MISMATCH',
       'DATA_LAYER_NEVER_PUSHED', 'DATA_LAYER_MISSING', 'NAVIGATION_FAILED_RETRYABLE',
       'PROXY_CONNECTION_FAILED', 'UNEXPECTED_ERROR', 'TASK_DEADLINE_EXCEEDED', 'GOTO_TIMEOUT',
     ];
@@ -329,6 +329,31 @@ describe('result-verdict deriveDataLayerOutcome', () => {
       status: 'not_found', errorCode: ERROR_CODES.CF_CHALLENGE_UNRESOLVED,
       dataLayerFailed: true, dataLayerNotFound: true,
     }), 'failed');
+  });
+
+  // docs/plan-datalayer判定修复.md §2.4：WAF_CHALLENGE_UNRESOLVED 语义同
+  // CF_CHALLENGE_UNRESOLVED（挑战未过 → dataLayer 失败 → 换 IP），
+  // 经 DATA_LAYER_FAILED_CODES 接入，其余判定函数零改动。
+  it('errorCode=WAF_CHALLENGE_UNRESOLVED -> deriveDataLayerOutcome=failed', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', errorCode: ERROR_CODES.WAF_CHALLENGE_UNRESOLVED,
+      dataLayerFailed: true, cfChallengeFailed: true,
+    }), 'failed');
+    // 布尔位缺失也成立：errorCode 优先于布尔位兜底
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', errorCode: ERROR_CODES.WAF_CHALLENGE_UNRESOLVED,
+    }), 'failed');
+  });
+
+  it('not_found + WAF_CHALLENGE_UNRESOLVED -> shouldRetryWithNewIp=true, counter increment', () => {
+    const result = {
+      status: 'not_found', errorCode: ERROR_CODES.WAF_CHALLENGE_UNRESOLVED,
+      dataLayerFailed: true, cfChallengeFailed: true,
+    };
+    assert.strictEqual(verdict.shouldRetryWithNewIp(result), true);
+    assert.strictEqual(verdict.dataLayerCounterAction(result), 'increment');
+    // 不触发区域回退（那不是业务无结果）
+    assert.strictEqual(verdict.isRegionFallbackCandidate(result), false);
   });
 
   it('status=success 且非失败/无结果形态 -> hit（布尔位是过程信号，不压过 success）', () => {
