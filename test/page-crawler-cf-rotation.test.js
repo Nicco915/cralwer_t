@@ -24,6 +24,7 @@ describe('PageCrawler Cloudflare challenge failure', () => {
 
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'CF_CHALLENGE_UNRESOLVED');
+    assert.strictEqual(result.errorCode, 'CF_CHALLENGE_UNRESOLVED');
     assert.strictEqual(result.dataLayerFailed, true);
     assert.strictEqual(result.cfChallengeFailed, true);
     assert.strictEqual(result.sku, 'TEST-SKU');
@@ -62,6 +63,7 @@ describe('PageCrawler Cloudflare challenge failure', () => {
 
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'CF_CHALLENGE_UNRESOLVED');
+    assert.strictEqual(result.errorCode, 'CF_CHALLENGE_UNRESOLVED');
     assert.strictEqual(result.dataLayerFailed, true);
     assert.strictEqual(result.cfChallengeFailed, true);
   });

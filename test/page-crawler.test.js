@@ -232,7 +232,7 @@ describe('PageCrawler.crawlSingleSku no-result errorCode', () => {
     assert.strictEqual(result.error, 'Page shows no result');
   });
 
-  it('does not set errorCode when no URL is extracted but page has no no-result marker', async () => {
+  it('sets errorCode NO_PRODUCT_URL when no URL is extracted and page has no no-result marker', async () => {
     const crawler = new PageCrawler();
     crawler.sleep = async () => {};
     crawler.isCloudflareChallenge = async () => false;
@@ -247,7 +247,8 @@ describe('PageCrawler.crawlSingleSku no-result errorCode', () => {
 
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'No product URL found');
-    assert.strictEqual(result.errorCode, undefined);
+    // 阶段 1 起该分支带机器可读 errorCode（docs/plan-信号重构-阶段1.md 编码表）
+    assert.strictEqual(result.errorCode, 'NO_PRODUCT_URL');
   });
 });
 

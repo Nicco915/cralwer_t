@@ -42,6 +42,26 @@ describe('Worker.shouldRetryWithNewIp', () => {
     assert.strictEqual(worker.shouldRetryWithNewIp(result, channel), true);
   });
 
+  it('buildErrorResult maps timeout exceptions to GOTO_TIMEOUT errorCode', () => {
+    const err = new Error('page.goto: Timeout 30000ms exceeded.');
+    err.status = 'timeout';
+    const result = worker.buildErrorResult({ crawlerTaskId: 't1', sku: 'SKU' }, err);
+    assert.strictEqual(result.status, 'timeout');
+    assert.strictEqual(result.errorCode, 'GOTO_TIMEOUT');
+  });
+
+  it('buildErrorResult maps TaskDeadlineError to TASK_DEADLINE_EXCEEDED errorCode', () => {
+    const err = new Error('Task deadline 200000ms exceeded');
+    err.code = 'TASK_DEADLINE_EXCEEDED';
+    const result = worker.buildErrorResult({ crawlerTaskId: 't1', sku: 'SKU' }, err);
+    assert.strictEqual(result.errorCode, 'TASK_DEADLINE_EXCEEDED');
+  });
+
+  it('buildErrorResult leaves errorCode unset for plain errors', () => {
+    const result = worker.buildErrorResult({ crawlerTaskId: 't1', sku: 'SKU' }, new Error('renderer crash'));
+    assert.strictEqual(result.errorCode, undefined);
+  });
+
   it('returns true for timeout status', () => {
     const channel = { reinitializing: false };
     const result = { status: 'timeout' };

@@ -7,6 +7,7 @@ class TaskDeadlineError extends Error {
 }
 
 const { classifyGotoError } = require('./page-crawler');
+const { ERROR_CODES } = require('./result-verdict');
 
 const NO_RESULT_FALLBACKS = {
   GB: 'US',
@@ -65,7 +66,7 @@ class Worker {
   }
 
   buildErrorResult(task, err) {
-    return {
+    const result = {
       crawlerTaskId: task.crawlerTaskId,
       sku: task.sku,
       regionCode: task.regionCode,
@@ -76,6 +77,15 @@ class Worker {
       product_url: '',
       error: err.message,
     };
+    // timeout 双产地打码：任务整体 deadline 兜底 vs page.goto 单次超时，
+    // 运维含义不同（前者任务卡死/慢代理，后者坏出口信号），用码区分。
+    if (err.code === 'TASK_DEADLINE_EXCEEDED') {
+      result.errorCode = ERROR_CODES.TASK_DEADLINE_EXCEEDED;
+    } else if (err.status === 'timeout' || err.name === 'TimeoutError'
+        || /Timeout \d+ms exceeded/.test(err.message || '')) {
+      result.errorCode = ERROR_CODES.GOTO_TIMEOUT;
+    }
+    return result;
   }
 
   hasCapacity() {
@@ -292,6 +302,7 @@ class Worker {
         result = this.buildErrorResult(task, err);
         result.status = 'timeout';
         result.error = err.message;
+        result.errorCode = ERROR_CODES.TASK_DEADLINE_EXCEEDED;
       } else {
         this.log(`[Worker] Task ${task.crawlerTaskId} failed with non-deadline error: ${err.message}`);
         result = this.buildErrorResult(task, err);

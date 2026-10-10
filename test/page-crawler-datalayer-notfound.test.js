@@ -35,6 +35,7 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'DATA_LAYER_NEVER_PUSHED');
+    assert.strictEqual(result.errorCode, 'DATA_LAYER_NEVER_PUSHED');
     assert.strictEqual(result.dataLayerFailed, true);
     assert.strictEqual(result.sku, 'TEST-SKU');
   });
@@ -50,6 +51,7 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
     assert.strictEqual(result.status, 'not_found');
     assert.strictEqual(result.error, 'DATA_LAYER_MISSING: page.waitForFunction: Timeout 20000ms exceeded.');
+    assert.strictEqual(result.errorCode, 'DATA_LAYER_MISSING');
     assert.strictEqual(result.dataLayerFailed, true);
   });
 
@@ -64,5 +66,6 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
 
     assert.strictEqual(result.status, 'error');
     assert.strictEqual(result.error, 'some unexpected failure');
+    assert.strictEqual(result.errorCode, 'UNEXPECTED_ERROR');
   });
 });

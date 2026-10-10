@@ -45,6 +45,11 @@ describe('Worker.runTask deadline', () => {
     await worker.runTask({ crawlerTaskId: 't1', sku: 'SKU' }, channel);
 
     assert.ok(pushed.some(r => r.status === 'timeout'), 'should push timeout result');
+    assert.strictEqual(
+      pushed.find(r => r.status === 'timeout').errorCode,
+      'TASK_DEADLINE_EXCEEDED',
+      'deadline timeout result should carry TASK_DEADLINE_EXCEEDED errorCode',
+    );
     assert.strictEqual(channel.busy, false, 'channel.busy must be reset even on deadline');
   });
 

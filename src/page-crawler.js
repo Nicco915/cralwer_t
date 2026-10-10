@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { ERROR_CODES } = require('./result-verdict');
 
 const DEFAULT_CONFIG = {
   baseUrl: 'https://eur.vevor.com',
@@ -406,6 +407,7 @@ class PageCrawler {
           }
           result.status = 'not_found';
           result.error = 'CF_CHALLENGE_UNRESOLVED';
+          result.errorCode = ERROR_CODES.CF_CHALLENGE_UNRESOLVED;
           result.dataLayerFailed = true;
           result.cfChallengeFailed = true;
           this.log(`[${sku}] Cloudflare challenge not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
@@ -441,9 +443,7 @@ class PageCrawler {
         // error 字段文案是上游可见的报错（pusher 会透传为 errorMessage），不可改；
         // 区域回退等内部决策改用稳定的机器可读 errorCode，避免依赖文案精确匹配。
         result.error = noResult ? 'Page shows no result' : 'No product URL found';
-        if (noResult) {
-          result.errorCode = 'PAGE_NO_RESULT';
-        }
+        result.errorCode = noResult ? ERROR_CODES.PAGE_NO_RESULT : ERROR_CODES.NO_PRODUCT_URL;
         this.log(`[${sku}] Product not found (${noResult ? 'page confirms no result' : 'no URL extracted'})`);
         return result;
       }
@@ -469,6 +469,7 @@ class PageCrawler {
           }
           result.status = 'not_found';
           result.error = 'CF_CHALLENGE_UNRESOLVED';
+          result.errorCode = ERROR_CODES.CF_CHALLENGE_UNRESOLVED;
           result.dataLayerFailed = true;
           result.cfChallengeFailed = true;
           this.log(`[${sku}] Cloudflare challenge on product page not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
@@ -482,6 +483,7 @@ class PageCrawler {
       if (pageSku && pageSku.toUpperCase() !== sku.toUpperCase()) {
         result.status = 'sku_mismatch';
         result.error = `SKU mismatch: searched ${sku}, page SKU is ${pageSku}`;
+        result.errorCode = ERROR_CODES.SKU_MISMATCH;
         result.product_url = page.url();
         this.log(`[${sku}] ${result.error}`);
         return result;
@@ -582,12 +584,14 @@ class PageCrawler {
       if (e.message && /^DATA_LAYER_/.test(e.message)) {
         result.status = 'not_found';
         result.error = e.message;
+        result.errorCode = mapDataLayerErrorCode(e.message);
         result.dataLayerFailed = true;
         this.log(`[${sku}] ${e.message}; marking not_found + dataLayerFailed`);
         return result;
       }
       result.status = 'error';
       result.error = e.message;
+      result.errorCode = mapGotoErrorCode(classifyGotoError(e));
       this.log(`[${sku}] Error: ${e.message}`);
     }
 
@@ -626,6 +630,25 @@ function classifyGotoError(error) {
     return 'retryable';
   }
   return 'non-retryable';
+}
+
+// DATA_LAYER_* 异常文案 → errorCode：提取 DATA_LAYER_ 前缀后的标识查 ERROR_CODES，
+// 未知值落 UNEXPECTED_ERROR 防呆（error 文案保留完整后缀不变）。
+function mapDataLayerErrorCode(message) {
+  const m = /^DATA_LAYER_([A-Z_]+)/.exec(message || '');
+  const key = m ? `DATA_LAYER_${m[1]}` : null;
+  if (key && Object.prototype.hasOwnProperty.call(ERROR_CODES, key)) {
+    return ERROR_CODES[key];
+  }
+  return ERROR_CODES.UNEXPECTED_ERROR;
+}
+
+// classifyGotoError 分类 → errorCode（消费方本来就在做同样分类，产出点直接打码，
+// 消除下游对 error 文案的二次解析）。
+function mapGotoErrorCode(category) {
+  if (category === 'proxy') return ERROR_CODES.PROXY_CONNECTION_FAILED;
+  if (category === 'retryable') return ERROR_CODES.NAVIGATION_FAILED_RETRYABLE;
+  return ERROR_CODES.UNEXPECTED_ERROR;
 }
 
 async function sleep(ms) {
