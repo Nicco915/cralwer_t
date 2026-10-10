@@ -304,3 +304,219 @@ describe('result-verdict isDataLayerSignal (full 3x3 truth table)', () => {
     assert.strictEqual(verdict.isDataLayerSignal(null), false);
   });
 });
+
+// ── 阶段 2 增补（docs/plan-信号重构-阶段2.md §3.1 / §6.2）──
+
+describe('result-verdict deriveDataLayerOutcome', () => {
+  it('errorCode=PAGE_NO_RESULT -> business_empty（布尔位无关，矛盾时 errorCode 优先）', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', errorCode: ERROR_CODES.PAGE_NO_RESULT,
+      dataLayerFailed: false, dataLayerNotFound: true,
+    }), 'business_empty');
+    // 矛盾形态：布尔位像失败，errorCode 胜出
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', errorCode: ERROR_CODES.PAGE_NO_RESULT,
+      dataLayerFailed: true, dataLayerNotFound: false,
+    }), 'business_empty');
+  });
+
+  it('errorCode ∈ {CF_CHALLENGE_UNRESOLVED, DATA_LAYER_NEVER_PUSHED, DATA_LAYER_MISSING} -> failed', () => {
+    for (const errorCode of [
+      ERROR_CODES.CF_CHALLENGE_UNRESOLVED,
+      ERROR_CODES.DATA_LAYER_NEVER_PUSHED,
+      ERROR_CODES.DATA_LAYER_MISSING,
+    ]) {
+      assert.strictEqual(verdict.deriveDataLayerOutcome({
+        status: 'not_found', errorCode, dataLayerFailed: true,
+      }), 'failed', errorCode);
+    }
+    // 矛盾形态：notFound=true 也被 errorCode 压过
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', errorCode: ERROR_CODES.CF_CHALLENGE_UNRESOLVED,
+      dataLayerFailed: true, dataLayerNotFound: true,
+    }), 'failed');
+  });
+
+  it('status=success 且非失败/无结果形态 -> hit（布尔位是过程信号，不压过 success）', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({ status: 'success' }), 'hit');
+    // HTML 兜底成功形态：dataLayerFailed=true 是过程信号，终态语义 hit
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'success', dataLayerFailed: true, dataLayerNotFound: false,
+    }), 'hit');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'success', dataLayerNotFound: true,
+    }), 'hit');
+  });
+
+  it('无 errorCode 时布尔位兜底：notFound=true -> business_empty', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: false, dataLayerNotFound: true,
+    }), 'business_empty');
+    // dataLayerFailed=true 也被 notFound=true 压过（业务无结果优先）
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: true, dataLayerNotFound: true,
+    }), 'business_empty');
+  });
+
+  it('无 errorCode 时布尔位兜底：failed=true 且 notFound!==true -> failed', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: true, dataLayerNotFound: undefined,
+    }), 'failed');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: true, dataLayerNotFound: false,
+    }), 'failed');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: true,
+    }), 'failed');
+  });
+
+  it('errorCode 不带 dataLayer 语义时仍走布尔位兜底', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'error', errorCode: ERROR_CODES.NO_PRODUCT_URL, dataLayerFailed: true,
+    }), 'failed');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'error', errorCode: ERROR_CODES.NO_PRODUCT_URL, dataLayerNotFound: true,
+    }), 'business_empty');
+  });
+
+  it('其余形态 -> unknown（通用 catch / sku_mismatch / timeout / 无 dataLayer 信号）', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'error', errorCode: ERROR_CODES.NAVIGATION_FAILED_RETRYABLE,
+    }), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'error', errorCode: ERROR_CODES.UNEXPECTED_ERROR,
+    }), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'sku_mismatch', errorCode: ERROR_CODES.SKU_MISMATCH,
+    }), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'timeout', errorCode: ERROR_CODES.GOTO_TIMEOUT,
+    }), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({ status: 'not_found' }), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome({
+      status: 'not_found', dataLayerFailed: false, dataLayerNotFound: false,
+    }), 'unknown');
+  });
+
+  it('null/undefined result -> unknown', () => {
+    assert.strictEqual(verdict.deriveDataLayerOutcome(null), 'unknown');
+    assert.strictEqual(verdict.deriveDataLayerOutcome(undefined), 'unknown');
+  });
+});
+
+describe('result-verdict shouldRetryWithNewIp outcome 驱动（阶段 2）', () => {
+  it('not_found + CF errorCode + notFound=true（矛盾形态）-> true（errorCode 优先 -> failed）', () => {
+    // 真实产出不存在的矛盾形态；钉住"errorCode 优先"这一有意语义
+    assert.strictEqual(verdict.shouldRetryWithNewIp({
+      status: 'not_found', errorCode: ERROR_CODES.CF_CHALLENGE_UNRESOLVED,
+      dataLayerFailed: true, dataLayerNotFound: true,
+    }), true);
+  });
+
+  it('not_found + DATA_LAYER_MISSING errorCode（无布尔位）-> true', () => {
+    assert.strictEqual(verdict.shouldRetryWithNewIp({
+      status: 'not_found', errorCode: ERROR_CODES.DATA_LAYER_MISSING,
+    }), true);
+  });
+});
+
+describe('result-verdict isTimeoutError（Error 对象变体）', () => {
+  it('name === TimeoutError -> true（无需文案）', () => {
+    const e = new Error('page.goto: Timeout 30000ms exceeded');
+    e.name = 'TimeoutError';
+    assert.strictEqual(verdict.isTimeoutError(e), true);
+    const bare = new Error('whatever');
+    bare.name = 'TimeoutError';
+    assert.strictEqual(verdict.isTimeoutError(bare), true);
+  });
+
+  it('文案匹配 /Timeout \\d+ms exceeded/ -> true', () => {
+    assert.strictEqual(verdict.isTimeoutError(new Error('page.waitForSelector: Timeout 5000ms exceeded')), true);
+  });
+
+  it('非 timeout 异常 -> false', () => {
+    assert.strictEqual(verdict.isTimeoutError(new Error('page.goto: net::ERR_TUNNEL_CONNECTION_FAILED')), false);
+    assert.strictEqual(verdict.isTimeoutError(new Error('Some random error')), false);
+    assert.strictEqual(verdict.isTimeoutError(new Error('timeout but no pattern')), false);
+  });
+
+  it('null / 无 message -> false', () => {
+    assert.strictEqual(verdict.isTimeoutError(null), false);
+    assert.strictEqual(verdict.isTimeoutError({}), false);
+  });
+});
+
+describe('result-verdict isHeadedFallbackError（Error 对象变体）', () => {
+  // 与 channel.js catch 原内联判定逐一对照的预期表：
+  //   isTimeout || classifyGotoError(e) === 'retryable' || e.message.includes('net::ERR')
+  const cases = [
+    // [message, name, expected, 说明]
+    ['page.goto: Timeout 30000ms exceeded', 'TimeoutError', true, 'TimeoutError 名'],
+    ['page.goto: Timeout 30000ms exceeded', 'Error', true, 'Timeout 文案正则'],
+    ['page.goto: net::ERR_TUNNEL_CONNECTION_FAILED', 'Error', true, 'proxy 类经 net::ERR 析取项命中'],
+    ['page.goto: net::ERR_PROXY_CONNECTION_FAILED', 'Error', true, 'proxy 类'],
+    ['page.goto: net::ERR_CONNECTION_RESET', 'Error', true, 'proxy 类'],
+    ['page.goto: net::ERR_TIMED_OUT', 'Error', true, 'net::ERR 非代理类'],
+    ['page.goto: net::ERR_NAME_NOT_RESOLVED', 'Error', true, 'net::ERR 非代理类'],
+    ['net::ERR_HTTP_RESPONSE_CODE_FAILURE', 'Error', true, '宽集合保留：classify 判 non-retryable 但 includes(net::ERR) 命中'],
+    ['page.goto: Navigation failed because browser has disconnected', 'Error', true, 'Navigation failed'],
+    ['Connection timeout', 'Error', true, 'classify retryable（timeout includes），无 net::ERR'],
+    ['ERR_NAME_NOT_RESOLVED', 'Error', true, 'classify retryable（裸 ERR_NAME，无 net:: 前缀）'],
+    ['page.goto: status code 404', 'Error', false, 'HTTP 4xx 文案无 net::ERR -> non-retryable'],
+    ['status code 500', 'Error', false, 'HTTP 5xx 文案无 net::ERR'],
+    ['Some random error', 'Error', false, '普通错误'],
+    ['page.evaluate: TypeError: foo is not a function', 'Error', false, 'evaluate 抛错'],
+  ];
+  for (const [message, name, expected, note] of cases) {
+    it(`[${expected}] ${note}: ${message}`, () => {
+      const e = new Error(message);
+      e.name = name;
+      assert.strictEqual(verdict.isHeadedFallbackError(e), expected);
+    });
+  }
+
+  it('null / 无 message -> false', () => {
+    assert.strictEqual(verdict.isHeadedFallbackError(null), false);
+    assert.strictEqual(verdict.isHeadedFallbackError({}), false);
+  });
+
+  it('语料对齐：与 channel 原内联判定（classifyGotoError + 正则）全语料等价', () => {
+    // 旧实现参考式（channel.js 阶段 1 前 L369-370 原样）
+    function legacyInline(e) {
+      const isTimeout = e.name === 'TimeoutError' || (e.message && /Timeout \d+ms exceeded/.test(e.message));
+      const isRetryableNetwork = classifyGotoError(e) === 'retryable' || (e.message && e.message.includes('net::ERR'));
+      return Boolean(isTimeout || isRetryableNetwork);
+    }
+    const corpus = [
+      'page.goto: Timeout 30000ms exceeded',
+      'page.waitForFunction: Timeout 20000ms exceeded.',
+      'page.goto: net::ERR_TUNNEL_CONNECTION_FAILED',
+      'page.goto: net::ERR_PROXY_CONNECTION_FAILED',
+      'page.goto: net::ERR_CONNECTION_RESET',
+      'page.goto: net::ERR_TIMED_OUT',
+      'page.goto: net::ERR_NAME_NOT_RESOLVED',
+      'page.goto: net::ERR_CONNECTION_REFUSED',
+      'net::ERR_HTTP_RESPONSE_CODE_FAILURE',
+      'page.goto: Navigation failed because browser has disconnected',
+      'page.goto: status code 404',
+      'page.goto: status code 503',
+      'Connection timeout',
+      'timeout',
+      'Timeout',
+      'ERR_NAME_NOT_RESOLVED',
+      'Some random error',
+      'Target closed',
+      '',
+    ];
+    for (const message of corpus) {
+      for (const name of ['Error', 'TimeoutError']) {
+        const e = new Error(message);
+        e.name = name;
+        assert.strictEqual(
+          verdict.isHeadedFallbackError(e), legacyInline(e),
+          `mismatch for name=${name} message=${JSON.stringify(message)}`,
+        );
+      }
+    }
+  });
+});
