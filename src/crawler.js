@@ -543,6 +543,7 @@ ${result.product_specification || ''}`;
       gotoTimeout: this.config.gotoTimeout,
       gotoRetryDelays: this.config.gotoRetryDelays,
       dataLayerMaxRetries: this.config.dataLayerMaxRetries,
+      searchResultWaitMs: this.config.searchResultWaitMs,
     });
     return pageCrawler.crawlSingleSku(sku, page, recreateContext);
   }

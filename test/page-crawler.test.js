@@ -14,6 +14,9 @@ function createMockPage(opts = {}) {
       currentUrl = url;
     },
     url: () => currentUrl,
+    // 搜索页就绪等待通道（waitForSearchPageReady）的 no-op stub：直接命中 datalayer，
+    // 等价于原固定 sleep(2000) 后立即就绪，不影响既有断言。
+    waitForFunction: async () => ({ jsonValue: async () => 'datalayer' }),
     evaluate: async (fn) => {
       if (opts.evaluate) return opts.evaluate(fn);
       return '';

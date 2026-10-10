@@ -32,4 +32,24 @@ describe('dataLayer CLI configuration', () => {
       delete process.env.CRAWLER_DATA_LAYER_FAILURE_THRESHOLD;
     }
   });
+
+  it('parses --search-result-wait-ms', () => {
+    const config = parse(['--search-result-wait-ms', '20000']);
+    assert.strictEqual(config.searchResultWaitMs, 20000);
+  });
+
+  it('parses --search-result-wait-ms 0 as numeric 0 (escape hatch)', () => {
+    const config = parse(['--search-result-wait-ms', '0']);
+    assert.strictEqual(config.searchResultWaitMs, 0);
+  });
+
+  it('falls back to CRAWLER_SEARCH_RESULT_WAIT_MS environment variable', () => {
+    process.env.CRAWLER_SEARCH_RESULT_WAIT_MS = '8000';
+    try {
+      const config = parse([]);
+      assert.strictEqual(config.searchResultWaitMs, 8000);
+    } finally {
+      delete process.env.CRAWLER_SEARCH_RESULT_WAIT_MS;
+    }
+  });
 });

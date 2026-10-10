@@ -11,6 +11,9 @@ const DEFAULT_CONFIG = {
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
   maxImages: 5,
   cloudflareMaxWait: 45,
+  // 搜索页就绪等待窗口（plan §2.2）：替代固定 sleep(2000)，命中即退。
+  // <= 0 为逃生门：完全回旧路径（固定 2s + 瞬时判定）。
+  searchResultWaitMs: 15000,
   minDelay: 0,
   maxDelay: 0,
 };
@@ -64,6 +67,12 @@ class PageCrawler {
     this.gotoTimeout = options?.gotoTimeout !== undefined ? options.gotoTimeout : 30000;
     this.gotoRetryDelays = options?.gotoRetryDelays || [3000, 6000, 12000];
     this.dataLayerMaxRetries = options?.dataLayerMaxRetries !== undefined ? options.dataLayerMaxRetries : 1;
+    // 允许 0/负数作逃生门，不做下界钳制（plan §2.2）。
+    // 从 options 直读而非 this.config：上游透传层可能带显式 undefined key，
+    // 经 resolveConfig 展开后会盖掉 DEFAULT_CONFIG 的 15000。
+    this.searchResultWaitMs = options?.searchResultWaitMs !== undefined
+      ? options.searchResultWaitMs
+      : DEFAULT_CONFIG.searchResultWaitMs;
   }
 
   log(...args) {
@@ -158,6 +167,139 @@ class PageCrawler {
     }
     this.log(`[${sku}] Cloudflare challenge still present after ${cloudflareMaxWait}s`);
     return false;
+  }
+
+  // AWS WAF 是自动 reload 型 JS 挑战（AwsWafIntegration.getToken().then(reload)），
+  // 给予时间可能自动放行——复用 waitForCloudflare 的轮询骨架（plan §2.1）。
+  async waitForAwsWafChallenge(page, sku) {
+    const { cloudflareMaxWait } = this.config;
+    this.log(`[${sku}] AWS WAF challenge detected, waiting up to ${cloudflareMaxWait}s...`);
+    for (let i = 0; i < cloudflareMaxWait; i++) {
+      await this.sleep(1000);
+      if (!(await this.isAwsWafChallenge(page))) {
+        this.log(`[${sku}] AWS WAF challenge passed after ${i + 1}s, current URL: ${page.url()}`);
+        return true;
+      }
+    }
+    this.log(`[${sku}] AWS WAF challenge still present after ${cloudflareMaxWait}s`);
+    return false;
+  }
+
+  // 等待搜索页达到"可判定状态"再判定（替代固定 sleep(2000)，plan §2.1）。
+  // 命中即退，返回：
+  //   'datalayer'            dataLayer 出现 search 事件
+  //   'dom_results'          DOM 出现 /p/ 商品链接
+  //   'no_results'           页面渲染出 No Results 文案
+  //   'blocked:aws_waf'      AWS WAF 挑战页（快照核实标记，高置信）
+  //   'blocked:cf'           Cloudflare 挑战页（复用 isCloudflareChallenge 页面侧子集）
+  //   'blocked:perimeterx'   PerimeterX（行业通用标记预埋，低置信但无害）
+  //   'timeout'              等满 searchResultWaitMs 窗口无一命中
+  async waitForSearchPageReady(page, sku) {
+    const timeoutMs = this.searchResultWaitMs;
+    try {
+      const handle = await page.waitForFunction(() => {
+        // ── 快速失败：拦截页标记（优先判定，不傻等）──
+        if (window.gokuProps || document.querySelector('#challenge-container')
+            || document.querySelector('script[src*="awswaf"]')) return 'blocked:aws_waf';
+        if (document.querySelector('#challenge-platform, script[src*="challenges.cloudflare"]')
+            || /just a moment|attention required/i.test(document.title)) return 'blocked:cf';
+        if (window._pxAppId || document.querySelector('[id*="px-captcha"]')
+            || /human verification|confirme que es humano/i.test(document.body?.innerText || '')) {
+          return 'blocked:perimeterx';
+        }
+        // ── 可判定状态 ──
+        if ((window.dataLayer || []).some(i => i && i.search)) return 'datalayer';
+        if (document.querySelector('a[href*="/p/"]')) return 'dom_results';
+        const text = document.body?.innerText || '';
+        if (/no results for|please check your spelling/i.test(text)) return 'no_results';
+        return false; // 继续等
+      }, undefined, { timeout: timeoutMs, polling: 500 });
+      const state = handle && typeof handle.jsonValue === 'function' ? await handle.jsonValue() : handle;
+      this.log(`[${sku}] search page ready: ${state}`);
+      return state;
+    } catch (e) {
+      this.log(`[${sku}] search page not ready within ${timeoutMs}ms: ${e.message}`);
+      return 'timeout';
+    }
+  }
+
+  // WAF 挑战未过的产物（与 CF 分支同款形态：not_found + dataLayerFailed +
+  // cfChallengeFailed，换 IP / 计数由 verdict 的 errorCode 驱动）。
+  // errorCode 字符串先写字面量，PR-3 起由 ERROR_CODES.WAF_CHALLENGE_UNRESOLVED 提供。
+  async buildWafUnresolvedResult(sku, page, result, vendor) {
+    try {
+      await captureDiagnostics(page, sku, 'waf-challenge', this.config.diagnosticDir);
+    } catch (diagErr) {
+      this.log(`[${sku}] WAF diagnostic capture failed: ${diagErr.message}`);
+    }
+    result.status = 'not_found';
+    result.error = `WAF_CHALLENGE_UNRESOLVED: ${vendor}`;
+    result.errorCode = 'WAF_CHALLENGE_UNRESOLVED';
+    result.dataLayerFailed = true;
+    result.cfChallengeFailed = true;
+    this.log(`[${sku}] ${vendor} challenge unresolved, marking not_found + rotation trigger`);
+    return result;
+  }
+
+  // 搜索页就绪等待 + 拦截页挑战处理（plan §2.1 状态→动作映射）。
+  // 返回 null → 继续进 extract 原流程；返回 result → 早退终态
+  // （PAGE_NO_RESULT / CF_CHALLENGE_UNRESOLVED / WAF_CHALLENGE_UNRESOLVED）。
+  // depth 防循环：挑战等待"放行"后只重新判定一次。
+  async handleSearchPageReady(sku, page, result, depth = 0) {
+    const state = await this.waitForSearchPageReady(page, sku);
+
+    if (state === 'datalayer' || state === 'dom_results' || state === 'timeout') {
+      // timeout：等满窗口仍无 search 事件，进 extract 由 fast-path 判
+      // DATA_LAYER_NEVER_PUSHED（语义即"等满窗口仍没见到"，errorCode 不变）。
+      return null;
+    }
+
+    if (state === 'no_results') {
+      // 业务无结果早退：对齐 extract 的 business_not_found 产物形态
+      // （PAGE_NO_RESULT + dataLayerNotFound，不换 IP、计数 hold、可区域回退）。
+      // 相比现状是语义修复：这类页面现状会被误报成 NEVER_PUSHED。
+      result.status = 'not_found';
+      result.error = 'Page shows no result';
+      result.errorCode = ERROR_CODES.PAGE_NO_RESULT;
+      result.dataLayerNotFound = true;
+      this.log(`[${sku}] Search page shows "No Results", marking PAGE_NO_RESULT (skipping dataLayer extract)`);
+      return result;
+    }
+
+    if (state === 'blocked:perimeterx') {
+      // PerimeterX 不做对抗（plan §7 非目标 1）：识别后立即按挑战未过处理，
+      // 不傻等 15s 窗口，标记后换 IP。
+      return this.buildWafUnresolvedResult(sku, page, result, 'perimeterx');
+    }
+
+    if (state === 'blocked:aws_waf') {
+      if (depth >= 1) return this.buildWafUnresolvedResult(sku, page, result, 'aws_waf');
+      const passed = await this.waitForAwsWafChallenge(page, sku);
+      if (!passed) return this.buildWafUnresolvedResult(sku, page, result, 'aws_waf');
+      return this.handleSearchPageReady(sku, page, result, depth + 1);
+    }
+
+    if (state === 'blocked:cf') {
+      if (depth >= 1) return null; // 已等过一次 CF，进 extract 原流程兜底
+      const passed = await this.waitForCloudflare(page, sku);
+      if (!passed) {
+        try {
+          await captureDiagnostics(page, sku, 'cf-challenge', this.config.diagnosticDir);
+        } catch (diagErr) {
+          this.log(`[${sku}] CF diagnostic capture failed: ${diagErr.message}`);
+        }
+        result.status = 'not_found';
+        result.error = 'CF_CHALLENGE_UNRESOLVED';
+        result.errorCode = ERROR_CODES.CF_CHALLENGE_UNRESOLVED;
+        result.dataLayerFailed = true;
+        result.cfChallengeFailed = true;
+        this.log(`[${sku}] Cloudflare challenge not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
+        return result;
+      }
+      return this.handleSearchPageReady(sku, page, result, depth + 1);
+    }
+
+    return null;
   }
 
   async extractProductUrlFromDataLayer(page, sku, timeoutMs = 20000) {
@@ -437,7 +579,14 @@ class PageCrawler {
         }
       }
 
-      await this.sleep(2000);
+      // 搜索页就绪等待（plan §2.1）：命中即退，拦截页快速识别。
+      // searchResultWaitMs <= 0 为逃生门：完全回旧路径（固定 2s + 瞬时判定）。
+      if (this.searchResultWaitMs > 0) {
+        const earlyResult = await this.handleSearchPageReady(sku, page, result);
+        if (earlyResult) return earlyResult;
+      } else {
+        await this.sleep(2000);
+      }
 
       const currentUrl = page.url();
       this.log(`[${sku}] Current URL: ${currentUrl}`);
@@ -481,20 +630,25 @@ class PageCrawler {
         log: this.log.bind(this),
       });
 
-      if (await this.isCloudflareChallenge(page)) {
-        const passed = await this.waitForCloudflare(page, sku);
+      // 商品页同样可能被 AWS WAF 拦（plan §3）：CF 与 WAF 析取判定，等待逻辑各自复用。
+      const productCfChallenge = await this.isCloudflareChallenge(page);
+      const productWafChallenge = !productCfChallenge && await this.isAwsWafChallenge(page);
+      if (productCfChallenge || productWafChallenge) {
+        const passed = productCfChallenge
+          ? await this.waitForCloudflare(page, sku)
+          : await this.waitForAwsWafChallenge(page, sku);
         if (!passed) {
           try {
-            await captureDiagnostics(page, sku, 'cf-challenge-product', this.config.diagnosticDir);
+            await captureDiagnostics(page, sku, productCfChallenge ? 'cf-challenge-product' : 'waf-challenge-product', this.config.diagnosticDir);
           } catch (diagErr) {
-            this.log(`[${sku}] CF diagnostic capture (product) failed: ${diagErr.message}`);
+            this.log(`[${sku}] challenge diagnostic capture (product) failed: ${diagErr.message}`);
           }
           result.status = 'not_found';
-          result.error = 'CF_CHALLENGE_UNRESOLVED';
-          result.errorCode = ERROR_CODES.CF_CHALLENGE_UNRESOLVED;
+          result.error = productCfChallenge ? 'CF_CHALLENGE_UNRESOLVED' : 'WAF_CHALLENGE_UNRESOLVED: aws_waf';
+          result.errorCode = productCfChallenge ? ERROR_CODES.CF_CHALLENGE_UNRESOLVED : 'WAF_CHALLENGE_UNRESOLVED';
           result.dataLayerFailed = true;
           result.cfChallengeFailed = true;
-          this.log(`[${sku}] Cloudflare challenge on product page not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
+          this.log(`[${sku}] ${productCfChallenge ? 'Cloudflare' : 'AWS WAF'} challenge on product page not resolved after ${this.config.cloudflareMaxWait}s, marking not_found + rotation trigger`);
           return result;
         }
       }

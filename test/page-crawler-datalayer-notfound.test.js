@@ -19,6 +19,8 @@ describe('PageCrawler DATA_LAYER_* failure translation', () => {
     return {
       async goto() {},
       url: () => 'https://eur.vevor.com/s/TEST-SKU',
+      // 搜索页就绪等待通道的 no-op stub（命中 datalayer，等价于原固定 sleep 后就绪）
+      async waitForFunction() { return { jsonValue: async () => 'datalayer' }; },
       async title() { return 'Search results'; },
       async content() { return '<html><body>normal page</body></html>'; },
     };

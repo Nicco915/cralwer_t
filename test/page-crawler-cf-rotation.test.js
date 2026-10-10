@@ -44,6 +44,8 @@ describe('PageCrawler Cloudflare challenge failure', () => {
         this.url = () => url;
       },
       url: () => 'https://eur.vevor.com/s/TEST',
+      // 搜索页就绪等待通道的 no-op stub（命中 datalayer，等价于原固定 sleep 后就绪）
+      async waitForFunction() { return { jsonValue: async () => 'datalayer' }; },
       async title() { return 'Just a moment...'; },
       async content() { return '<html><body>cf-browser-verification</body></html>'; },
     };

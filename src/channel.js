@@ -55,6 +55,7 @@ class Channel {
       gotoTimeout: this.config.gotoTimeout,
       gotoRetryDelays: this.config.gotoRetryDelays,
       dataLayerMaxRetries: this.config.dataLayerMaxRetries,
+      searchResultWaitMs: this.config.searchResultWaitMs,
     });
     this.tasksSincePageRefresh = 0;
     this.pageRefreshAfterTasks = this.config.pageRefreshAfterTasks !== undefined ? this.config.pageRefreshAfterTasks : 20;

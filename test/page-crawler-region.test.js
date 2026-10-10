@@ -9,6 +9,8 @@ function createMockPage(opts = {}) {
   return {
     goto: async (url) => { if (customGoto) await customGoto(url); currentUrl = url; },
     url: () => currentUrl,
+    // 搜索页就绪等待通道的 no-op stub（命中 datalayer，等价于原固定 sleep 后就绪）
+    waitForFunction: async () => ({ jsonValue: async () => 'datalayer' }),
     evaluate: async () => '',
     content: async () => '',
     $: async () => null,
