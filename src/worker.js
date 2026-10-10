@@ -7,7 +7,8 @@ class TaskDeadlineError extends Error {
 }
 
 const { classifyGotoError } = require('./page-crawler');
-const { ERROR_CODES } = require('./result-verdict');
+const verdict = require('./result-verdict');
+const { ERROR_CODES } = verdict;
 
 const NO_RESULT_FALLBACKS = {
   GB: 'US',
@@ -35,29 +36,13 @@ class Worker {
   // 决定是否对单 task 触发换 IP 重试。
   // 触发条件：业务异常强信号（dataLayer 异常 / page.goto 全 timeout / crawl timeout）
   // 不触发：业务无结果（dataLayerNotFound=true）/ 成功 / 普通 error / channel 正在重建 / 全局开关关闭
+  // 判定语义收拢在 result-verdict（docs/plan-信号重构-阶段1.md）；
+  // 第二个参数是无 errorCode 旧 result 的兼容兜底（注入 classifyGotoError，
+  // 防御 cli 模式/测试构造的无码 result），阶段 2 末删除。
   shouldRetryWithNewIp(result, channel) {
     if (this.retryOnTimeout === false) return false;
     if (!channel || channel.reinitializing) return false;
-    if (!result) return false;
-
-    if (result.status === 'not_found' && result.dataLayerFailed === true && result.dataLayerNotFound !== true) {
-      return true;
-    }
-
-    // 网络/代理类 goto 失败（Timeout、net::ERR_TIMED_OUT、ERR_TUNNEL_CONNECTION_FAILED 等）：
-    // 坏出口的典型信号，换 IP 重试一次。HTTP 4xx/5xx 等非网络错误不触发。
-    if (result.status === 'error' && typeof result.error === 'string') {
-      const category = classifyGotoError({ message: result.error });
-      if (category === 'retryable' || category === 'proxy') {
-        return true;
-      }
-    }
-
-    if (result.status === 'timeout') {
-      return true;
-    }
-
-    return false;
+    return verdict.shouldRetryWithNewIp(result, classifyGotoError);
   }
 
   getTaskIdKey(task) {
@@ -194,9 +179,9 @@ class Worker {
       }
 
       // 区域无结果兜底：UK/EU/CA 搜索页明确无结果时，到 US 站点再试一次。
-      // 判定依据是机器可读的 errorCode（page-crawler 产出），不依赖 error 文案，
-      // 避免上游可见文案改动导致兜底静默失效。
-      if (result && result.status === 'not_found' && result.errorCode === 'PAGE_NO_RESULT') {
+      // 判定依据是机器可读的 errorCode（page-crawler 产出，经 verdict 判读），
+      // 不依赖 error 文案，避免上游可见文案改动导致兜底静默失效。
+      if (verdict.isRegionFallbackCandidate(result)) {
         const fallbackRegion = NO_RESULT_FALLBACKS[task.regionCode];
         if (fallbackRegion && this.regionRegistry) {
           const fallbackBaseUrl = this.regionRegistry.resolve(fallbackRegion);
